@@ -1,0 +1,40 @@
+# Risk tiers by path glob. The HIGHEST tier any changed file hits is the PR's
+# tier (critical > gates > normal > low). An unmatched path is `normal`.
+# `*` stays inside one path segment, `**` crosses directories.
+# Resolver: scripts/risk-tier.sh <path>...   The tier picks the review lenses
+# (.agents/reviews/README.md, .agents/pipeline.yaml).
+# Changing this file is itself a gates change: an agent stops and asks.
+version: 1
+
+tiers:
+  critical: # the bytes, the money, the isolation
+    - internal/dataplane/**
+    - internal/wsauth/**
+    - internal/history/**
+    - internal/monitors/**
+    - internal/ledger/**
+    - internal/savings/**
+    - internal/access/evaluator*
+    - internal/api/middleware/**
+  gates: # protected paths: they define what "green" means
+    - scripts/**
+    - .githooks/**
+    - .github/**
+    - .golangci.yml
+    - .agents/**
+    - internal/archtest/**
+    - tools/**
+    - .claude/settings.json
+    - .claude/hooks/**
+    - ARCHITECTURE.md
+    - internal/store/migrations/** # an applied migration is never edited; new file only
+  normal:
+    - internal/**
+    - cmd/**
+    - web/src/**
+    - go.mod
+    - package.json
+    - web/package.json
+  low: # docs only
+    - docs/**
+    - "*.md"
