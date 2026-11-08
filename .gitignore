@@ -1,0 +1,19 @@
+# Plans are local working documents, never committed
+plan/
+
+# OS / tooling
+.DS_Store
+.superpowers/
+.logs/
+*.out
+bin/
+coverage/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Web
+web/node_modules/
+web/dist/
