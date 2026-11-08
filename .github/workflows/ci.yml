@@ -1,0 +1,106 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly full gate (govulncheck included) so new advisories surface without a push.
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC, the dependabot day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (scripts/run-checks.sh)
+    runs-on: ubuntu-latest
+    # Postgres 16 for the test and migrate gates. With CI=true the database tests FAIL
+    # when TEST_DATABASE_URL is unset, so they can never skip silently.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: meterwise
+          POSTGRES_PASSWORD: meterwise
+          POSTGRES_DB: meterwise
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U meterwise -d meterwise"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://meterwise:meterwise@127.0.0.1:54329/meterwise?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the migrate gate compares with main
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The same script developers and the pre-push hook run. Do NOT inline steps.
+      - name: scripts/run-checks.sh
+        run: scripts/run-checks.sh
+      # Proof that every gate can go red and every hook behaves (scratch copies; ~3 min).
+      - name: scripts/selftest-gates.sh
+        run: scripts/selftest-gates.sh
+      - name: scripts/selftest-hooks.sh
+        run: scripts/selftest-hooks.sh
+      - name: Upload gate logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-logs
+          path: .logs/
+          if-no-files-found: warn
+
+  web:
+    name: web gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: scripts/run-checks.sh web
+        run: scripts/run-checks.sh web
+
+  offline:
+    name: go test with networking disabled
+    runs-on: ubuntu-latest
+    # Proves "tests need no external network": the module cache is downloaded on the host,
+    # then the tests run in a container with --network none. Database tests are not run
+    # here (CI is unset inside the container, so pgtest skips); the gate job runs them.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go mod download
+      - name: go test in a network-less container
+        run: |
+          docker run --rm --network none \
+            -v "$PWD:/src" -v "$(go env GOMODCACHE):/go/pkg/mod:ro" -w /src \
+            -e GOFLAGS=-mod=readonly -e GOTOOLCHAIN=local \
+            "golang:$(sed -n 's/^toolchain go\([0-9.]*\).*/\1/p' go.mod)" \
+            go test -tags=offline -count=1 ./...

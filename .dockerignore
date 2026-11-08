@@ -1,0 +1,8 @@
+.git
+.logs
+bin
+web/node_modules
+web/dist
+web/coverage
+plan
+.superpowers
