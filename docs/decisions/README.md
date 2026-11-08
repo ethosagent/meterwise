@@ -23,4 +23,4 @@ Template: [`template.md`](template.md).
 
 | Date | Tokens | How measured | Notes |
 |---|---|---|---|
-| 2026-11-09 | UNVERIFIED | not measured yet | the owner runs `/context` in a fresh interactive session and records the number here |
+| 2026-11-09 | 32.8k of 400k | `claude -p "/context"` run non-interactively in the 00a worktree (model claude-opus-5-5) | Over the 30K target. With connectors off (`--strict-mcp-config --setting-sources project`) the same run reads 17.6k. Repo-owned: `CLAUDE.md` 3.2k, project skills about 0.5k, reader agent 63. The rest is user-level: MCP tools 8.9k and MCP instructions 5k (claude.ai connectors), plugin and synced skills about 4k, system 3.4k, user `CLAUDE.md` 0.8k. Disable unused connectors for this repo ([`runbooks/local-dev.md`](../runbooks/local-dev.md)), re-measure interactively and record the result |
