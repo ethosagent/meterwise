@@ -17,3 +17,13 @@ coverage/
 # Web
 web/node_modules/
 web/dist/
+
+# Session handoff (the handoff skill); local to one machine
+/HANDOFF.md
+
+# Claude Code local-only settings; keep settings.json, hooks, agents and the skills symlink tracked
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Web build output
+web/coverage/
