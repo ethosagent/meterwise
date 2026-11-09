@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/dataplane"
 )
 
 // Exit codes.
@@ -35,14 +36,15 @@ type env struct {
 	lookup config.Lookup
 	stdout io.Writer
 	stderr io.Writer
+	deps   dataplane.Deps // data-plane overrides; zero in production, set by tests
 }
 
 func commands() []command {
 	return []command{
-		{"serve", "run the HTTP server (health and version endpoints in this build)", cmdServe},
+		{"serve", "run the proxy, the control-plane API and the web app", cmdServe},
 		{"config", "config check: validate the environment and print the effective config", cmdConfig},
 		{"bootstrap-admin", "seed the first admin (needs the store)", cmdUnavailable("bootstrap-admin")},
-		{"migrate", "apply database migrations (needs the store)", cmdUnavailable("migrate")},
+		{"migrate", "migrate [up|status]: apply or list database migrations", cmdMigrate},
 		{"version", "print the build version", cmdVersion},
 	}
 }
