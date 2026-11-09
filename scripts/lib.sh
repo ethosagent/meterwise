@@ -133,6 +133,16 @@ base_ref() {
   done
 }
 
+# require_base_ref fails closed when METERWISE_BASE_REF is set but names nothing: callers run it
+# before honouring any SKIP that depends on the base branch (an emptied directory, a deleted
+# package.json), so a broken ref can never turn a red into a SKIP.
+require_base_ref() {
+  if [ -n "${METERWISE_BASE_REF:-}" ] && [ -z "$(base_ref)" ]; then
+    echo "✗ METERWISE_BASE_REF=$METERWISE_BASE_REF does not resolve to a commit"
+    return 1
+  fi
+}
+
 # compare_ref is the single place that decides what applied work is compared with. On success
 # it sets CMP_BASE (the base branch), CMP_MB (merge-base with HEAD), CMP_ORD (the commit whose
 # tree holds the applied migrations) and CMP_LAST (1 when HEAD is the merge-base and HEAD~1

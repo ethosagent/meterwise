@@ -8,6 +8,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib.sh
+require_base_ref || exit 1
 if [ ! -f web/package.json ]; then
   # SKIP only when the web app never existed: a deleted package.json is not "no input" (ruling R5)
   if [ -d web/src ] || tracked_on_base web/package.json; then

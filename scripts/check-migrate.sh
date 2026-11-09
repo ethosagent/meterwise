@@ -27,6 +27,7 @@ if [ -n "$stray" ]; then
   echo "$stray" | sed 's/^/    /'
   exit 1
 fi
+require_base_ref || exit 1
 if [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
   if tracked_on_base "$dir"; then
     echo "✗ $dir is empty but the base branch tracks migrations there: applied migrations were deleted (add a NEW migration instead)"
@@ -38,10 +39,6 @@ fi
 
 go run ./cmd/gen migrations
 
-if [ -n "${METERWISE_BASE_REF:-}" ] && [ -z "$(base_ref)" ]; then
-  echo "✗ METERWISE_BASE_REF=$METERWISE_BASE_REF does not resolve to a commit"
-  exit 1
-fi
 if compare_ref; then
   mb="$CMP_MB"
   # net change since the merge-base, including the working tree

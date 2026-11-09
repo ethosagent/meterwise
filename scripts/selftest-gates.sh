@@ -45,7 +45,7 @@ run_case() {
   case "$gate" in sqlc | migrate) [ -n "${NOSTRIP:-}" ] || (cd "$W" && strip_store_inputs) ;; esac
   (cd "$W" && "$mut") || { echo "✗ SETUP FAILED  [$gate] $name"; bad=$((bad + 1)); return; }
   local out rc
-  out="$(cd "$W" && env "$@" scripts/run-checks.sh $gate 2>&1)"; rc=$?
+  out="$(cd "$W" && env -u METERWISE_BASE_REF "$@" scripts/run-checks.sh $gate 2>&1)"; rc=$?
   [ -z "${SELFTEST_VERBOSE:-}" ] || echo "$out"
   if [ -n "${POST:-}" ] && ! (cd "$W" && "$POST"); then echo "✗ POSTCHECK FAILED [$gate] $name ($POST)"; bad=$((bad + 1)); return; fi
   if [ "$kind" = red ]; then
@@ -312,6 +312,9 @@ red migrate "no main or origin/main under CI=true" "cannot prove applied migrati
 m_mig_baseref() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; git branch trunk; git branch -m main feature; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; }
 red migrate "METERWISE_BASE_REF names the base: edited applied migration" "applied migrations were modified" m_mig_baseref METERWISE_BASE_REF=trunk
 red migrate "METERWISE_BASE_REF that does not resolve fails closed" "does not resolve" m_mig_baseref METERWISE_BASE_REF=no-such-branch
+m_mig_emptybadref() { mkdir -p internal/store/migrations; }
+red migrate "unresolvable METERWISE_BASE_REF with an empty migrations dir fails closed, not SKIP" "does not resolve" m_mig_emptybadref METERWISE_BASE_REF=no-such-branch
+green migrate "empty migrations dir with no base ref is still the explicit SKIP" "! SKIP migrate" m_mig_emptybadref
 red migrate "TEST_DATABASE_URL on a remote host is refused" "not loopback" m_mig_ok TEST_DATABASE_URL=postgres://u:p@db.example.com:5432/x
 red migrate "TEST_DATABASE_URL without a database name is refused" "no database name" m_mig_ok TEST_DATABASE_URL=postgres://u:p@127.0.0.1:54329
 red migrate "migrations but no Postgres: fails closed" "cannot create a throwaway database" m_mig_ok TEST_DATABASE_URL=postgres://x:x@127.0.0.1:1/x
@@ -328,6 +331,7 @@ m_h5web() { printf 'import _ from "lodash";\nexport const l = _;\n' >web/src/bad
 m_pkg() { sed -i.bak 's/"devDependencies": {/"devDependencies": {\n    "left-pad": "1.3.0",/' web/package.json; rm -f web/package.json.bak; }
 m_webnopkg() { git rm -q web/package.json; }
 red web "web/package.json deleted while web/src exists" "web/package.json is missing" m_webnopkg
+red web "unresolvable METERWISE_BASE_REF with web/package.json deleted fails closed" "does not resolve" m_webnopkg METERWISE_BASE_REF=no-such-branch
 red web "explicit any" "npm run check failed" m_any
 red web "type error" "npm run typecheck failed" m_tsc
 red web "failing vitest" "npm run test failed" m_vitest
