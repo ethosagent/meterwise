@@ -95,7 +95,8 @@ m_h2() { mkdir -p internal/api; gofile internal/api/doc.go <<<'// Package api is
 package api'; gofile internal/store/x.go <<<'// Package store is the base.
 package store
 import _ "github.com/ethosagent/meterwise/internal/api"'; }
-m_p1() { gofile internal/tenancy/a.go <<<'package tenancy'; }
+# a package that does not exist yet (tenancy has a doc.go since Plan 02, so a.go there would be documented)
+m_p1() { gofile internal/savings/a.go <<<'package savings'; }
 m_h1() { gofile internal/dataplane/doc.go <<<'// Package dataplane wires tollgate.
 package dataplane
 import _ "github.com/ethosagent/tollgate/internal/core"'; }
@@ -174,7 +175,7 @@ func TestBroken(t *testing.T) { t.Fatal("seeded failure") }'; }
 m_cov() { { echo 'package config'; echo 'func Big(n int) int {'; for i in $(seq 1 600); do echo "	if n == $i { return $i }"; done; echo '	return 0'; echo '}'; } >internal/config/big.go; }
 red test "failing test" "seeded failure" m_testfail
 red test "coverage below the floor" "below 75%" m_cov
-green test "no database reachable, local: skip is loud" "! SKIP test TestConfiguredDatabaseIsReachable" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=
+green test "no database reachable, local: skip is loud" "! SKIP test TestConfiguredDatabaseIsReachable" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI= COVERAGE_MIN=1
 red test "no database under CI=true fails closed" "unset under CI=true" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=true
 
 # ---- vuln
