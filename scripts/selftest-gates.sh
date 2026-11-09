@@ -173,6 +173,11 @@ red arch "H10 production code imports the Clerk twin" "H10 " m_h10
 m_h11() { gofile internal/api/zz_selftest.go <<<'package api
 func inlineRoleCheck(role string) bool { return role == "admin" }'; }
 red arch "H11 a handler decides access by comparing a role" "H11 " m_h11
+m_h11t() { gofile internal/api/zz_selftest.go <<<'package api
+import c "github.com/ethosagent/meterwise/internal/contract"
+var adm = c.RoleAdmin
+func inlineRoleCheck(r c.Role) bool { return string(r) != "" && r == adm }'; }
+red arch "H11 an aliased import and a local copy do not hide a role comparison" "H11 " m_h11t
 green arch "clean tree" "all gates passed" nop
 
 # ---- test: failing test, coverage floor, visible skip, CI fail-closed
