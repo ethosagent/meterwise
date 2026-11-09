@@ -89,13 +89,17 @@ export function useOrgDefaults(enabled: boolean) {
   });
 }
 
-/** What a change to grants, roles or membership can alter for the caller: their access, workspace list and Me. */
+/**
+ * What a change to a grant, a role, a removed member, a deleted group or an attached workspace can
+ * alter for the caller: their access, workspace list and Me. Creating or renaming a group, or moving
+ * members between groups, does not, so those refresh the group lists only.
+ */
 const ACCESS_KEYS = [permissionsKey, workspacesKey, meKey] as const;
 
 export function useCreateGroup() {
   return useInvalidatingMutation(
     (name: string) => apiFetch<Group>("/api/groups", { method: "POST", body: json({ name }) }),
-    [groupsKey, ...ACCESS_KEYS],
+    [groupsKey],
   );
 }
 
@@ -106,7 +110,7 @@ export function useRenameGroup() {
         method: "PATCH",
         body: json({ name: v.name }),
       }),
-    [groupsKey, ...ACCESS_KEYS],
+    [groupsKey],
   );
 }
 
@@ -165,7 +169,7 @@ export function useGroupMembership() {
         await apiFetch(`/api/groups/${enc(v.id)}/members/${enc(userId)}`, { method: "DELETE" });
       }
     },
-    [groupsKey, membersKey, ...ACCESS_KEYS],
+    [groupsKey, membersKey],
     { settled: true },
   );
 }

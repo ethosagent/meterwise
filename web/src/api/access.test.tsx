@@ -4,7 +4,15 @@ import { describe, expect, it } from "vitest";
 import { BO, type MockGroup } from "../test/mockAccess";
 import { mockApi } from "../test/mockApi";
 import { renderAt } from "../test/render";
-import { useAttachWorkspace, useDetachWorkspace, useGroupMembership, useGroups } from "./access";
+import {
+  useAttachWorkspace,
+  useCreateGroup,
+  useDeleteGroup,
+  useDetachWorkspace,
+  useGroupMembership,
+  useGroups,
+  usePermissionSnapshot,
+} from "./access";
 
 const GROUP: MockGroup = {
   id: "g1",
@@ -41,6 +49,38 @@ describe("useGroupMembership", () => {
     // the first add applied, the second (not a member) was refused with 422
     await waitFor(() => expect(api.callsTo("POST", "/api/groups/g1/members")).toHaveLength(2));
     expect(await screen.findByText("1")).toBeInTheDocument();
+  });
+});
+
+function RefreshProbe() {
+  usePermissionSnapshot();
+  const create = useCreateGroup();
+  const del = useDeleteGroup();
+  return (
+    <>
+      <p>{create.status}</p>
+      <p>del:{del.status}</p>
+      <button type="button" onClick={() => create.mutate("Ops")}>
+        create
+      </button>
+      <button type="button" onClick={() => del.mutate("g1")}>
+        delete
+      </button>
+    </>
+  );
+}
+
+describe("what a mutation refreshes", () => {
+  it("creating a group leaves the caller's permissions alone; deleting one refetches them", async () => {
+    const api = mockApi({ access: { groups: [GROUP] } });
+    renderAt(<RefreshProbe />);
+    await waitFor(() => expect(api.callsTo("GET", "/api/me/permissions")).toHaveLength(1));
+    await userEvent.click(screen.getByRole("button", { name: "create" }));
+    await screen.findByText("success");
+    expect(api.callsTo("GET", "/api/me/permissions")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "delete" }));
+    await screen.findByText("del:success");
+    expect(api.callsTo("GET", "/api/me/permissions")).toHaveLength(2);
   });
 });
 
