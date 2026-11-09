@@ -45,12 +45,16 @@ internal/archtest             standalone: standard library only, imported by nob
 | D1 | Every package belongs to a layer (a row in `law_test.go` and the table above). |
 | P1 | Every package has a doc comment (`doc.go`); that is its README. |
 | H0 | `internal/contract` imports the standard library and the tollgate root only. |
-| H1 | No package imports `tollgate/internal/**`; `tollgate/testkit` only from tests. |
+| H1 | tollgate's public surface only: its root, `ext/**`, and `testkit` from tests. Never `internal/`, `cmd/` or anything else. |
 | H2 | Lower never imports higher (ranks above). Nothing imports a `cmd/*` or `archtest`. |
 | H3 | `history`, `monitors`, `savings` are pure: stdlib (no `net`, `database/sql`, `os/exec`), tollgate root, `contract`. |
-| H4 | Only `ledger` and `audit` write `calls`, `sessions`, `monitor_events`, `audit_log` (grep over `.go`/`.sql`). |
-| H5 | `web/` imports `web/src/**` and the npm allowlist only; `package.json` declares nothing else. |
+| H4 | Only `ledger` and `audit` write `calls`, `sessions`, `monitor_events`, `audit_log` (INSERT, UPDATE, DELETE, MERGE, TRUNCATE, COPY over `.go`/`.sql`, comments ignored). |
+| H5 | `web/` imports `web/src/**` and the npm allowlist only (any JS/TS extension, template-literal imports included; `node:` only in tests); `package.json` declares nothing else. |
 | H6 | A third-party Go import needs an allowlist entry per layer in `law_test.go` and an ADR (0007). |
+| H7 | No `//go:build`, `// +build` or GOOS/GOARCH file suffix: a constraint can hide code from every gate. Allowlist per file with an ADR. |
+| H8 | Every package with tests has a `TestMain` calling `nonet.Run`: no test reaches the external network. |
+
+The arch gate runs `go list` with `-mod=readonly`: it never downloads a module or rewrites `go.mod`.
 
 Adding a dependency, a layer or a rule edits `internal/archtest` and `ARCHITECTURE.md` in one change, with an ADR.
 
@@ -87,7 +91,7 @@ Adding a dependency, a layer or a rule edits `internal/archtest` and `ARCHITECTU
 9. **No globals, no `init()` magic.** Wiring is code in `cmd/meterwised`; `os.Getenv` only in `cmd/`.
 10. **Applied migrations are immutable.** New file only; one feature's tables per file.
 11. **Generated stays generated.** Hand edits fail the `generated` gate.
-12. **Tests are offline.** Loopback only (`nonet`), mock twins for Clerk and providers, `pgtest` for Postgres.
+12. **Tests are offline.** Loopback only (`nonet`, required by H8), mock twins for Clerk and providers, `pgtest` for Postgres.
 
 ## 6. Seams (ports in `internal/contract`)
 

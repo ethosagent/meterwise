@@ -11,8 +11,25 @@ permissions:
 jobs:
   image:
     runs-on: ubuntu-latest
+    # The full gate below needs Postgres (test and migrate gates), exactly as in ci.yml.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: meterwise
+          POSTGRES_PASSWORD: meterwise
+          POSTGRES_DB: meterwise
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U meterwise -d meterwise"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the migrate gate compares with main
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod

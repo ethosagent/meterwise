@@ -6,10 +6,27 @@
 #
 # Optional reader mode: when METERWISE_READER_URL is set (an OpenAI-compatible
 # server, for example a local model), a blocked large-file read is summarised by
-# that model and the summary is returned in the refusal. Default off. Secret-like
-# files are never sent. METERWISE_READER_MODEL names the model (default "local").
+# that model and the summary is returned in the refusal. Default off. The URL must be
+# loopback, and secret-like files (by name or content) are never sent. METERWISE_READER_MODEL names the model (default "local").
 set -euo pipefail
 MAX_LINES="${READ_GUARD_MAX_LINES:-400}"
+
+# reader_ok FILE: may FILE be sent to METERWISE_READER_URL? Only a loopback reader, and
+# never a secret-looking file (by name or by content).
+reader_ok() {
+  local f="$1" host
+  host="$(printf '%s' "$METERWISE_READER_URL" | sed -E 's#^https?://([^@/]*@)?(\[[^]]*\]|[^:/?]*).*#\2#')"
+  case "$host" in localhost | 127.0.0.1 | '[::1]') ;; *) return 1 ;; esac
+  case "$METERWISE_READER_URL" in *@*) return 1 ;; esac
+  case "$(basename "$f" | tr '[:upper:]' '[:lower:]')" in
+    *.env | .env* | *.pem | *.key | *.p12 | *.pfx | *.jks | *.keystore | *.kdbx | *.tfvars | *.tfstate | \
+    id_rsa* | id_dsa* | id_ecdsa* | id_ed25519* | .netrc | .npmrc | .pypirc | .pgpass | .git-credentials | \
+    *secret* | *credential* | *token* | *passwd* | *password* | *apikey* | *api_key* | *auth*.json) return 1 ;;
+  esac
+  case "$f" in */.ssh/* | */.aws/* | */.gnupg/* | */.kube/* | */.docker/*) return 1 ;; esac
+  if head -c 200000 "$f" | grep -qaiE 'BEGIN [A-Z ]*PRIVATE KEY|["'"'"']?(api[_-]?key|secret|passw(or)?d|access[_-]?token|auth[_-]?token|client[_-]?secret)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/+_.-]{8,}|sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|xox[abpr]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ'; then return 1; fi
+  return 0
+}
 
 input="$(cat)"
 command -v jq >/dev/null 2>&1 || exit 0 # no jq: do not block work
@@ -29,17 +46,13 @@ esac
 lines="$(wc -l <"$file" | tr -d ' ')"
 if [ "$lines" -gt "$MAX_LINES" ]; then
   echo "read-guard: $file has $lines lines (limit $MAX_LINES for a whole-file read)." >&2
-  if [ -n "${METERWISE_READER_URL:-}" ]; then
-    case "$file" in
-      *.env | */.env* | *.pem | *.key | *secret* | *credential* | *token*) ;;
-      *)
-        body="$(jq -n --arg model "${METERWISE_READER_MODEL:-local}" --rawfile f <(head -c 200000 "$file") \
-          '{model:$model, messages:[{role:"system",content:"Summarise this file in at most 400 words. Cite function and type names with their line numbers. No code blocks."},{role:"user",content:$f}]}')"
-        if summary="$(curl -sS --max-time 60 -H 'content-type: application/json' -d "$body" "${METERWISE_READER_URL%/}/v1/chat/completions" | jq -r '.choices[0].message.content // empty')" && [ -n "$summary" ]; then
-          echo "Summary from the local reader model (not the file itself):" >&2
-          echo "$summary" >&2
-        fi ;;
-    esac
+  if [ -n "${METERWISE_READER_URL:-}" ] && reader_ok "$file"; then
+    body="$(jq -n --arg model "${METERWISE_READER_MODEL:-local}" --rawfile f <(head -c 200000 "$file") \
+      '{model:$model, messages:[{role:"system",content:"Summarise this file in at most 400 words. Cite function and type names with their line numbers. No code blocks."},{role:"user",content:$f}]}')"
+    if summary="$(curl -sS --max-time 60 -H 'content-type: application/json' -d "$body" "${METERWISE_READER_URL%/}/v1/chat/completions" | jq -r '.choices[0].message.content // empty')" && [ -n "$summary" ]; then
+      echo "Summary from the local reader model (not the file itself):" >&2
+      echo "$summary" >&2
+    fi
   fi
   echo "Use Grep to find the part you need, then Read with offset/limit." >&2
   exit 2

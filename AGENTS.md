@@ -47,7 +47,8 @@ failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when 
 **D1** every package is in a layer. **P1** every package has `doc.go`. **H0** `contract` imports stdlib + tollgate root.
 **H1** never `tollgate/internal/**`. **H2** lower never imports higher. **H3** `history`/`monitors`/`savings` are pure.
 **H4** only `ledger`/`audit` write `calls`, `sessions`, `monitor_events`, `audit_log`. **H5** `web/` imports `web/src/**` + npm allowlist.
-**H6** a third-party Go import needs an allowlist entry + ADR. Lint bans `http.DefaultClient`, `log.Print*`, `fmt.Print*`, `os.Getenv` outside `cmd/`.
+**H6** a third-party Go import needs an allowlist entry + ADR. **H7** no build constraints or GOOS/GOARCH file suffixes.
+**H8** every package with tests has a `TestMain` calling `nonet.Run`. Lint bans `http.DefaultClient`, `log.Print*`, `fmt.Print*`, `os.Getenv` outside `cmd/`.
 
 ## Non-negotiables
 
@@ -93,7 +94,8 @@ failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when 
 ## Protected paths — stop and ask
 
 `scripts/**`, `.githooks/**`, `.github/**`, `.golangci.yml`, `.agents/**`, `internal/archtest/**`, `tools/**`,
-`.claude/settings.json`, `.claude/hooks/**`, `ARCHITECTURE.md`, `internal/store/migrations/**`.
+`.claude/settings.json`, `.claude/hooks/**`, `.claude/skills/**`, `ARCHITECTURE.md`, `internal/store/migrations/**`,
+`internal/store/migration-families.txt`, `sqlc.yaml`, `web/biome.json`, `web/vite.config.ts`, `web/tsconfig.json`.
 These decide what "green" means. **Never** make a gate pass by lowering `COVERAGE_MIN`, skipping or deleting a
 test, adding `//nolint` or a lint exclusion, removing a gate, widening an archtest rule or allowlist, or editing an
 applied migration. Fix the code. If a gate itself is wrong, stop and ask the maintainer.

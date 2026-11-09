@@ -8,8 +8,11 @@ root="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$root" || exit 0
 
 input="$(cat)"
-if command -v jq >/dev/null 2>&1 && [ "$(jq -r '.stop_hook_active // false' <<<"$input")" = "true" ]; then
-  exit 0 # already blocked once this turn; do not loop
+# Already blocked once this turn: never block again, with or without jq, so a session cannot deadlock.
+active_re='"stop_hook_active"[[:space:]]*:[[:space:]]*true'
+[[ $input =~ $active_re ]] && exit 0
+if command -v jq >/dev/null 2>&1 && [ "$(jq -r '.stop_hook_active // false' <<<"$input" 2>/dev/null)" = "true" ]; then
+  exit 0
 fi
 [ -n "$(git status --porcelain 2>/dev/null)" ] || exit 0
 
