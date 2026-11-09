@@ -60,30 +60,25 @@ func (s *Store) CreateGroup(ctx context.Context, orgID, name string) (contract.G
 	return s.Group(ctx, orgID, id)
 }
 
-// RenameGroup renames a group; CodeNotFound or CodeGroupNameTaken.
-func (s *Store) RenameGroup(ctx context.Context, orgID, id, name string) (contract.Group, error) {
-	if !validID(id) {
-		return contract.Group{}, errNotFound
-	}
-	n, err := s.q.RenameGroup(ctx, sqlc.RenameGroupParams{Name: name, OrgID: orgID, ID: id})
-	if isUnique(err) {
-		return contract.Group{}, nameTaken()
-	}
-	if err != nil {
-		return contract.Group{}, queryErr(err)
-	}
-	if n == 0 {
-		return contract.Group{}, errNotFound
-	}
-	return s.Group(ctx, orgID, id)
-}
-
-// DeleteGroup deletes a group; its memberships, workspace links and grants go with it (cascade).
-func (s *Store) DeleteGroup(ctx context.Context, orgID, id string) error {
+// withLockedGroup runs fn in one transaction holding the group's row lock. Every mutation of a
+// group goes through it, so attach, detach, replace-grants, rename, delete and the member
+// changes serialise on the group and none can race a delete into a foreign-key error. A
+// malformed or unknown (or other org's) id is CodeNotFound before fn runs.
+func (s *Store) withLockedGroup(ctx context.Context, orgID, id string, fn func(q *sqlc.Queries) error) error {
 	if !validID(id) {
 		return errNotFound
 	}
-	n, err := s.q.DeleteGroup(ctx, sqlc.DeleteGroupParams{OrgID: orgID, ID: id})
+	return queryErr(s.inTx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: id}); err != nil {
+			return err
+		}
+		return fn(q)
+	}))
+}
+
+// notFoundIfZero is the check after a write that must touch a row: a driver error passes through
+// the scrubber, and no row affected is CodeNotFound.
+func notFoundIfZero(n int64, err error) error {
 	if err != nil {
 		return queryErr(err)
 	}
@@ -93,20 +88,39 @@ func (s *Store) DeleteGroup(ctx context.Context, orgID, id string) error {
 	return nil
 }
 
+// RenameGroup renames a group; CodeNotFound or CodeGroupNameTaken.
+func (s *Store) RenameGroup(ctx context.Context, orgID, id, name string) (contract.Group, error) {
+	err := s.withLockedGroup(ctx, orgID, id, func(q *sqlc.Queries) error {
+		n, err := q.RenameGroup(ctx, sqlc.RenameGroupParams{Name: name, OrgID: orgID, ID: id})
+		if isUnique(err) {
+			return nameTaken()
+		}
+		return notFoundIfZero(n, err)
+	})
+	if err != nil {
+		return contract.Group{}, err
+	}
+	return s.Group(ctx, orgID, id)
+}
+
+// DeleteGroup deletes a group; its memberships, workspace links and grants go with it (cascade).
+func (s *Store) DeleteGroup(ctx context.Context, orgID, id string) error {
+	return s.withLockedGroup(ctx, orgID, id, func(q *sqlc.Queries) error {
+		return notFoundIfZero(q.DeleteGroup(ctx, sqlc.DeleteGroupParams{OrgID: orgID, ID: id}))
+	})
+}
+
 // GrantSpec is a resource type and action; the taxonomy (package access) decides which exist.
 type GrantSpec = contract.GrantSpec
 
 // AttachGroupWorkspace links a group to a workspace of the org and seeds one grant per spec on
 // that workspace, in one transaction. Attaching again is a no-op that still returns the group.
 func (s *Store) AttachGroupWorkspace(ctx context.Context, orgID, groupID, workspaceID string, seed []GrantSpec) (contract.Group, error) {
-	if !validID(groupID) || !validID(workspaceID) {
+	if !validID(workspaceID) {
 		return contract.Group{}, errNotFound
 	}
 	var out contract.Group
-	err := s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: groupID}); err != nil {
-			return err
-		}
+	err := s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
 		if _, err := q.GetWorkspace(ctx, sqlc.GetWorkspaceParams{OrgID: orgID, ID: workspaceID}); err != nil {
 			return err
 		}
@@ -125,28 +139,22 @@ func (s *Store) AttachGroupWorkspace(ctx context.Context, orgID, groupID, worksp
 		out, err = group(ctx, q, orgID, groupID)
 		return err
 	})
-	return out, queryErr(err)
+	return out, err
 }
 
 // DetachGroupWorkspace unlinks a group from a workspace and drops every grant the group holds
 // there, in one transaction. A group not attached to the workspace is CodeNotFound.
 func (s *Store) DetachGroupWorkspace(ctx context.Context, orgID, groupID, workspaceID string) error {
-	if !validID(groupID) || !validID(workspaceID) {
+	if !validID(workspaceID) {
 		return errNotFound
 	}
-	return queryErr(s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: groupID}); err != nil {
-			return err
-		}
+	return s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
 		n, err := q.DetachGroupWorkspace(ctx, sqlc.DetachGroupWorkspaceParams{OrgID: orgID, GroupID: groupID, WorkspaceID: workspaceID})
-		if err != nil {
+		if err := notFoundIfZero(n, err); err != nil {
 			return err
-		}
-		if n == 0 {
-			return errNotFound
 		}
 		return q.DeleteGroupGrantsOnWorkspace(ctx, sqlc.DeleteGroupGrantsOnWorkspaceParams{OrgID: orgID, GroupID: groupID, WorkspaceID: workspaceID})
-	}))
+	})
 }
 
 func grantOf(workspaceID, resourceType, action string) contract.Grant {
@@ -176,10 +184,7 @@ func (s *Store) GroupGrants(ctx context.Context, orgID, groupID string) ([]contr
 // ReplaceGroupGrants replaces all of a group's grants in one transaction. A grant on a workspace
 // the group is not attached to is a validation error (422); the taxonomy was checked by the caller.
 func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, grants []contract.Grant) ([]contract.Grant, error) {
-	err := s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: groupID}); err != nil {
-			return err
-		}
+	err := s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
 		g, err := group(ctx, q, orgID, groupID)
 		if err != nil {
 			return err
@@ -204,7 +209,7 @@ func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, g
 		return nil
 	})
 	if err != nil {
-		return nil, queryErr(err)
+		return nil, err
 	}
 	return s.GroupGrants(ctx, orgID, groupID)
 }
@@ -228,34 +233,27 @@ func (s *Store) GroupMembers(ctx context.Context, orgID, groupID string) ([]cont
 // AddGroupMember puts an active member in a group; it touches group_users only. A user who is
 // not an active member is a validation error (422); adding twice is a no-op.
 func (s *Store) AddGroupMember(ctx context.Context, orgID, groupID, userID string) error {
+	notMember := contract.NewError(contract.CodeValidationFailed, "request validation failed", "userId: not an active member")
 	if !validID(userID) {
-		return contract.NewError(contract.CodeValidationFailed, "request validation failed", "userId: not an active member")
+		return notMember
 	}
-	return queryErr(s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := group(ctx, q, orgID, groupID); err != nil {
-			return err
-		}
+	return s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
 		if _, err := q.LockActiveMembershipShared(ctx, sqlc.LockActiveMembershipSharedParams{OrgID: orgID, UserID: userID}); err != nil {
 			if isNotFound(err) {
-				return contract.NewError(contract.CodeValidationFailed, "request validation failed", "userId: not an active member")
+				return notMember
 			}
 			return err
 		}
 		return q.AddGroupUser(ctx, sqlc.AddGroupUserParams{GroupID: groupID, UserID: userID, OrgID: orgID})
-	}))
+	})
 }
 
 // RemoveGroupMember takes a user out of a group; a user not in it (or an unknown group) is CodeNotFound.
 func (s *Store) RemoveGroupMember(ctx context.Context, orgID, groupID, userID string) error {
-	if !validID(groupID) || !validID(userID) {
+	if !validID(userID) {
 		return errNotFound
 	}
-	n, err := s.q.RemoveGroupUser(ctx, sqlc.RemoveGroupUserParams{OrgID: orgID, GroupID: groupID, UserID: userID})
-	if err != nil {
-		return queryErr(err)
-	}
-	if n == 0 {
-		return errNotFound
-	}
-	return nil
+	return s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
+		return notFoundIfZero(q.RemoveGroupUser(ctx, sqlc.RemoveGroupUserParams{OrgID: orgID, GroupID: groupID, UserID: userID}))
+	})
 }
