@@ -99,7 +99,7 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 		log.Error("database", "class", string(store.ClassOf(err)), "err", err.Error())
 		return nil, contract.NewError(contract.CodeUnavailable, "cannot connect to the database named by "+config.EnvDatabaseURL)
 	}
-	rt.svc = tenancy.New(rt.db, id.provider, tenancy.Config{MaxWorkspaces: cfg.MaxWorkspaces})
+	rt.svc = tenancy.New(rt.db, id.provider, tenancy.Config{MaxWorkspaces: cfg.MaxWorkspaces, Log: log})
 	if err := rt.svc.EnsureDefaults(ctx); err != nil {
 		rt.close(ctx)
 		log.Error("default workspace", "err", err.Error())

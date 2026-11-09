@@ -85,6 +85,7 @@ type Server struct {
 	failAPI    bool
 	jwksDown   bool
 	hasCreated int
+	onCreate   func()
 }
 
 // New starts the server; call Close when done.
@@ -125,6 +126,9 @@ func (s *Server) WebhookSecret() string { return s.secret }
 
 // SetJWKSDown makes the JWKS endpoint answer 503.
 func (s *Server) SetJWKSDown(down bool) { s.mu.Lock(); s.jwksDown = down; s.mu.Unlock() }
+
+// OnCreateInvitation runs f after each invitation is recorded and before the response is sent.
+func (s *Server) OnCreateInvitation(f func()) { s.mu.Lock(); s.onCreate = f; s.mu.Unlock() }
 
 // SetAPIDown makes the backend API answer 503.
 func (s *Server) SetAPIDown(down bool) { s.mu.Lock(); s.failAPI = down; s.mu.Unlock() }
@@ -192,7 +196,11 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	s.hasCreated++
 	inv := &Invitation{ID: fmt.Sprintf("inv_mock_%d", s.hasCreated), Email: body.EmailAddress}
 	s.invites = append(s.invites, inv)
+	hook := s.onCreate
 	s.mu.Unlock()
+	if hook != nil {
+		hook() // lets a test interleave another action between the provider call and the caller's next step
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"object": "invitation", "id": inv.ID, "email_address": inv.Email, "status": "pending"})
 }
@@ -221,19 +229,21 @@ func (s *Server) revokeInvitation(w http.ResponseWriter, r *http.Request) {
 // Claims describes a session token. Zero values mean "valid": the mock issuer,
 // an hour of life, a verified email.
 type Claims struct {
-	Subject       string
-	Email         string
-	Name          string
-	ImageURL      string
-	Unverified    bool          // email_verified=false
-	Issuer        string        // override the iss
-	ExpiresIn     time.Duration // default +1h; negative makes an expired token
-	NotBeforeIn   time.Duration
-	KeyID         string // override the kid header
-	Alg           string // "RS256" (default) or "none"
-	SignWith      *rsa.PrivateKey
-	OmitSubject   bool
-	TamperPayload bool // alter the payload after signing, keeping the signature
+	Subject         string
+	Email           string
+	Name            string
+	ImageURL        string
+	Unverified      bool          // email_verified=false
+	Issuer          string        // override the iss
+	ExpiresIn       time.Duration // default +1h; negative makes an expired token
+	NotBeforeIn     time.Duration
+	KeyID           string // override the kid header
+	Alg             string // "RS256" (default) or "none"
+	SignWith        *rsa.PrivateKey
+	OmitSubject     bool
+	OmitExpiry      bool   // no exp claim
+	AuthorizedParty string // azp claim; omitted when empty
+	TamperPayload   bool   // alter the payload after signing, keeping the signature
 }
 
 // Token signs a session token for c.
@@ -260,6 +270,12 @@ func (s *Server) Token(c Claims) string {
 	payload := map[string]any{
 		"iss": iss, "iat": now.Unix(), "nbf": now.Add(c.NotBeforeIn).Unix() - 1, "exp": now.Add(exp).Unix(),
 		"email": c.Email, "email_verified": !c.Unverified, "name": c.Name, "image_url": c.ImageURL,
+	}
+	if c.OmitExpiry {
+		delete(payload, "exp")
+	}
+	if c.AuthorizedParty != "" {
+		payload["azp"] = c.AuthorizedParty
 	}
 	if !c.OmitSubject {
 		payload["sub"] = c.Subject

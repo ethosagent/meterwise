@@ -2,7 +2,9 @@ package tenancy_test
 
 import (
 	"context"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +24,14 @@ type rig struct {
 
 func newRig(t *testing.T, maxWS int) rig {
 	t.Helper()
+	r, _ := newRigLogged(t, maxWS)
+	return r
+}
+
+// newRigLogged is newRig with the service's log captured.
+func newRigLogged(t *testing.T, maxWS int) (rig, *syncLog) {
+	t.Helper()
+	logs := &syncLog{}
 	dsn := pgtest.NewDatabase(t)
 	if _, err := store.Migrate(context.Background(), dsn); err != nil {
 		t.Fatal(err)
@@ -43,12 +53,21 @@ func newRig(t *testing.T, maxWS int) rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := tenancy.New(db, idp, tenancy.Config{MaxWorkspaces: maxWS, Now: clk.now})
+	svc := tenancy.New(db, idp, tenancy.Config{MaxWorkspaces: maxWS, Now: clk.now, Log: slog.New(slog.NewTextHandler(logs, nil))})
 	if err := svc.EnsureDefaults(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	return rig{svc: svc, mock: mock, clk: clk}
+	return rig{svc: svc, mock: mock, clk: clk}, logs
 }
+
+// syncLog is a goroutine-safe log sink.
+type syncLog struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *syncLog) Write(p []byte) (int, error) { l.mu.Lock(); defer l.mu.Unlock(); return l.b.Write(p) }
+func (l *syncLog) String() string              { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
 
 // admin makes a real admin user (invited_by references users).
 func admin(t *testing.T, svc *tenancy.Service) contract.Principal {

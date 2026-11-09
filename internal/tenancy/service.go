@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ type Config struct {
 	MaxWorkspaces int
 	Now           func() time.Time // default time.Now
 	Rand          io.Reader        // default crypto/rand
+	Log           *slog.Logger     // best-effort provider cleanups are logged here; default discards
 }
 
 // Service is the tenancy use-case layer: it resolves sessions, completes sign-up
@@ -50,6 +52,9 @@ func New(st *store.Store, idp contract.IdentityProvider, cfg Config) *Service {
 	if cfg.MaxWorkspaces < 1 {
 		cfg.MaxWorkspaces = 1
 	}
+	if cfg.Log == nil {
+		cfg.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	return &Service{st: st, idp: idp, dir: NewDirectory(st, cfg.Now), cfg: cfg, org: store.OrgID()}
 }
 
@@ -65,8 +70,16 @@ func notInvited() error {
 }
 
 // NormalizeEmail trims and lower-cases an email and checks it is a bare address.
+// Non-ASCII addresses are refused before any case folding: Unicode folding maps
+// some characters to ASCII (U+212A KELVIN SIGN to "k", U+0130 to "i"), which would let a
+// different address claim an invitation written for another. Internationalized addresses
+// need a proper IDN and Unicode comparison policy before they can be admitted.
 func NormalizeEmail(raw string) (string, error) {
-	e := strings.ToLower(strings.TrimSpace(raw))
+	trimmed := strings.TrimSpace(raw)
+	if strings.IndexFunc(trimmed, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+		return "", invalid("email", "must be a plain ASCII email address")
+	}
+	e := strings.ToLower(trimmed)
 	addr, err := mail.ParseAddress(e)
 	if e == "" || len(e) > maxEmailLength || err != nil || addr.Address != e || addr.Name != "" {
 		return "", invalid("email", "must be a plain email address")
@@ -128,6 +141,13 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 		return contract.Session{}, err
 	}
 	if !ok {
+		// Two tabs of the same person finish first login together: the loser finds the invitation
+		// already used, but the person is a member by then. Re-read before refusing.
+		if r, active, _, merr := s.st.Membership(ctx, s.org, sess.User.ID); merr == nil && active {
+			sess.Member = true
+			sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: r}
+			return sess, nil
+		}
 		return contract.Session{}, notInvited()
 	}
 	sess.Member = true
@@ -309,7 +329,7 @@ func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role co
 		ExpiresAt: now.Add(identity.InvitationLifetime), Now: now,
 	})
 	if err != nil {
-		_ = s.idp.RevokeInvitation(ctx, clerkID) // do not leave an orphan that emails the person
+		s.compensate(ctx, "invite: database write failed", clerkID) // do not leave an orphan that emails the person
 		return contract.Invitation{}, err
 	}
 	return inv, nil
@@ -327,8 +347,26 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contrac
 	if err != nil {
 		return contract.Invitation{}, false, err
 	}
-	if open, err := s.st.OpenInvitation(ctx, s.org, e, s.cfg.Now()); err == nil {
-		return open, false, nil
+	all, err := s.st.ListInvitations(ctx, s.org)
+	if err != nil {
+		return contract.Invitation{}, false, err
+	}
+	now := s.cfg.Now()
+	for _, i := range all {
+		if i.Email != e {
+			continue
+		}
+		switch i.StatusAt(now) {
+		case contract.InvitationPending:
+			if i.Role != contract.RoleAdmin {
+				return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
+					"an open invitation for that email has role "+string(i.Role)+"; revoke it in Settings, then run bootstrap-admin again")
+			}
+			return i, false, nil
+		case contract.InvitationAccepted:
+			return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
+				"that email already accepted an invitation; invite admins from Settings > Organization")
+		}
 	}
 	inv, err = s.invite(ctx, "", e, contract.RoleAdmin)
 	return inv, err == nil, err
@@ -353,6 +391,8 @@ func (s *Service) ResendInvitation(ctx context.Context, p contract.Principal, id
 		return contract.Invitation{}, err
 	}
 	if err := s.st.RefreshInvitation(ctx, p.OrgID, id, clerkID, now.Add(identity.InvitationLifetime)); err != nil {
+		// The row still names the revoked provider invitation; do not leave the new one emailing the person.
+		s.compensate(ctx, "resend: database refresh failed", clerkID)
 		return contract.Invitation{}, err
 	}
 	return s.st.Invitation(ctx, p.OrgID, id)
@@ -365,6 +405,19 @@ func (s *Service) RevokeInvitation(ctx context.Context, p contract.Principal, id
 	if err != nil {
 		return err
 	}
-	_ = s.idp.RevokeInvitation(ctx, clerkID)
+	s.compensate(ctx, "revoke: provider revoke failed", clerkID)
 	return nil
+}
+
+// compensate revokes a provider invitation as best-effort cleanup. The database row is the
+// access truth, so a failure changes no access, but it leaves an orphan at the provider, so
+// it is logged (with the provider id, never the email) instead of swallowed.
+func (s *Service) compensate(ctx context.Context, what, providerID string) {
+	if providerID == "" {
+		return
+	}
+	if err := s.idp.RevokeInvitation(ctx, providerID); err != nil && contract.AsError(err).Code != contract.CodeNotAvailable {
+		s.cfg.Log.LogAttrs(ctx, slog.LevelWarn, "provider invitation cleanup failed",
+			slog.String("op", what), slog.String("provider_invitation_id", providerID), slog.String("code", string(contract.AsError(err).Code)))
+	}
 }
