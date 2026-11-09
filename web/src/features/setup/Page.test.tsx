@@ -178,6 +178,23 @@ describe("SetupPage", () => {
       vi.useRealTimers();
     }
   });
+
+  it("stops polling once a call has been seen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const last = new Date(Date.now() - 60_000).toISOString();
+      const api = mockApi({ setupStatus: { firstCallAt: last, lastCallAt: last, callsToday: 3 } });
+      renderAt(<SetupPage />, PATH);
+      expect(await screen.findByText(/connected · last call/)).toBeInTheDocument();
+      const seen = api.callsTo("GET", "/api/workspaces/ws_1/setup").length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3 * SETUP_POLL_MS);
+      });
+      expect(api.callsTo("GET", "/api/workspaces/ws_1/setup")).toHaveLength(seen);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 function AuditObserver() {

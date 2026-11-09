@@ -9,14 +9,16 @@ export const setupRootKey = workspaceScoped("setup");
 export const setupKey = (workspaceId: string) => workspaceScoped("setup", workspaceId);
 export const auditLogKey = ["audit-log"] as const;
 
-/** How often an open Setup page asks again, so "waiting for first call" flips to "connected" by itself. */
+/** How often an open Setup page asks again while no call has been seen, so "waiting for first call" flips to "connected" by itself. */
 export const SETUP_POLL_MS = 15_000;
 
 export function useSetup(workspaceId: string | null, enabled: boolean) {
   return useQuery({
     queryKey: setupKey(workspaceId ?? ""),
     enabled: enabled && workspaceId !== null,
-    refetchInterval: SETUP_POLL_MS,
+    // Poll only until the first call is seen; focusing the tab still refetches.
+    refetchInterval: (query) => (query.state.data?.status.lastCallAt ? false : SETUP_POLL_MS),
+    refetchOnWindowFocus: true,
     queryFn: () => apiFetch<Setup>(`/api/workspaces/${enc(workspaceId ?? "")}/setup`),
   });
 }
