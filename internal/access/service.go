@@ -31,6 +31,7 @@ type Store interface {
 	GroupMembers(ctx context.Context, orgID, groupID string) ([]contract.Member, error)
 	AddGroupMember(ctx context.Context, orgID, groupID, userID string) error
 	RemoveGroupMember(ctx context.Context, orgID, groupID, userID string) error
+	ReplaceGroupMembers(ctx context.Context, orgID, groupID string, userIDs []string) ([]contract.Member, error)
 }
 
 // NewService builds the service over a store for one organization.
@@ -119,6 +120,12 @@ func (s *Service) AddGroupMember(ctx context.Context, groupID, userID string) ([
 		return nil, err
 	}
 	return s.st.GroupMembers(ctx, s.org, groupID)
+}
+
+// SetGroupMembers makes userIDs the group's whole member set in one transaction; every id must be
+// an active member (422, nothing changed, otherwise).
+func (s *Service) SetGroupMembers(ctx context.Context, groupID string, userIDs []string) ([]contract.Member, error) {
+	return s.st.ReplaceGroupMembers(ctx, s.org, groupID, userIDs)
 }
 
 // RemoveGroupMember takes a user out of a group.

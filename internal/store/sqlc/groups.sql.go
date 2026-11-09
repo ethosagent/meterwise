@@ -28,6 +28,24 @@ func (q *Queries) AddGroupUser(ctx context.Context, arg AddGroupUserParams) erro
 	return err
 }
 
+const addGroupUsers = `-- name: AddGroupUsers :exec
+INSERT INTO group_users (group_id, user_id, org_id)
+SELECT $1::text::uuid, u, $2::text::uuid
+FROM unnest($3::text[]::uuid[]) AS u
+ON CONFLICT DO NOTHING
+`
+
+type AddGroupUsersParams struct {
+	GroupID string
+	OrgID   string
+	UserIds []string
+}
+
+func (q *Queries) AddGroupUsers(ctx context.Context, arg AddGroupUsersParams) error {
+	_, err := q.db.Exec(ctx, addGroupUsers, arg.GroupID, arg.OrgID, arg.UserIds)
+	return err
+}
+
 const attachGroupWorkspace = `-- name: AttachGroupWorkspace :execrows
 INSERT INTO group_workspaces (group_id, workspace_id, org_id)
 VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid)
@@ -96,6 +114,24 @@ type DeleteGroupGrantsOnWorkspaceParams struct {
 
 func (q *Queries) DeleteGroupGrantsOnWorkspace(ctx context.Context, arg DeleteGroupGrantsOnWorkspaceParams) error {
 	_, err := q.db.Exec(ctx, deleteGroupGrantsOnWorkspace, arg.OrgID, arg.GroupID, arg.WorkspaceID)
+	return err
+}
+
+const deleteGroupUsersExcept = `-- name: DeleteGroupUsersExcept :exec
+DELETE FROM group_users
+WHERE org_id = $1::text::uuid AND group_id = $2::text::uuid
+  AND NOT (user_id = ANY($3::text[]::uuid[]))
+`
+
+type DeleteGroupUsersExceptParams struct {
+	OrgID   string
+	GroupID string
+	UserIds []string
+}
+
+// Drops every member of the group that is not in user_ids (an empty list drops them all).
+func (q *Queries) DeleteGroupUsersExcept(ctx context.Context, arg DeleteGroupUsersExceptParams) error {
+	_, err := q.db.Exec(ctx, deleteGroupUsersExcept, arg.OrgID, arg.GroupID, arg.UserIds)
 	return err
 }
 
@@ -460,6 +496,39 @@ func (q *Queries) ListGroups(ctx context.Context, orgID string) ([]ListGroupsRow
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockActiveMembershipsShared = `-- name: LockActiveMembershipsShared :many
+SELECT user_id::text AS user_id FROM memberships
+WHERE org_id = $1::text::uuid AND status = 'active' AND user_id = ANY($2::text[]::uuid[])
+FOR SHARE
+`
+
+type LockActiveMembershipsSharedParams struct {
+	OrgID   string
+	UserIds []string
+}
+
+// LockActiveMembershipShared for a list: the ids that are active members, rows held so a
+// concurrent removal waits for the statement that relies on them.
+func (q *Queries) LockActiveMembershipsShared(ctx context.Context, arg LockActiveMembershipsSharedParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, lockActiveMembershipsShared, arg.OrgID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var user_id string
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

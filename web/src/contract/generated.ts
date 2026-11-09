@@ -206,6 +206,10 @@ export interface AddGroupMemberRequest {
   userId: string;
 }
 
+export interface ReplaceGroupMembersRequest {
+  userIds: string[];
+}
+
 export interface RouteSpec {
   method: string;
   pattern: string;
@@ -224,6 +228,7 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "PATCH", pattern: "/api/groups/{id}", permission: "admin", public: false },
   { method: "GET", pattern: "/api/groups/{id}/members", permission: "member:read", public: false },
   { method: "POST", pattern: "/api/groups/{id}/members", permission: "admin", public: false },
+  { method: "PUT", pattern: "/api/groups/{id}/members", permission: "admin", public: false },
   { method: "DELETE", pattern: "/api/groups/{id}/members/{userId}", permission: "admin", public: false },
   { method: "GET", pattern: "/api/groups/{id}/permissions", permission: "member:read", public: false },
   { method: "PUT", pattern: "/api/groups/{id}/permissions", permission: "admin", public: false },

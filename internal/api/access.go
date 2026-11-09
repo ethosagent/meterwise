@@ -21,6 +21,7 @@ type Access interface {
 	GroupMembers(ctx context.Context, groupID string) ([]contract.Member, error)
 	AddGroupMember(ctx context.Context, groupID, userID string) ([]contract.Member, error)
 	RemoveGroupMember(ctx context.Context, groupID, userID string) error
+	SetGroupMembers(ctx context.Context, groupID string, userIDs []string) ([]contract.Member, error)
 	OrgDefaults(ctx context.Context) ([]contract.Grant, error)
 	SetOrgDefaults(ctx context.Context, grants []contract.Grant) ([]contract.Grant, error)
 }
@@ -71,6 +72,11 @@ func (s *server) groupMembers(c Call, _ none) (contract.MemberList, error) {
 
 func (s *server) addGroupMember(c Call, req contract.AddGroupMemberRequest) (contract.MemberList, error) {
 	list, err := s.Access.AddGroupMember(c.Ctx, c.Path("id"), req.UserID)
+	return contract.MemberList{Items: list}, err
+}
+
+func (s *server) setGroupMembers(c Call, req contract.ReplaceGroupMembersRequest) (contract.MemberList, error) {
+	list, err := s.Access.SetGroupMembers(c.Ctx, c.Path("id"), req.UserIDs)
 	return contract.MemberList{Items: list}, err
 }
 

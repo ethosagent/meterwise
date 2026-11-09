@@ -218,6 +218,11 @@ type AddGroupMemberRequest struct {
 	UserID string `json:"userId"`
 }
 
+// ReplaceGroupMembersRequest is the PUT /api/groups/{id}/members body: the group's whole member set.
+type ReplaceGroupMembersRequest struct {
+	UserIDs []string `json:"userIds"`
+}
+
 // DTO is a named API type; the generators walk its fields by reflection.
 type DTO struct {
 	Name string
@@ -255,5 +260,6 @@ func DTOs() []DTO {
 		{"GroupRequest", reflect.TypeFor[GroupRequest]()},
 		{"AttachWorkspaceRequest", reflect.TypeFor[AttachWorkspaceRequest]()},
 		{"AddGroupMemberRequest", reflect.TypeFor[AddGroupMemberRequest]()},
+		{"ReplaceGroupMembersRequest", reflect.TypeFor[ReplaceGroupMembersRequest]()},
 	}
 }

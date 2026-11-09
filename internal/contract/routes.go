@@ -89,6 +89,7 @@ var routes = []Route{
 	{Method: "DELETE", Pattern: "/api/groups/{id}/workspaces/{wsId}", Permission: PermAdmin, Summary: "Detach a group from a workspace and drop its grants there", Status: 204},
 	{Method: "GET", Pattern: "/api/groups/{id}/members", Permission: PermMemberRead, Summary: "A group's members", Response: "MemberList"},
 	{Method: "POST", Pattern: "/api/groups/{id}/members", Permission: PermAdmin, Summary: "Add an active member to a group; idempotent", Request: "AddGroupMemberRequest", Response: "MemberList"},
+	{Method: "PUT", Pattern: "/api/groups/{id}/members", Permission: PermAdmin, Summary: "Replace a group's member set in one transaction; 422 unless every id is an active member", Request: "ReplaceGroupMembersRequest", Response: "MemberList"},
 	{Method: "DELETE", Pattern: "/api/groups/{id}/members/{userId}", Permission: PermAdmin, Summary: "Remove a member from a group", Status: 204},
 	{Method: "GET", Pattern: "/api/organization/permissions", Permission: PermMemberRead, Summary: "The org defaults every member gets", Response: "GrantList"},
 	{Method: "PUT", Pattern: "/api/organization/permissions", Permission: PermAdmin, Summary: "Replace the org defaults in one transaction", Request: "GrantList", Response: "GrantList"},

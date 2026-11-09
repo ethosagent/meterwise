@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -269,4 +270,42 @@ func newGrantColumns(grants []contract.Grant) grantColumns {
 		c.workspaceIDs[i], c.resourceTypes[i], c.actions[i] = g.WorkspaceOrEmpty(), g.ResourceType, g.Action
 	}
 	return c
+}
+
+// ReplaceGroupMembers makes userIDs the group's whole member set in one transaction and returns
+// it. Every id must be an active member (CodeValidationFailed, nothing changed, otherwise); an
+// unknown group is CodeNotFound. Duplicates collapse, and an empty list empties the group.
+func (s *Store) ReplaceGroupMembers(ctx context.Context, orgID, groupID string, userIDs []string) ([]contract.Member, error) {
+	if !validID(groupID) {
+		return nil, errNotFound
+	}
+	notMember := contract.NewError(contract.CodeValidationFailed, "request validation failed", "userIds: every id must be an active member")
+	ids := make([]string, 0, len(userIDs))
+	seen := map[string]bool{}
+	for _, id := range userIDs {
+		if !validID(id) {
+			return nil, notMember
+		}
+		if id = strings.ToLower(id); !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	err := s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
+		active, err := q.LockActiveMembershipsShared(ctx, sqlc.LockActiveMembershipsSharedParams{OrgID: orgID, UserIds: ids})
+		if err != nil {
+			return err
+		}
+		if len(active) != len(ids) {
+			return notMember
+		}
+		if err := q.DeleteGroupUsersExcept(ctx, sqlc.DeleteGroupUsersExceptParams{OrgID: orgID, GroupID: groupID, UserIds: ids}); err != nil {
+			return err
+		}
+		return q.AddGroupUsers(ctx, sqlc.AddGroupUsersParams{OrgID: orgID, GroupID: groupID, UserIds: ids})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GroupMembers(ctx, orgID, groupID)
 }

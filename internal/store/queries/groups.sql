@@ -136,3 +136,22 @@ DELETE FROM group_users WHERE org_id = sqlc.arg(org_id)::text::uuid AND user_id 
 DELETE FROM group_users
 WHERE org_id = sqlc.arg(org_id)::text::uuid
   AND user_id IN (SELECT id FROM users WHERE org_id = sqlc.arg(org_id)::text::uuid AND clerk_user_id = sqlc.arg(clerk_user_id));
+
+-- name: LockActiveMembershipsShared :many
+-- LockActiveMembershipShared for a list: the ids that are active members, rows held so a
+-- concurrent removal waits for the statement that relies on them.
+SELECT user_id::text AS user_id FROM memberships
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND status = 'active' AND user_id = ANY(sqlc.arg(user_ids)::text[]::uuid[])
+FOR SHARE;
+
+-- name: DeleteGroupUsersExcept :exec
+-- Drops every member of the group that is not in user_ids (an empty list drops them all).
+DELETE FROM group_users
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND group_id = sqlc.arg(group_id)::text::uuid
+  AND NOT (user_id = ANY(sqlc.arg(user_ids)::text[]::uuid[]));
+
+-- name: AddGroupUsers :exec
+INSERT INTO group_users (group_id, user_id, org_id)
+SELECT sqlc.arg(group_id)::text::uuid, u, sqlc.arg(org_id)::text::uuid
+FROM unnest(sqlc.arg(user_ids)::text[]::uuid[]) AS u
+ON CONFLICT DO NOTHING;

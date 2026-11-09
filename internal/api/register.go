@@ -34,6 +34,7 @@ func (s *server) registerAccess() {
 	register(s, "DELETE", "/api/groups/{id}/workspaces/{wsId}", s.detachWorkspace)
 	register(s, "GET", "/api/groups/{id}/members", s.groupMembers)
 	register(s, "POST", "/api/groups/{id}/members", s.addGroupMember)
+	register(s, "PUT", "/api/groups/{id}/members", s.setGroupMembers)
 	register(s, "DELETE", "/api/groups/{id}/members/{userId}", s.removeGroupMember)
 	register(s, "GET", "/api/organization/permissions", s.orgDefaults)
 	register(s, "PUT", "/api/organization/permissions", s.setOrgDefaults)

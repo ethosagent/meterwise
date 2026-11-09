@@ -446,6 +446,20 @@
         "required": [],
         "type": "object"
       },
+      "ReplaceGroupMembersRequest": {
+        "properties": {
+          "userIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "userIds"
+        ],
+        "type": "object"
+      },
       "SwitchWorkspaceResponse": {
         "properties": {
           "activeWorkspaceId": {
@@ -878,6 +892,48 @@
           }
         ],
         "summary": "Add an active member to a group; idempotent",
+        "x-permission": "admin"
+      },
+      "put": {
+        "operationId": "putApiGroupsIdMembers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceGroupMembersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Replace a group's member set in one transaction; 422 unless every id is an active member",
         "x-permission": "admin"
       }
     },
