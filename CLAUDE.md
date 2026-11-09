@@ -34,12 +34,14 @@ failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when 
 
 | Path | Role |
 |---|---|
-| `cmd/meterwised` | Binary and subcommands (`serve`, `config check`, `migrate [up\|status]`, `bootstrap-admin` (Plan 02), `version`; all take `-json`); OTel SDK wiring in `telemetry.go` |
+| `cmd/meterwised` | Binary and subcommands (`serve`, `config check`, `migrate [up\|status]`, `bootstrap-admin --email`, `version`; all take `-json`); OTel SDK wiring in `telemetry.go` |
 | `cmd/gen` | Generators and the migration lint behind the `generated` and `migrate` gates |
+| `cmd/clerk-replay` | Signs the committed Clerk webhook fixtures and posts them to a running server (verification ON) |
 | `internal/contract/` | Kernel: error registry, ports, route-to-permission table, DTOs, `MicroUSD` (imports stdlib only) |
 | `internal/api` | Control plane: mux from the route table, middleware chain (request id, log, recover, OTel, `PrincipalResolver`), typed errors, static web |
 | `internal/dataplane` | `New(cfg, Deps)` builds the embedded tollgate; plans 04-06 replace `Deps` fields (auth, resolver, admission, hooks, sink) |
-| `internal/{ledger,history,monitors,savings,identity,tenancy,access,wsauth,audit}` | Feature packages, added by plans 02-07 along the layers in `ARCHITECTURE.md` §3 |
+| `internal/identity` (+`clerkmock`), `internal/tenancy` | Clerk adapter and its twin; the one org, members, invitations, workspaces, cached `WorkspaceDirectory` (Plan 02) |
+| `internal/{ledger,history,monitors,savings,access,wsauth,audit}` | Feature packages, added by plans 03-07 along the layers in `ARCHITECTURE.md` §3 |
 | `internal/config` | Env to `Config` (`DATABASE_URL`, `LISTEN_*`, `APP_NAME`, `OTEL_*`, ...); lists every problem at once |
 | `internal/store` | pgx pool, goose (`Migrate`, embedded `migrations/`), sqlc (`queries/` to `sqlc/`), `OrgID()`, `pgtest` |
 | `internal/nonet` | Test guard: no external network |

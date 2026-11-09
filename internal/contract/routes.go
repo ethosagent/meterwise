@@ -6,9 +6,28 @@ import "sort"
 // Public set means no credential is required; any other route must name one.
 type Permission string
 
-// PermSelf is held by every authenticated principal and covers the caller's own
-// profile data only; Plan 03 maps it into the RBAC taxonomy.
-const PermSelf Permission = "self"
+// The permissions of Plan 02; Plan 03 maps them into the RBAC taxonomy.
+const (
+	// PermSelf is held by every authenticated user, member or not, and covers the
+	// caller's own profile data and the sign-up handshake only.
+	PermSelf Permission = "self"
+	// PermMember needs an active membership (role member or admin).
+	PermMember Permission = "member"
+	// PermAdmin needs an active membership with role admin.
+	PermAdmin Permission = "admin"
+)
+
+// Allows is the one role check of the gateway: it reports whether a principal of
+// role may use a route that needs p. PermSelf is decided before a role exists.
+func Allows(role Role, p Permission) bool {
+	switch p {
+	case PermSelf, PermMember:
+		return role == RoleMember || role == RoleAdmin
+	case PermAdmin:
+		return role == RoleAdmin
+	}
+	return false
+}
 
 // Route is one row of the route-to-permission table. The table is the single
 // source for the gateway middleware, openapi.json and the web twin; a handler
@@ -20,7 +39,8 @@ type Route struct {
 	Public     bool       `json:"public"`
 	Summary    string     `json:"summary"`
 	Request    string     `json:"request,omitempty"` // DTO name of the JSON body, if any
-	Response   string     `json:"response"`          // DTO name from DTOs()
+	Response   string     `json:"response"`          // DTO name from DTOs(); empty for a 204
+	Status     int        `json:"status,omitempty"`  // success status; 200 when zero
 }
 
 var routes = []Route{
@@ -28,6 +48,18 @@ var routes = []Route{
 	{Method: "GET", Pattern: "/api/config", Public: true, Summary: "App name and public proxy host for the shell", Response: "AppConfig"},
 	{Method: "GET", Pattern: "/api/me/preferences", Permission: PermSelf, Summary: "Read the caller's UI preferences", Response: "Preferences"},
 	{Method: "PATCH", Pattern: "/api/me/preferences", Permission: PermSelf, Summary: "Change the caller's UI preferences", Request: "PreferencesPatch", Response: "Preferences"},
+	{Method: "GET", Pattern: "/api/me", Permission: PermSelf, Summary: "The caller, role, active workspace and preferences; 403 not_invited without a membership", Response: "Me"},
+	{Method: "POST", Pattern: "/api/auth/complete-signup", Permission: PermSelf, Summary: "Turn a pending invitation for the caller's verified email into a membership", Response: "Me"},
+	{Method: "GET", Pattern: "/api/workspaces", Permission: PermMember, Summary: "List the organization's workspaces", Response: "WorkspaceList"},
+	{Method: "POST", Pattern: "/api/workspaces", Permission: PermMember, Summary: "Create a workspace and its proxy URL", Request: "CreateWorkspaceRequest", Response: "Workspace", Status: 201},
+	{Method: "PATCH", Pattern: "/api/workspaces/{id}", Permission: PermMember, Summary: "Rename a workspace or change its settings", Request: "UpdateWorkspaceRequest", Response: "Workspace"},
+	{Method: "DELETE", Pattern: "/api/workspaces/{id}", Permission: PermMember, Summary: "Delete a workspace (never the default)", Status: 204},
+	{Method: "POST", Pattern: "/api/workspaces/{id}/switch", Permission: PermMember, Summary: "Make a workspace the caller's active one", Response: "SwitchWorkspaceResponse"},
+	{Method: "GET", Pattern: "/api/invitations", Permission: PermAdmin, Summary: "List invitations", Response: "InvitationList"},
+	{Method: "POST", Pattern: "/api/invitations", Permission: PermAdmin, Summary: "Invite an email into the organization", Request: "CreateInvitationRequest", Response: "Invitation", Status: 201},
+	{Method: "POST", Pattern: "/api/invitations/{id}/resend", Permission: PermAdmin, Summary: "Replace a pending invitation with a fresh one", Response: "Invitation"},
+	{Method: "DELETE", Pattern: "/api/invitations/{id}", Permission: PermAdmin, Summary: "Revoke an invitation", Status: 204},
+	{Method: "POST", Pattern: "/api/webhooks/clerk", Public: true, Summary: "Clerk user webhook; authenticated by its Svix signature, not a bearer token", Status: 204},
 	{Method: "GET", Pattern: "/api/v1/version", Public: true, Summary: "Build version", Response: "Version"},
 }
 

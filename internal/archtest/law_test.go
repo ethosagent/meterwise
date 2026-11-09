@@ -57,6 +57,7 @@ var thirdParty = map[string][]string{
 	"github.com/pressly/goose":      {"store"},
 	"github.com/go-chi/chi":         {"api"},
 	"github.com/clerk/clerk-sdk-go": {"identity"},
+	"github.com/svix/svix-webhooks": {"identity"},
 	"go.opentelemetry.io/otel":      {"dataplane", "api", "cmd"},
 }
 

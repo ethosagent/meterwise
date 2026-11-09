@@ -43,7 +43,7 @@ func commands() []command {
 	return []command{
 		{"serve", "run the proxy, the control-plane API and the web app", cmdServe},
 		{"config", "config check: validate the environment and print the effective config", cmdConfig},
-		{"bootstrap-admin", "seed the first admin (needs the store)", cmdUnavailable("bootstrap-admin")},
+		{"bootstrap-admin", "bootstrap-admin --email <address>: invite the first admin", cmdBootstrapAdmin},
 		{"migrate", "migrate [up|status]: apply or list database migrations", cmdMigrate},
 		{"version", "print the build version", cmdVersion},
 	}

@@ -62,6 +62,78 @@ type PreferencesPatch struct {
 	ReducedMotion *bool  `json:"reducedMotion,omitempty"`
 }
 
+// MeUser is the user part of Me.
+type MeUser struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatarUrl"`
+}
+
+// Me is the GET /api/me and POST /api/auth/complete-signup response.
+type Me struct {
+	User              MeUser      `json:"user"`
+	OrgID             string      `json:"orgId"`
+	Role              Role        `json:"role"`
+	ActiveWorkspaceID string      `json:"activeWorkspaceId"`
+	Preferences       Preferences `json:"preferences"`
+}
+
+// WorkspaceView is the Workspace API type: ProxyURL is
+// https://{proxyPublicHost}/w/{publicId}.
+type WorkspaceView struct {
+	ID        string         `json:"id"`
+	PublicID  string         `json:"publicId"`
+	Name      string         `json:"name"`
+	IsDefault bool           `json:"isDefault"`
+	ProxyURL  string         `json:"proxyUrl"`
+	Settings  map[string]any `json:"settings"`
+	CreatedAt string         `json:"createdAt"`
+}
+
+// WorkspaceList is the GET /api/workspaces response.
+type WorkspaceList struct {
+	Items []WorkspaceView `json:"items"`
+}
+
+// CreateWorkspaceRequest is the POST /api/workspaces body.
+type CreateWorkspaceRequest struct {
+	Name string `json:"name"`
+}
+
+// UpdateWorkspaceRequest is the PATCH /api/workspaces/{id} body: only fields sent change.
+type UpdateWorkspaceRequest struct {
+	Name     *string        `json:"name,omitempty"`
+	Settings map[string]any `json:"settings,omitempty"`
+}
+
+// SwitchWorkspaceResponse is the POST /api/workspaces/{id}/switch response.
+type SwitchWorkspaceResponse struct {
+	ActiveWorkspaceID string `json:"activeWorkspaceId"`
+}
+
+// InvitationView is the Invitation API type.
+type InvitationView struct {
+	ID        string           `json:"id"`
+	Email     string           `json:"email"`
+	Role      Role             `json:"role"`
+	Status    InvitationStatus `json:"status"`
+	InvitedBy string           `json:"invitedBy"`
+	ExpiresAt string           `json:"expiresAt"`
+	CreatedAt string           `json:"createdAt"`
+}
+
+// InvitationList is the GET /api/invitations response.
+type InvitationList struct {
+	Items []InvitationView `json:"items"`
+}
+
+// CreateInvitationRequest is the POST /api/invitations body.
+type CreateInvitationRequest struct {
+	Email string `json:"email"`
+	Role  Role   `json:"role"`
+}
+
 // DTO is a named API type; the generators walk its fields by reflection.
 type DTO struct {
 	Name string
@@ -78,5 +150,15 @@ func DTOs() []DTO {
 		{"AppConfig", reflect.TypeFor[AppConfig]()},
 		{"Preferences", reflect.TypeFor[Preferences]()},
 		{"PreferencesPatch", reflect.TypeFor[PreferencesPatch]()},
+		{"Me", reflect.TypeFor[Me]()},
+		{"MeUser", reflect.TypeFor[MeUser]()},
+		{"Workspace", reflect.TypeFor[WorkspaceView]()},
+		{"WorkspaceList", reflect.TypeFor[WorkspaceList]()},
+		{"CreateWorkspaceRequest", reflect.TypeFor[CreateWorkspaceRequest]()},
+		{"UpdateWorkspaceRequest", reflect.TypeFor[UpdateWorkspaceRequest]()},
+		{"SwitchWorkspaceResponse", reflect.TypeFor[SwitchWorkspaceResponse]()},
+		{"Invitation", reflect.TypeFor[InvitationView]()},
+		{"InvitationList", reflect.TypeFor[InvitationList]()},
+		{"CreateInvitationRequest", reflect.TypeFor[CreateInvitationRequest]()},
 	}
 }

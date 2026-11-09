@@ -33,22 +33,13 @@ func cmdConfig(_ context.Context, e *env, args []string) int {
 		return fail(e, asJSON, contract.NewError(contract.CodeInvalidRequest, "usage: meterwised config check [-json]"), exitUsage)
 	}
 	cfg, err := config.Load(e.lookup)
+	if err == nil {
+		err = cfg.CheckServe()
+	}
 	if err != nil {
 		return fail(e, asJSON, contract.AsError(err), exitFailed)
 	}
 	return ok(e, asJSON, cfg.Redacted())
-}
-
-// cmdUnavailable answers the typed not_available error for a subcommand whose
-// dependencies (the store) are not part of this build.
-func cmdUnavailable(name string) func(context.Context, *env, []string) int {
-	return func(_ context.Context, e *env, args []string) int {
-		asJSON, _, code := parseFlags(e, name, args)
-		if code != exitOK {
-			return code
-		}
-		return fail(e, asJSON, contract.NewError(contract.CodeNotAvailable, name+" needs the store package, which this build does not include"), exitFailed)
-	}
 }
 
 // cmdMigrate applies pending migrations (default, or "up") or lists them ("status").
@@ -75,8 +66,8 @@ func cmdMigrate(ctx context.Context, e *env, args []string) int {
 		ms, err = store.Status(ctx, cfg.DatabaseURL)
 	}
 	if err != nil {
-		// The detail goes to the log with the DSN scrubbed; the typed error carries no connection details.
-		slog.New(slog.NewJSONHandler(e.stderr, nil)).Error("migrate", "action", action, "err", scrubDSN(err.Error(), cfg.DatabaseURL))
+		// The store returns a fixed message and a class, never driver text, so the log line is safe as is.
+		slog.New(slog.NewJSONHandler(e.stderr, nil)).Error("migrate", "action", action, "class", string(store.ClassOf(err)), "err", err.Error())
 		return fail(e, asJSON, contract.NewError(contract.CodeUnavailable, "migrate "+action+" failed; see the log for the cause"), exitFailed)
 	}
 	if ms == nil {

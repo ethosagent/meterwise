@@ -1,0 +1,1 @@
+{"data":{"id":"user_2fixtureAAA","object":"user","first_name":"Ada","last_name":"Lovelace","image_url":"https://img.example.test/ada.png","primary_email_address_id":"idn_1","email_addresses":[{"id":"idn_1","email_address":"Ada@Example.test","verification":{"status":"verified"}}]},"object":"event","type":"user.created"}

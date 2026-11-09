@@ -159,7 +159,10 @@ func TestRoutesAreDocumentedAndAuthorised(t *testing.T) {
 		if !r.Public && r.Permission == "" {
 			t.Errorf("%s %s: non-public route without a permission", r.Method, r.Pattern)
 		}
-		if !names[r.Response] {
+		if r.Response == "" && r.Status != http.StatusNoContent {
+			t.Errorf("%s %s: empty response DTO is only for a 204", r.Method, r.Pattern)
+		}
+		if r.Response != "" && !names[r.Response] {
 			t.Errorf("%s %s: response DTO %q not registered", r.Method, r.Pattern, r.Response)
 		}
 	}

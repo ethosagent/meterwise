@@ -14,10 +14,33 @@ const (
 	RoleMember Role = "member"
 )
 
-// Identity is what an IdentityProvider proves about a bearer token.
+// Roles lists the valid roles in a fixed order.
+func Roles() []Role { return []Role{RoleAdmin, RoleMember} }
+
+// InvitationStatuses lists the four statuses in a fixed order.
+func InvitationStatuses() []InvitationStatus {
+	return []InvitationStatus{InvitationPending, InvitationAccepted, InvitationRevoked, InvitationExpired}
+}
+
+// Identity is what an IdentityProvider proves about a bearer token. Email and
+// EmailVerified come from the session token's claims; an invitation is matched
+// only when EmailVerified is true.
 type Identity struct {
-	Subject string // provider-scoped stable user id
-	Email   string
+	Subject       string // provider-scoped stable user id
+	Email         string
+	EmailVerified bool
+	Name          string
+	AvatarURL     string
+}
+
+// User is the local mirror of an identity (table users).
+type User struct {
+	ID          string
+	ClerkUserID string
+	Email       string
+	Name        string
+	AvatarURL   string
+	Deleted     bool
 }
 
 // Principal is an authenticated, authorised actor inside the one organization.
@@ -28,6 +51,15 @@ type Principal struct {
 	Role   Role
 }
 
+// Session is what the gateway learns from one request: the mirrored user, and
+// the principal when the user holds an active membership (Member).
+type Session struct {
+	Identity  Identity
+	User      User
+	Member    bool
+	Principal Principal
+}
+
 // Org is the (single, seeded) organization.
 type Org struct {
 	ID   string
@@ -35,12 +67,54 @@ type Org struct {
 }
 
 // Workspace is the unit of proxying (decision D5). PublicID is the unguessable
-// URL id (D6); it is resolved only through WorkspaceDirectory.
+// URL id (D6). Retired is true when the id answered by a lookup was retired by a
+// URL reset and is still inside its grace window; PublicID is then the retired id.
 type Workspace struct {
-	ID       string
-	OrgID    string
-	Name     string
-	PublicID string
+	ID        string
+	OrgID     string
+	Name      string
+	PublicID  string
+	IsDefault bool
+	Settings  map[string]any
+	CreatedAt time.Time
+	Retired   bool
+}
+
+// InvitationStatus is the derived state of an invitation.
+type InvitationStatus string
+
+// The four invitation states.
+const (
+	InvitationPending  InvitationStatus = "pending"
+	InvitationAccepted InvitationStatus = "accepted"
+	InvitationRevoked  InvitationStatus = "revoked"
+	InvitationExpired  InvitationStatus = "expired"
+)
+
+// Invitation is an admin's invitation of one email into the org.
+type Invitation struct {
+	ID                string
+	Email             string // normalised: trimmed, lower case
+	Role              Role
+	ClerkInvitationID string
+	InvitedBy         string // the inviter's email; empty for the CLI bootstrap
+	ExpiresAt         time.Time
+	CreatedAt         time.Time
+	AcceptedAt        *time.Time
+	RevokedAt         *time.Time
+}
+
+// StatusAt derives the status at now.
+func (i Invitation) StatusAt(now time.Time) InvitationStatus {
+	switch {
+	case i.AcceptedAt != nil:
+		return InvitationAccepted
+	case i.RevokedAt != nil:
+		return InvitationRevoked
+	case !i.ExpiresAt.After(now):
+		return InvitationExpired
+	}
+	return InvitationPending
 }
 
 // AuditEvent is one append-only audit record.
@@ -60,14 +134,21 @@ type Price struct {
 	OutputPerMTokens MicroUSD
 }
 
-// IdentityProvider verifies a bearer token (decision D3; Clerk adapter later).
+// IdentityProvider verifies bearer tokens and manages provider-side invitations
+// (decision D3). Verify returns CodeUnauthenticated for any token it rejects.
 type IdentityProvider interface {
 	Verify(ctx context.Context, bearer string) (Identity, error)
+	// CreateInvitation asks the provider to email an invitation and returns its id.
+	CreateInvitation(ctx context.Context, email string) (string, error)
+	// RevokeInvitation withdraws a provider invitation; an unknown id is not an error.
+	RevokeInvitation(ctx context.Context, id string) error
 }
 
-// PrincipalResolver turns a verified Identity into a Principal of the org.
+// PrincipalResolver turns a verified Identity into a Session: it mirrors the
+// user (the lazy upsert) and attaches the principal for an active membership.
+// A soft-deleted user is CodeUnauthenticated.
 type PrincipalResolver interface {
-	Resolve(ctx context.Context, id Identity) (Principal, error)
+	Resolve(ctx context.Context, id Identity) (Session, error)
 }
 
 // OrgDirectory reads the single organization.
@@ -75,10 +156,12 @@ type OrgDirectory interface {
 	Org(ctx context.Context) (Org, error)
 }
 
-// WorkspaceDirectory resolves workspaces; PublicID lookups return CodeGone for
-// a retired id inside its grace window and CodeNotFound otherwise.
+// WorkspaceDirectory resolves workspaces for the data plane. ByPublicID answers
+// a retired id with Workspace.Retired set and an unknown one with CodeNotFound.
+// Lookups are cached for 30 seconds and busted on update and delete.
 type WorkspaceDirectory interface {
 	ByPublicID(ctx context.Context, publicID string) (Workspace, error)
+	ByID(ctx context.Context, id string) (Workspace, error)
 	List(ctx context.Context, p Principal) ([]Workspace, error)
 }
 

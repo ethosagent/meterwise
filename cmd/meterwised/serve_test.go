@@ -24,6 +24,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
+	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
 )
 
@@ -125,6 +126,17 @@ func get(t *testing.T, u string) (int, string) {
 	return resp.StatusCode, string(b)
 }
 
+// migratedDB is a throwaway database with every migration applied: boot prepares
+// the default workspace, so it needs the schema.
+func migratedDB(t *testing.T) string {
+	t.Helper()
+	dsn := pgtest.NewDatabase(t)
+	if _, err := store.Migrate(context.Background(), dsn); err != nil {
+		t.Fatal(err)
+	}
+	return dsn
+}
+
 func baseEnv(t *testing.T, dsn string) map[string]string {
 	t.Helper()
 	web := t.TempDir()
@@ -138,7 +150,7 @@ func baseEnv(t *testing.T, dsn string) map[string]string {
 }
 
 func TestServeBootsAllThreeListenersAndStreamsThroughTollgate(t *testing.T) {
-	dsn := pgtest.NewDatabase(t)
+	dsn := migratedDB(t)
 	col := newCollector(t)
 	const fixture = "openai/chat-stream-text"
 	up := testkit.NewFakeUpstream(t, testkit.Options{ChunkDelay: 30 * time.Millisecond})
@@ -193,7 +205,7 @@ func TestServeBootsAllThreeListenersAndStreamsThroughTollgate(t *testing.T) {
 }
 
 func TestServeStartsWithoutTelemetryOrWebBuild(t *testing.T) {
-	kv := baseEnv(t, pgtest.NewDatabase(t))
+	kv := baseEnv(t, migratedDB(t))
 	kv["WEB_DIR"] = filepath.Join(t.TempDir(), "missing")
 	addrs, stop := startServe(t, kv, dataplane.Deps{})
 	code, body := get(t, "http://"+addrs["api"]+"/")
@@ -207,14 +219,23 @@ func TestServeStartsWithoutTelemetryOrWebBuild(t *testing.T) {
 }
 
 func TestServeFailsTypedWhenTheDatabaseIsDown(t *testing.T) {
-	kv := baseEnv(t, "postgres://u:topsecret@127.0.0.1:1/db?sslmode=disable")
-	code, out, errb := exec(t, kv, "serve", "-json")
-	r := decode(t, out)
-	if code != 1 || r.Error.Code != contract.CodeUnavailable {
-		t.Fatalf("%d %s", code, out)
-	}
-	if strings.Contains(out+errb, "topsecret") {
-		t.Fatal("the password leaked")
+	for _, dsn := range []string{
+		"postgres://u:topsecret@127.0.0.1:1/db?sslmode=disable",
+		"postgres://u:top%73ecret%2F@127.0.0.1:1/db?sslmode=disable",
+		"postgres://u@127.0.0.1:1/db?password=topsecret&sslmode=disable",
+		"postgres://u@127.0.0.1:1/db?password=top%73ecret",
+	} {
+		kv := baseEnv(t, dsn)
+		code, out, errb := exec(t, kv, "serve", "-json")
+		r := decode(t, out)
+		if code != 1 || r.Error.Code != contract.CodeUnavailable {
+			t.Fatalf("%s: %d %s", dsn, code, out)
+		}
+		for _, leak := range []string{"topsecret", "top%73ecret", "topsecret%2F", "127.0.0.1"} {
+			if strings.Contains(out+errb, leak) {
+				t.Errorf("%s: %q leaked into the output or the log: %s | %s", dsn, leak, out, errb)
+			}
+		}
 	}
 }
 
@@ -227,7 +248,7 @@ func TestServeReportsEveryListenerThatCannotBind(t *testing.T) {
 		t.Cleanup(func() { _ = ln.Close() })
 		return ln.Addr().String()
 	}
-	kv := baseEnv(t, pgtest.NewDatabase(t))
+	kv := baseEnv(t, migratedDB(t))
 	kv["LISTEN_PROXY"], kv["LISTEN_API"] = taken(), taken()
 	code, out, _ := exec(t, kv, "serve", "-json")
 	r := decode(t, out)
@@ -260,66 +281,97 @@ func TestMigrateAppliesTheBaselineThenReportsNothingToDo(t *testing.T) {
 	}
 }
 
-// okResolver stands in for Plan 02's real resolver.
-type okResolver struct{}
-
-func (okResolver) Resolve(*http.Request) (contract.Principal, error) {
-	return contract.Principal{}, nil
-}
-
 func TestServeRefusesTheStubPrincipalOutsideDev(t *testing.T) {
-	for _, appEnv := range []string{"prod", "test", "", "unset"} {
-		kv := baseEnv(t, "postgres://u:p@127.0.0.1:1/none?sslmode=disable")
-		if appEnv != "unset" {
-			kv["APP_ENV"] = appEnv
-		} else {
-			delete(kv, "APP_ENV")
-		}
-		// The guard runs before the database is opened, so an unreachable DSN proves
-		// the refusal came first (otherwise the code would be "unavailable").
-		code, out, _ := exec(t, kv, "serve", "-json")
-		r := decode(t, out)
-		if code != 1 || r.Error.Code != contract.CodeConfigInvalid || !strings.Contains(r.Error.Message, "stub principal") {
-			t.Fatalf("APP_ENV=%s: %d %s", appEnv, code, out)
+	kv := baseEnv(t, "postgres://u:p@127.0.0.1:1/none?sslmode=disable")
+	kv["APP_ENV"] = "test"
+	// The guard runs before the database is opened, so an unreachable DSN proves
+	// the refusal came first (otherwise the code would be "unavailable").
+	code, out, _ := exec(t, kv, "serve", "-json")
+	r := decode(t, out)
+	if code != 1 || r.Error.Code != contract.CodeConfigInvalid || !strings.Contains(r.Error.Message, "non-stub principal resolver") {
+		t.Fatalf("%d %s", code, out)
+	}
+	// prod without Clerk is stopped earlier still, by the config check, which names every missing variable.
+	kv["APP_ENV"] = "prod"
+	code, out, _ = exec(t, kv, "serve", "-json")
+	r = decode(t, out)
+	if code != 1 || r.Error.Code != contract.CodeConfigInvalid || len(r.Error.Details) != 4 {
+		t.Fatalf("prod: %d %s", code, out)
+	}
+}
+
+func TestTheStubResolverCannotBeBuiltOutsideDev(t *testing.T) {
+	load := func(context.Context) (contract.Session, error) { return contract.Session{}, nil }
+	if _, err := api.NewStubPrincipalResolver("dev", load); err != nil {
+		t.Fatalf("dev refused: %v", err)
+	}
+	for _, appEnv := range []string{"prod", "test", "", "Dev", "development"} {
+		if r, err := api.NewStubPrincipalResolver(appEnv, load); err == nil || r != nil {
+			t.Errorf("APP_ENV=%q built the stub resolver", appEnv)
 		}
 	}
 }
 
-func TestRequireDevForStubAllowsDevAndARealResolver(t *testing.T) {
-	stub := api.StubPrincipalResolver{}
-	if err := requireDevForStub("dev", stub); err != nil {
-		t.Fatalf("dev stub refused: %v", err)
-	}
-	if err := requireDevForStub("prod", okResolver{}); err != nil {
-		t.Fatalf("real resolver refused in prod: %v", err)
-	}
-	if err := requireDevForStub("prod", stub); err == nil {
-		t.Fatal("stub allowed in prod")
-	}
-}
-
-func TestServeRefusesNoAuthOutsideDevIndependentlyOfThePrincipalGuard(t *testing.T) {
+func TestRequireDevForNoAuthRefusesEveryFormOfNoAuthOutsideDev(t *testing.T) {
+	var nilPtr *tollgate.NoAuth
+	forms := map[string]tollgate.Authenticator{"nil": nil, "value": tollgate.NoAuth{}, "pointer": &tollgate.NoAuth{}, "nil pointer": nilPtr}
 	for _, appEnv := range []string{"prod", "test", ""} {
-		if err := requireDevForNoAuth(appEnv, nil); err == nil || !strings.Contains(err.Message, "no authenticator") {
-			t.Errorf("nil auth allowed with APP_ENV=%q: %v", appEnv, err)
-		}
-		if err := requireDevForNoAuth(appEnv, tollgate.NoAuth{}); err == nil {
-			t.Errorf("NoAuth allowed with APP_ENV=%q", appEnv)
+		for name, auth := range forms {
+			if err := requireDevForNoAuth(appEnv, auth); err == nil || !strings.Contains(err.Message, "no authenticator") {
+				t.Errorf("%s NoAuth allowed with APP_ENV=%q: %v", name, appEnv, err)
+			}
 		}
 		if err := requireDevForNoAuth(appEnv, realAuth{}); err != nil {
 			t.Errorf("a real authenticator refused with APP_ENV=%q: %v", appEnv, err)
 		}
 	}
-	if err := requireDevForNoAuth("dev", nil); err != nil {
-		t.Errorf("dev with the default auth refused: %v", err)
-	}
-	// through boot: a non-dev env with a real principal resolver still stops on the proxy.
-	if err := requireDevForStub("prod", okResolver{}); err != nil {
-		t.Fatal(err)
+	for name, auth := range forms {
+		if err := requireDevForNoAuth("dev", auth); err != nil {
+			t.Errorf("dev with %s refused: %v", name, err)
+		}
 	}
 }
 
-// realAuth stands in for Plan 05's authenticator.
+// bootGuardConfig is a config whose DSN cannot connect: a guard refusal is a config_invalid
+// error, and a boot that gets past both guards fails later as unavailable. That tells the two apart.
+func bootGuardConfig(env string, clerk bool) config.Config {
+	cfg := config.Config{Env: env, DatabaseURL: "postgres://u:p@127.0.0.1:1/none?sslmode=disable", MaxWorkspaces: 5}
+	if clerk {
+		cfg.Clerk = config.Clerk{Issuer: "https://clerk.example.com", JWKSURL: "https://clerk.example.com/jwks", SecretKey: "sk_x", WebhookSecret: "whsec_ZGVtbw==", APIURL: config.DefaultClerkAPIURL}
+	}
+	return cfg
+}
+
+// Each production guard is asserted on its own through boot: removing either call from boot fails one of these.
+func TestBootGuardsAreIndependent(t *testing.T) {
+	var nilPtr *tollgate.NoAuth
+	tests := []struct {
+		name    string
+		cfg     config.Config
+		auth    tollgate.Authenticator
+		want    contract.Code
+		message string
+	}{
+		{"prod, real resolver, no proxy auth", bootGuardConfig("prod", true), nil, contract.CodeConfigInvalid, "no authenticator"},
+		{"prod, real resolver, NoAuth value", bootGuardConfig("prod", true), tollgate.NoAuth{}, contract.CodeConfigInvalid, "no authenticator"},
+		{"prod, real resolver, NoAuth pointer", bootGuardConfig("prod", true), &tollgate.NoAuth{}, contract.CodeConfigInvalid, "no authenticator"},
+		{"prod, real resolver, nil NoAuth pointer", bootGuardConfig("prod", true), nilPtr, contract.CodeConfigInvalid, "no authenticator"},
+		{"prod, no Clerk, real proxy auth", bootGuardConfig("prod", false), realAuth{}, contract.CodeConfigInvalid, "non-stub principal resolver"},
+		{"prod, no Clerk, no proxy auth", bootGuardConfig("prod", false), nil, contract.CodeConfigInvalid, "non-stub principal resolver"},
+		{"prod, real resolver, real proxy auth passes both guards", bootGuardConfig("prod", true), realAuth{}, contract.CodeUnavailable, ""},
+		{"dev, stub, NoAuth passes both guards", bootGuardConfig("dev", false), nil, contract.CodeUnavailable, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, cerr := boot(context.Background(), tc.cfg, slog.New(slog.NewJSONHandler(io.Discard, nil)), dataplane.Deps{Auth: tc.auth})
+			if cerr == nil || cerr.Code != tc.want || !strings.Contains(cerr.Message, tc.message) {
+				t.Fatalf("got %+v, want %s containing %q", cerr, tc.want, tc.message)
+			}
+		})
+	}
+}
+
+// realAuth stands in for a real proxy authenticator.
 type realAuth struct{ tollgate.Authenticator }
 
 func TestTelemetryBootFailureNamesTheCauseWithoutCredentials(t *testing.T) {

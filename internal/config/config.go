@@ -3,6 +3,7 @@ package config
 import (
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -24,6 +25,10 @@ const (
 	EnvClerkIssuer     = "CLERK_ISSUER"
 	EnvClerkJWKSURL    = "CLERK_JWKS_URL"
 	EnvClerkPubKey     = "CLERK_PUBLISHABLE_KEY"
+	EnvClerkSecretKey  = "CLERK_SECRET_KEY"
+	EnvClerkWebhookKey = "CLERK_WEBHOOK_SECRET"
+	EnvClerkAPIURL     = "CLERK_API_URL"
+	EnvAppURL          = "APP_URL"
 	EnvOTLPEndpoint    = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	EnvPrivacyMode     = "PRIVACY_MODE"
 	EnvMaxWorkspaces   = "MAX_WORKSPACES"
@@ -33,13 +38,20 @@ const (
 	EnvAppEnv          = "APP_ENV"
 )
 
-// Clerk holds the identity-provider settings Plan 02 consumes. Plan 01 only
-// validates their shape; none is required yet.
+// Clerk holds the identity-provider settings. Issuer, JWKSURL, SecretKey and
+// WebhookSecret are required when APP_ENV=prod; in dev they may all be unset,
+// which selects the dev-only principal resolver.
 type Clerk struct {
 	Issuer         string
 	JWKSURL        string
 	PublishableKey string
+	SecretKey      string // backend API key (invitations); secret, never displayed
+	WebhookSecret  string // Svix signing secret (whsec_...); secret, never displayed
+	APIURL         string // backend API base
 }
+
+// Configured reports whether the settings needed to verify tokens are present.
+func (c Clerk) Configured() bool { return c.Issuer != "" && c.JWKSURL != "" }
 
 // Config is the validated process configuration.
 type Config struct {
@@ -49,6 +61,7 @@ type Config struct {
 	ListenAdmin               string // tollgate /statusz and /metrics; keep private
 	ProxyPublicHost           string // host agents use to reach the proxy, shown in Setup
 	AppName                   string // brand shown by the shell
+	AppURL                    string // public URL of the web app; invitation emails land on AppURL/accept-invite
 	Clerk                     Clerk
 	OTLPEndpoint              string // empty: telemetry off
 	PrivacyMode               bool   // default true (decision D12)
@@ -66,6 +79,7 @@ const (
 	DefaultListenAdmin               = "127.0.0.1:9090"
 	DefaultProxyPublicHost           = "localhost:8080"
 	DefaultAppName                   = "Meterwise"
+	DefaultClerkAPIURL               = "https://api.clerk.com/v1"
 	DefaultWebDir                    = "web/dist"
 	DefaultLogLevel                  = "info"
 	DefaultEnv                       = "prod"
@@ -99,7 +113,11 @@ func Load(get Lookup) (Config, error) {
 			Issuer:         str(get, EnvClerkIssuer, ""),
 			JWKSURL:        str(get, EnvClerkJWKSURL, ""),
 			PublishableKey: str(get, EnvClerkPubKey, ""),
+			SecretKey:      str(get, EnvClerkSecretKey, ""),
+			WebhookSecret:  str(get, EnvClerkWebhookKey, ""),
+			APIURL:         strings.TrimRight(str(get, EnvClerkAPIURL, DefaultClerkAPIURL), "/"),
 		},
+		AppURL:       strings.TrimRight(str(get, EnvAppURL, ""), "/"),
 		OTLPEndpoint: str(get, EnvOTLPEndpoint, ""),
 		WebDir:       str(get, EnvWebDir, DefaultWebDir),
 		LogLevel:     strings.ToLower(str(get, EnvLogLevel, DefaultLogLevel)),
@@ -111,10 +129,10 @@ func Load(get Lookup) (Config, error) {
 
 	c.validateListeners(&p)
 	c.validateIdentity(&p)
-	if !oneOf(c.LogLevel, logLevels) {
+	if !slices.Contains(logLevels, c.LogLevel) {
 		p.add(EnvLogLevel, c.LogLevel+" is not one of "+strings.Join(logLevels, "|"))
 	}
-	if !oneOf(c.Env, envNames) {
+	if !slices.Contains(envNames, c.Env) {
 		p.add(EnvAppEnv, c.Env+" is not one of "+strings.Join(envNames, "|"))
 	}
 	if c.DatabaseURL == "" {
@@ -163,17 +181,43 @@ func (c Config) validateIdentity(p *problems) {
 	if c.Clerk.JWKSURL != "" && !hasScheme(c.Clerk.JWKSURL, "https") {
 		p.add(EnvClerkJWKSURL, "must be an https:// URL")
 	}
+	if !hasScheme(c.Clerk.APIURL, "https") {
+		p.add(EnvClerkAPIURL, "must be an https:// URL")
+	}
+	if c.AppURL != "" && !hasScheme(c.AppURL, "http", "https") {
+		p.add(EnvAppURL, "must be an http(s):// URL")
+	}
+}
+
+// CheckServe reports what only a serving process needs, so `migrate` and
+// `version` stay usable without identity settings: with APP_ENV=prod the Clerk
+// issuer, JWKS URL, secret key and webhook secret are all required. Outside prod
+// they may be unset, which selects the dev-only principal resolver (and boot
+// refuses that outside dev).
+func (c Config) CheckServe() error {
+	if c.Env != "prod" {
+		return nil
+	}
+	var p problems
+	for _, r := range []struct{ key, val string }{
+		{EnvClerkIssuer, c.Clerk.Issuer}, {EnvClerkJWKSURL, c.Clerk.JWKSURL},
+		{EnvClerkSecretKey, c.Clerk.SecretKey}, {EnvClerkWebhookKey, c.Clerk.WebhookSecret},
+	} {
+		if r.val == "" {
+			p.add(r.key, "required when "+EnvAppEnv+"=prod")
+		}
+	}
+	if len(p) > 0 {
+		return contract.NewError(contract.CodeConfigInvalid, "configuration is invalid", p...)
+	}
+	return nil
 }
 
 // Redacted returns the config as display-safe key/values: the database URL has
 // its password replaced, so `config check` output can be pasted in a ticket.
 func (c Config) Redacted() map[string]string {
-	db := c.DatabaseURL
-	if u, err := url.Parse(db); err == nil && u.User != nil {
-		db = u.Redacted()
-	}
 	return map[string]string{
-		EnvDatabaseURL:     db,
+		EnvDatabaseURL:     redactURL(c.DatabaseURL),
 		EnvListenProxy:     c.ListenProxy,
 		EnvListenAPI:       c.ListenAPI,
 		EnvListenAdmin:     c.ListenAdmin,
@@ -182,6 +226,10 @@ func (c Config) Redacted() map[string]string {
 		EnvClerkIssuer:     c.Clerk.Issuer,
 		EnvClerkJWKSURL:    c.Clerk.JWKSURL,
 		EnvClerkPubKey:     c.Clerk.PublishableKey,
+		EnvClerkSecretKey:  secretState(c.Clerk.SecretKey),
+		EnvClerkWebhookKey: secretState(c.Clerk.WebhookSecret),
+		EnvClerkAPIURL:     c.Clerk.APIURL,
+		EnvAppURL:          c.AppURL,
 		EnvOTLPEndpoint:    c.OTLPEndpoint,
 		EnvPrivacyMode:     strconv.FormatBool(c.PrivacyMode),
 		EnvMaxWorkspaces:   strconv.Itoa(c.MaxWorkspaces),
@@ -190,6 +238,41 @@ func (c Config) Redacted() map[string]string {
 		EnvLogLevel:        c.LogLevel,
 		EnvAppEnv:          c.Env,
 	}
+}
+
+// secretState shows whether a secret is set, never its value.
+func secretState(v string) string {
+	if v == "" {
+		return ""
+	}
+	return "<set>"
+}
+
+// redactURL masks everything in a URL that can carry a credential: the userinfo
+// password and any query value whose key looks like a secret (password,
+// sslpassword, passfile, token, secret, key). A URL that does not parse is not echoed.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<unparsable>"
+	}
+	if u.User != nil {
+		if _, has := u.User.Password(); has {
+			u.User = url.UserPassword(u.User.Username(), "xxxxx")
+		}
+	}
+	q := u.Query()
+	for k := range q {
+		lk := strings.ToLower(k)
+		for _, frag := range []string{"pass", "secret", "token", "key"} {
+			if strings.Contains(lk, frag) {
+				q.Set(k, "xxxxx")
+			}
+		}
+	}
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	return u.String()
 }
 
 func str(get Lookup, key, def string) string {
@@ -227,14 +310,5 @@ func positive(get Lookup, key string, def int, p *problems) int {
 
 func hasScheme(raw string, schemes ...string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && u.Host != "" && oneOf(u.Scheme, schemes)
-}
-
-func oneOf(v string, set []string) bool {
-	for _, s := range set {
-		if s == v {
-			return true
-		}
-	}
-	return false
+	return err == nil && u.Host != "" && slices.Contains(schemes, u.Scheme)
 }

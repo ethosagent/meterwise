@@ -2,3 +2,86 @@
 # Database schema
 
 One section per table, in creation order. Owner = the feature whose migration created it.
+
+## organizations
+
+Owner: `organizations` (created in `0002_organizations.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY` | 0002_organizations.sql |
+| `name` | `text NOT NULL CHECK (length(name) BETWEEN 1 AND 64)` | 0002_organizations.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0002_organizations.sql |
+
+## users
+
+Owner: `users` (created in `0003_users.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | 0003_users.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0003_users.sql |
+| `clerk_user_id` | `text NOT NULL UNIQUE` | 0003_users.sql |
+| `email` | `text NOT NULL DEFAULT ''` | 0003_users.sql |
+| `name` | `text NOT NULL DEFAULT ''` | 0003_users.sql |
+| `avatar_url` | `text NOT NULL DEFAULT ''` | 0003_users.sql |
+| `preferences` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0003_users.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0003_users.sql |
+| `deleted_at` | `timestamptz` | 0003_users.sql |
+
+## workspaces
+
+Owner: `workspaces` (created in `0004_workspaces.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | 0004_workspaces.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0004_workspaces.sql |
+| `public_id` | `text NOT NULL UNIQUE CHECK (public_id ~ '^[0-9A-Za-z]{22}$')` | 0004_workspaces.sql |
+| `name` | `text NOT NULL CHECK (length(name) BETWEEN 1 AND 80)` | 0004_workspaces.sql |
+| `is_default` | `boolean NOT NULL DEFAULT false` | 0004_workspaces.sql |
+| `settings` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0004_workspaces.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0004_workspaces.sql |
+
+## workspace_public_ids
+
+Owner: `workspaces` (created in `0004_workspaces.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `public_id` | `text PRIMARY KEY CHECK (public_id ~ '^[0-9A-Za-z]{22}$')` | 0004_workspaces.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0004_workspaces.sql |
+| `workspace_id` | `uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE` | 0004_workspaces.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0004_workspaces.sql |
+| `retired_at` | `timestamptz` | 0004_workspaces.sql |
+| `grace_until` | `timestamptz` | 0004_workspaces.sql |
+
+## memberships
+
+Owner: `memberships` (created in `0005_memberships.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0005_memberships.sql |
+| `user_id` | `uuid NOT NULL REFERENCES users (id)` | 0005_memberships.sql |
+| `role` | `text NOT NULL CHECK (role IN ('admin', 'member'))` | 0005_memberships.sql |
+| `status` | `text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'removed'))` | 0005_memberships.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0005_memberships.sql |
+| `updated_at` | `timestamptz NOT NULL DEFAULT now()` | 0005_memberships.sql |
+
+## invitations
+
+Owner: `invitations` (created in `0006_invitations.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | 0006_invitations.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0006_invitations.sql |
+| `email` | `text NOT NULL CHECK (email <> '' AND email = lower(btrim(email)))` | 0006_invitations.sql |
+| `role` | `text NOT NULL CHECK (role IN ('admin', 'member'))` | 0006_invitations.sql |
+| `clerk_invitation_id` | `text` | 0006_invitations.sql |
+| `invited_by` | `uuid REFERENCES users (id)` | 0006_invitations.sql |
+| `expires_at` | `timestamptz NOT NULL` | 0006_invitations.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0006_invitations.sql |
+| `accepted_at` | `timestamptz` | 0006_invitations.sql |
+| `revoked_at` | `timestamptz` | 0006_invitations.sql |

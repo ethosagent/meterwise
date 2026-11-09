@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -24,12 +25,19 @@ const (
 	traceFlushLimit  = 5 * time.Second
 )
 
+// Fixed telemetry failures: the exporter and url errors echo the endpoint URL,
+// which may carry credentials, so callers only ever see these.
+var (
+	errInvalidEndpoint = errors.New("the OTLP endpoint is not a valid URL")
+	errExporter        = errors.New("the OTLP exporter could not be created")
+)
+
 // newExporter follows the OTLP convention: the endpoint is a base URL and the
 // signal path /v1/traces is appended (WithEndpointURL would treat it as the full URL).
 func newExporter(ctx context.Context, endpoint string) (*otlptrace.Exporter, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, err
+		return nil, errInvalidEndpoint
 	}
 	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(u.Host),
@@ -38,7 +46,11 @@ func newExporter(ctx context.Context, endpoint string) (*otlptrace.Exporter, err
 	if u.Scheme == "http" {
 		opts = append(opts, otlptracehttp.WithInsecure())
 	}
-	return otlptracehttp.New(ctx, opts...)
+	exp, err := otlptracehttp.New(ctx, opts...)
+	if err != nil {
+		return nil, errExporter
+	}
+	return exp, nil
 }
 
 // startTelemetry returns the tracer provider and a shutdown that flushes it.

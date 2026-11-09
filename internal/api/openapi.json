@@ -16,21 +16,56 @@
         ],
         "type": "object"
       },
+      "CreateInvitationRequest": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
+      "CreateWorkspaceRequest": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
             "enum": [
               "config_invalid",
               "conflict",
+              "default_workspace",
+              "duplicate_invitation",
               "forbidden",
               "gone",
               "internal",
               "invalid_request",
               "not_available",
               "not_found",
+              "not_invited",
               "rate_limited",
-              "unauthorized",
-              "unavailable"
+              "unauthenticated",
+              "unavailable",
+              "validation_failed",
+              "workspace_limit"
             ],
             "type": "string"
           },
@@ -57,6 +92,119 @@
         },
         "required": [
           "status"
+        ],
+        "type": "object"
+      },
+      "Invitation": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invitedBy": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "invitedBy",
+          "expiresAt",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "InvitationList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Invitation"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "Me": {
+        "properties": {
+          "activeWorkspaceId": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/Preferences"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/MeUser"
+          }
+        },
+        "required": [
+          "user",
+          "orgId",
+          "role",
+          "activeWorkspaceId",
+          "preferences"
+        ],
+        "type": "object"
+      },
+      "MeUser": {
+        "properties": {
+          "avatarUrl": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "avatarUrl"
         ],
         "type": "object"
       },
@@ -97,6 +245,30 @@
         "required": [],
         "type": "object"
       },
+      "SwitchWorkspaceResponse": {
+        "properties": {
+          "activeWorkspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "activeWorkspaceId"
+        ],
+        "type": "object"
+      },
+      "UpdateWorkspaceRequest": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "Version": {
         "properties": {
           "commit": {
@@ -109,6 +281,56 @@
         "required": [
           "version",
           "commit"
+        ],
+        "type": "object"
+      },
+      "Workspace": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "proxyUrl": {
+            "type": "string"
+          },
+          "publicId": {
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "publicId",
+          "name",
+          "isDefault",
+          "proxyUrl",
+          "settings",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "WorkspaceList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Workspace"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       }
@@ -127,6 +349,40 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/auth/complete-signup": {
+      "post": {
+        "operationId": "postApiAuthComplete-signup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Turn a pending invitation for the caller's verified email into a membership",
+        "x-permission": "self"
+      }
+    },
     "/api/config": {
       "get": {
         "operationId": "getApiConfig",
@@ -154,6 +410,177 @@
         },
         "security": [],
         "summary": "App name and public proxy host for the shell"
+      }
+    },
+    "/api/invitations": {
+      "get": {
+        "operationId": "getApiInvitations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List invitations",
+        "x-permission": "admin"
+      },
+      "post": {
+        "operationId": "postApiInvitations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invitation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Invite an email into the organization",
+        "x-permission": "admin"
+      }
+    },
+    "/api/invitations/{id}": {
+      "delete": {
+        "operationId": "deleteApiInvitationsId",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke an invitation",
+        "x-permission": "admin"
+      }
+    },
+    "/api/invitations/{id}/resend": {
+      "post": {
+        "operationId": "postApiInvitationsIdResend",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Invitation"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Replace a pending invitation with a fresh one",
+        "x-permission": "admin"
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "getApiMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The caller, role, active workspace and preferences; 403 not_invited without a membership",
+        "x-permission": "self"
       }
     },
     "/api/me/preferences": {
@@ -259,6 +686,207 @@
         },
         "security": [],
         "summary": "Build version"
+      }
+    },
+    "/api/webhooks/clerk": {
+      "post": {
+        "operationId": "postApiWebhooksClerk",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "Clerk user webhook; authenticated by its Svix signature, not a bearer token"
+      }
+    },
+    "/api/workspaces": {
+      "get": {
+        "operationId": "getApiWorkspaces",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the organization's workspaces",
+        "x-permission": "member"
+      },
+      "post": {
+        "operationId": "postApiWorkspaces",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a workspace and its proxy URL",
+        "x-permission": "member"
+      }
+    },
+    "/api/workspaces/{id}": {
+      "delete": {
+        "operationId": "deleteApiWorkspacesId",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a workspace (never the default)",
+        "x-permission": "member"
+      },
+      "patch": {
+        "operationId": "patchApiWorkspacesId",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rename a workspace or change its settings",
+        "x-permission": "member"
+      }
+    },
+    "/api/workspaces/{id}/switch": {
+      "post": {
+        "operationId": "postApiWorkspacesIdSwitch",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwitchWorkspaceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Make a workspace the caller's active one",
+        "x-permission": "member"
       }
     },
     "/healthz": {

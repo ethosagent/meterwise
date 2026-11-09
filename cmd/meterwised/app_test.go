@@ -44,7 +44,7 @@ func decode(t *testing.T, out string) result {
 }
 
 func TestEverySubcommandAcceptsJSON(t *testing.T) {
-	good := map[string]string{"DATABASE_URL": "postgres://u:p@127.0.0.1:1/db?sslmode=disable"}
+	good := map[string]string{"DATABASE_URL": "postgres://u:p@127.0.0.1:1/db?sslmode=disable", "APP_ENV": "dev"}
 	tests := []struct {
 		args     []string
 		wantOK   bool
@@ -55,7 +55,7 @@ func TestEverySubcommandAcceptsJSON(t *testing.T) {
 		{[]string{"config", "check", "-json"}, true, "", 0},
 		{[]string{"migrate", "status", "-json"}, false, contract.CodeUnavailable, 1},
 		{[]string{"migrate", "up", "-json"}, false, contract.CodeUnavailable, 1},
-		{[]string{"bootstrap-admin", "-json"}, false, contract.CodeNotAvailable, 1},
+		{[]string{"bootstrap-admin", "-json"}, false, contract.CodeInvalidRequest, 2},
 		{[]string{"help", "-json"}, true, "", 0},
 		{[]string{"nonsense"}, false, "", 2},
 	}
@@ -93,13 +93,28 @@ func TestConfigCheckJSONListsEveryProblemAtOnce(t *testing.T) {
 }
 
 func TestConfigCheckNeverPrintsThePassword(t *testing.T) {
-	_, out, _ := exec(t, map[string]string{"DATABASE_URL": "postgres://u:hunter2@127.0.0.1:5432/db"}, "config", "check", "-json")
-	if strings.Contains(out, "hunter2") {
-		t.Fatalf("password leaked: %s", out)
+	for _, dsn := range []string{
+		"postgres://u:hunter2@127.0.0.1:5432/db",
+		"postgres://u@127.0.0.1:5432/db?password=hunter2",
+		"postgres://u@127.0.0.1:5432/db?password=hunt%65r2&sslmode=disable",
+	} {
+		kv := map[string]string{"DATABASE_URL": dsn, "APP_ENV": "dev"}
+		_, out, _ := exec(t, kv, "config", "check", "-json")
+		if strings.Contains(out, "hunter2") || strings.Contains(out, "hunt%65r2") {
+			t.Fatalf("%s: password leaked: %s", dsn, out)
+		}
+		_, out, _ = exec(t, kv, "config", "check")
+		if strings.Contains(out, "hunter2") || strings.Contains(out, "hunt%65r2") || !strings.Contains(out, "LISTEN_PROXY=:8080") {
+			t.Fatalf("%s: text output wrong: %s", dsn, out)
+		}
 	}
-	_, out, _ = exec(t, map[string]string{"DATABASE_URL": "postgres://u:hunter2@127.0.0.1:5432/db"}, "config", "check")
-	if strings.Contains(out, "hunter2") || !strings.Contains(out, "LISTEN_PROXY=:8080") {
-		t.Fatalf("text output wrong: %s", out)
+}
+
+func TestConfigCheckInProdListsTheMissingIdentitySettings(t *testing.T) {
+	code, out, _ := exec(t, map[string]string{"DATABASE_URL": "postgres://u:p@127.0.0.1:5432/db"}, "config", "check", "-json")
+	r := decode(t, out)
+	if code != 1 || r.Error.Code != contract.CodeConfigInvalid || len(r.Error.Details) != 4 {
+		t.Fatalf("%d %s", code, out)
 	}
 }
 
@@ -113,7 +128,7 @@ func TestTextModeAndUsageErrors(t *testing.T) {
 		t.Fatalf("help text: %d %q", code, out)
 	}
 	code, _, errb := exec(t, nil, "bootstrap-admin")
-	if code != 1 || !strings.Contains(errb, "not_available") {
+	if code != 2 || !strings.Contains(errb, "usage: meterwised bootstrap-admin") {
 		t.Fatalf("bootstrap-admin text: %d %q", code, errb)
 	}
 	if code, _, _ = exec(t, map[string]string{"DATABASE_URL": "postgres://u:p@127.0.0.1:5432/db"}, "migrate", "sideways"); code != 2 {

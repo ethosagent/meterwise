@@ -3,15 +3,20 @@
 export const ERROR_CODES = [
   "config_invalid",
   "conflict",
+  "default_workspace",
+  "duplicate_invitation",
   "forbidden",
   "gone",
   "internal",
   "invalid_request",
   "not_available",
   "not_found",
+  "not_invited",
   "rate_limited",
-  "unauthorized",
+  "unauthenticated",
   "unavailable",
+  "validation_failed",
+  "workspace_limit",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -20,18 +25,31 @@ export const THEMES = ["light", "dark", "system"] as const;
 
 export type Theme = (typeof THEMES)[number];
 
+export const ROLES = ["admin", "member"] as const;
+
+export type Role = (typeof ROLES)[number];
+
+export const INVITATION_STATUSES = ["pending", "accepted", "revoked", "expired"] as const;
+
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
+
 export const ERROR_STATUS: Record<ErrorCode, number> = {
   config_invalid: 500,
   conflict: 409,
+  default_workspace: 409,
+  duplicate_invitation: 409,
   forbidden: 403,
   gone: 410,
   internal: 500,
   invalid_request: 400,
   not_available: 501,
   not_found: 404,
+  not_invited: 403,
   rate_limited: 429,
-  unauthorized: 401,
+  unauthenticated: 401,
   unavailable: 503,
+  validation_failed: 422,
+  workspace_limit: 409,
 };
 
 export interface Health {
@@ -64,6 +82,67 @@ export interface PreferencesPatch {
   reducedMotion?: boolean;
 }
 
+export interface Me {
+  user: MeUser;
+  orgId: string;
+  role: Role;
+  activeWorkspaceId: string;
+  preferences: Preferences;
+}
+
+export interface MeUser {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl: string;
+}
+
+export interface Workspace {
+  id: string;
+  publicId: string;
+  name: string;
+  isDefault: boolean;
+  proxyUrl: string;
+  settings: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface WorkspaceList {
+  items: Workspace[];
+}
+
+export interface CreateWorkspaceRequest {
+  name: string;
+}
+
+export interface UpdateWorkspaceRequest {
+  name?: string;
+  settings?: Record<string, unknown>;
+}
+
+export interface SwitchWorkspaceResponse {
+  activeWorkspaceId: string;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Role;
+  status: InvitationStatus;
+  invitedBy: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface InvitationList {
+  items: Invitation[];
+}
+
+export interface CreateInvitationRequest {
+  email: string;
+  role: Role;
+}
+
 export interface RouteSpec {
   method: string;
   pattern: string;
@@ -72,9 +151,21 @@ export interface RouteSpec {
 }
 
 export const ROUTES: readonly RouteSpec[] = [
+  { method: "POST", pattern: "/api/auth/complete-signup", permission: "self", public: false },
   { method: "GET", pattern: "/api/config", permission: "", public: true },
+  { method: "GET", pattern: "/api/invitations", permission: "admin", public: false },
+  { method: "POST", pattern: "/api/invitations", permission: "admin", public: false },
+  { method: "DELETE", pattern: "/api/invitations/{id}", permission: "admin", public: false },
+  { method: "POST", pattern: "/api/invitations/{id}/resend", permission: "admin", public: false },
+  { method: "GET", pattern: "/api/me", permission: "self", public: false },
   { method: "GET", pattern: "/api/me/preferences", permission: "self", public: false },
   { method: "PATCH", pattern: "/api/me/preferences", permission: "self", public: false },
   { method: "GET", pattern: "/api/v1/version", permission: "", public: true },
+  { method: "POST", pattern: "/api/webhooks/clerk", permission: "", public: true },
+  { method: "GET", pattern: "/api/workspaces", permission: "member", public: false },
+  { method: "POST", pattern: "/api/workspaces", permission: "member", public: false },
+  { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "member", public: false },
+  { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "member", public: false },
+  { method: "POST", pattern: "/api/workspaces/{id}/switch", permission: "member", public: false },
   { method: "GET", pattern: "/healthz", permission: "", public: true },
 ];
