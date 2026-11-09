@@ -5,6 +5,9 @@ import { afterEach, vi } from "vitest";
 // Under load the first render in a file (cold antd) and parallel files stretch async waits well past
 // the 1000 ms default; a real break still fails, after 5 s instead of 1 s.
 configure({ asyncUtilTimeout: 5000 });
+// The test itself must outlive those waits: the first test of a file renders the cold app and then
+// interacts, and vitest's default 5 s per-test limit cut it first under load.
+vi.setConfig({ testTimeout: 15000 });
 
 // jsdom lacks matchMedia and ResizeObserver, which antd's responsive pieces need.
 export function installMatchMedia(matches: (query: string) => boolean = () => false) {
