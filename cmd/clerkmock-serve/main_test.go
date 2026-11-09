@@ -114,6 +114,10 @@ func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
 	if again, err := idp.Verify(context.Background(), mintAs("ada@example.test", "&sub=user_registered_again")); err != nil || again.Subject != "user_registered_again" || again.Email != id.Email {
 		t.Fatalf("explicit subject: %+v %v", again, err)
 	}
+	// unverified=1 mints a token whose email claim Clerk has not verified (the attacker's token).
+	if spoof, err := idp.Verify(context.Background(), mintAs("ada@example.test", "&unverified=1")); err != nil || spoof.EmailVerified || spoof.Email != "ada@example.test" {
+		t.Fatalf("unverified mint: %+v %v", spoof, err)
+	}
 	if resp, err := http.Get(env["MINT_URL"] + "?email=ada@example.test&sub=evil%20sub"); err != nil || resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("a malformed subject must be refused: %v %v", resp, err)
 	}
