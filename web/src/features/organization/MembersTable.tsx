@@ -1,6 +1,7 @@
 import { PlusOutlined } from "@ant-design/icons";
 import { Button, Card, Flex, Popconfirm, Select, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
+import { ROLE_OPTIONS } from "../../access/roles";
 import { useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
 import { useInvitations } from "../../api/identity";
 import { useAccessToast } from "../../api/useAccessToast";
@@ -11,11 +12,6 @@ import { InviteModal } from "./InviteModal";
 type Row =
   | { key: string; kind: "member"; member: Member }
   | { key: string; kind: "invite"; invitation: Invitation };
-
-const ROLE_OPTIONS: { value: Role; label: string }[] = [
-  { value: "member", label: "Member" },
-  { value: "admin", label: "Admin" },
-];
 
 interface Props {
   /** member:manage: invite, and resend or revoke a pending invitation. */

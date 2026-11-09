@@ -1,4 +1,5 @@
 import { Form, Input, Select } from "antd";
+import { ROLE_OPTIONS } from "../../access/roles";
 import { ACCESS_ERROR_TEXT } from "../../api/access";
 import { describeApiError } from "../../api/errors";
 import { IDENTITY_ERRORS, useInvite } from "../../api/identity";
@@ -21,10 +22,10 @@ function inviteErrorText(e: unknown): string {
 export function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   // The escalation guard: only an admin may invite another admin (403 "admin required" otherwise).
   const canGrantAdmin = useIsAdmin();
-  const roles: { value: Role; label: string; disabled?: boolean }[] = [
-    { value: "member", label: "Member" },
-    { value: "admin", label: "Admin", disabled: !canGrantAdmin },
-  ];
+  const roles = ROLE_OPTIONS.map((o) => ({
+    ...o,
+    disabled: o.value === "admin" && !canGrantAdmin,
+  }));
   const invite = useInvite();
   return (
     <MutationFormModal<{ email: string; role: Role }>
