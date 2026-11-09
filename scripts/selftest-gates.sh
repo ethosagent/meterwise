@@ -341,8 +341,16 @@ m_vitest() { printf 'import { expect, it } from "vitest";\n\nit("fails", () => {
 # webcov_n measures the base tree once (json-summary, outside the tree) and solves, per metric,
 # covered / (total + n * c) < floor, where c is what one payload function adds: 1 function, 3 statements,
 # 3 lines, 2 branches. It takes the largest n and adds 10 % plus 5 as headroom.
-WEB_COVERAGE_MIN=70   # the floor in web/vite.config.ts (coverage.thresholds)
+# The floor is read from web/vite.config.ts (coverage.thresholds), never restated here; the lowest of the
+# four thresholds is used and an unparsable config fails closed (the rows go SETUP FAILED, not green).
+webcov_floor() {
+  local v
+  v="$(grep -E '^[[:space:]]*thresholds:[[:space:]]*\{' "$REPO/web/vite.config.ts" | grep -oE '(statements|branches|functions|lines):[[:space:]]*[0-9]+' | grep -oE '[0-9]+$' | sort -n | head -n1)"
+  [ -n "$v" ] || { echo "selftest: cannot read coverage.thresholds from web/vite.config.ts" >&2; return 1; }
+  echo "$v"
+}
 webcov_n() {
+  local floor; floor="$(webcov_floor)" || return 1
   if [ ! -s "$SCRATCH/webcov.n" ]; then
     (cd "$BASE/web" && npm test -- --coverage.reporter=json-summary --coverage.reportsDirectory="$SCRATCH/webcov" >"$SCRATCH/webcov.log" 2>&1)
     node -e '
@@ -354,7 +362,7 @@ webcov_n() {
         n = Math.max(n, Math.ceil(((t[m].covered * 100) / floor - t[m].total) / c));
       }
       console.log(Math.ceil(n * 1.1) + 5);
-    ' "$SCRATCH/webcov/coverage-summary.json" "$WEB_COVERAGE_MIN" >"$SCRATCH/webcov.n" || { rm -f "$SCRATCH/webcov.n"; return 1; }
+    ' "$SCRATCH/webcov/coverage-summary.json" "$floor" >"$SCRATCH/webcov.n" || { rm -f "$SCRATCH/webcov.n"; return 1; }
   fi
   cat "$SCRATCH/webcov.n"
 }
