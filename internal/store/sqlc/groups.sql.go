@@ -231,8 +231,8 @@ SELECT 'group'::text AS source, g.id::text AS group_id, COALESCE(rp.workspace_id
        rp.resource_type, rp.action
 FROM group_users gu
 JOIN groups g ON g.id = gu.group_id AND g.org_id = gu.org_id
-JOIN group_permissions gp ON gp.group_id = g.id
-JOIN resource_permissions rp ON rp.id = gp.permission_id
+JOIN group_permissions gp ON gp.group_id = g.id AND gp.org_id = g.org_id
+JOIN resource_permissions rp ON rp.id = gp.permission_id AND rp.org_id = g.org_id
 WHERE gu.org_id = $1::text::uuid AND gu.user_id = $2::text::uuid
   AND (rp.workspace_id IS NULL OR EXISTS (
         SELECT 1 FROM group_workspaces gw WHERE gw.group_id = g.id AND gw.workspace_id = rp.workspace_id))

@@ -114,6 +114,8 @@ func TestMayAssignRole(t *testing.T) {
 		ok            bool
 	}{
 		{"admin", "admin", true}, {"admin", "member", true}, {"member", "member", true}, {"member", "admin", false}, {"member", "", false},
+		// An actor that is not a valid role is refused before the target is looked at.
+		{"", "member", false}, {"owner", "member", false}, {"owner", "admin", false},
 	} {
 		err := access.MayAssignRole(tc.actor, tc.target)
 		if (err == nil) != tc.ok {

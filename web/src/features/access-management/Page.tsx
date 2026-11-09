@@ -7,7 +7,7 @@ import { GroupsTab } from "./GroupsTab";
 import { OrgDefaultsTab } from "./OrgDefaultsTab";
 import { UsersTab } from "./UsersTab";
 
-/** Settings > Access management: Groups, Users, Invitations. Each tab appears only when its reads would not 403. */
+/** Settings > Access management: Groups, Users, Defaults, Invitations. Each tab appears only when its reads would not 403. */
 export function AccessManagementPage() {
   const canRead = usePermission("member:read");
   const canManage = usePermission("member:manage");

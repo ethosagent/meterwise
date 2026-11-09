@@ -7,8 +7,12 @@ import "github.com/ethosagent/meterwise/internal/contract"
 func IsAdmin(role contract.Role) bool { return role == contract.RoleAdmin }
 
 // MayAssignRole is the escalation guard: an admin may hand out any role; anyone else (a member who
-// holds member:manage) may hand out member only. It returns a 403 "admin required" otherwise.
+// holds member:manage) may hand out member only; an actor whose role is not valid may hand out
+// nothing. It returns a 403 "admin required" otherwise.
 func MayAssignRole(actor, target contract.Role) error {
+	if !actor.Valid() {
+		return contract.Forbidden("unknown actor role", ReasonAdminRequired)
+	}
 	if actor == contract.RoleAdmin || target == contract.RoleMember {
 		return nil
 	}

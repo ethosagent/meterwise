@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useLayoutEffect, useState } from "react";
+import { resetForbiddenRefresh } from "../api/queryClient";
 import type { AuthAdapter, SessionApi } from "./adapter";
 import { useSession } from "./session";
 
@@ -25,6 +26,7 @@ function Bridge({ adapter, children }: { adapter: AuthAdapter; children: ReactNo
   useLayoutEffect(() => {
     if (settledFor === userId) return;
     qc.clear();
+    resetForbiddenRefresh(qc);
     setSettledFor(userId);
   }, [settledFor, userId, qc]);
   if (settledFor !== userId) return null;

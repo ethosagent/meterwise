@@ -12,6 +12,7 @@ import { ApiError } from "./errors";
  */
 export function createQueryClient(retry: number | false): QueryClient {
   let lastRefreshedFrom: string | undefined;
+
   const onForbidden = (error: unknown) => {
     if (!(error instanceof ApiError && error.status === 403 && error.code === "forbidden")) return;
     const snapshot = JSON.stringify(client.getQueryData(permissionsKey) ?? null);
@@ -28,5 +29,19 @@ export function createQueryClient(retry: number | false): QueryClient {
     }),
     mutationCache: new MutationCache({ onError: onForbidden }),
   });
+  resets.set(client, () => {
+    lastRefreshedFrom = undefined;
+  });
   return client;
+}
+
+const resets = new WeakMap<QueryClient, () => void>();
+
+/**
+ * Forget which snapshot the last 403 refresh started from. Call it when the identity changes,
+ * next to clearing the cache: the dedupe is about one person's snapshot, and another person's
+ * byte-identical snapshot must still get its first refresh.
+ */
+export function resetForbiddenRefresh(client: QueryClient) {
+  resets.get(client)?.();
 }
