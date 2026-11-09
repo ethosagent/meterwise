@@ -29,7 +29,7 @@ type pkg struct {
 }
 
 // allRules lists every rule ID; seeded_test.go must seed each one.
-var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6"}
+var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8"}
 
 // rank orders the layers of rule H2: a package may import its own rank or
 // lower, never higher. contract and nonet are below everything (rank 0).
@@ -138,11 +138,16 @@ func checkImport(l, rel, imp string, inTest bool) []Violation {
 		out = append(out, Violation{rule, fmt.Sprintf("%s imports %s: %s", rel, imp, why)})
 	}
 
-	if underAny(imp, tollgate+"/internal") {
-		add("H1", "tollgate's internal/ is private; use its public root, ext/** or (tests only) testkit")
-	}
-	if underAny(imp, tollgate+"/testkit") && !inTest {
-		add("H1", "tollgate/testkit is for tests only")
+	if underAny(imp, tollgate) && imp != tollgate {
+		switch {
+		case underAny(imp, tollgate+"/ext"):
+		case underAny(imp, tollgate+"/testkit"):
+			if !inTest {
+				add("H1", "tollgate/testkit is for tests only")
+			}
+		default:
+			add("H1", "only tollgate's root, ext/** and (tests only) testkit are public; internal/, cmd/ and the rest are not")
+		}
 	}
 	if l == "contract" && !inTest && !isStd(imp) && imp != tollgate {
 		add("H0", "internal/contract imports the standard library and the tollgate root only")

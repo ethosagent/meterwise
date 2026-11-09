@@ -47,6 +47,8 @@ func TestSeededViolationsGoRed(t *testing.T) {
 		{"H1 test imports tollgate internal", pkg{Rel: "internal/dataplane", Doc: "x", TestImports: []string{tollgate + "/internal/model"}}, "H1"},
 		{"H1 production imports testkit", pkg{Rel: "internal/dataplane", Doc: "x", Imports: []string{tollgate + "/testkit"}}, "H1"},
 		{"H1 green: test imports testkit", pkg{Rel: "internal/dataplane", Doc: "x", TestImports: []string{tollgate + "/testkit"}}, ""},
+		{"H1 tollgate cmd is not public", pkg{Rel: "internal/dataplane", Doc: "x", Imports: []string{tollgate + "/cmd/tollgate-bench"}}, "H1"},
+		{"H1 tollgate unknown subpackage is not public", pkg{Rel: "internal/dataplane", Doc: "x", Imports: []string{tollgate + "/fixtures"}}, "H1"},
 		{"H1 green: root and ext", pkg{Rel: "internal/dataplane", Doc: "x", Imports: []string{tollgate, tollgate + "/ext/auth"}}, ""},
 		{"H2 store imports api", pkg{Rel: "internal/store", Doc: "x", Imports: []string{ap}}, "H2"},
 		{"H2 tenancy imports ledger", pkg{Rel: "internal/tenancy", Doc: "x", Imports: []string{module + "/internal/ledger"}}, "H2"},
@@ -89,7 +91,21 @@ func TestSeededWriterViolationGoesRed(t *testing.T) {
 			t.Errorf("%s: expected one H4, got %v", name, got)
 		}
 	}
+	for name, body := range map[string]string{
+		"internal/tenancy/a.go":  "const q = `INSERT INTO \"calls\" (id) VALUES (1)`",
+		"internal/tenancy/b.sql": "UPDATE ONLY sessions SET n = 1",
+		"internal/tenancy/c.sql": "DELETE FROM ONLY calls",
+		"internal/tenancy/d.sql": "MERGE INTO monitor_events USING x ON true",
+		"internal/tenancy/e.sql": "TRUNCATE TABLE audit_log",
+		"internal/tenancy/f.sql": "COPY public.\"calls\" FROM STDIN",
+	} {
+		if got := scanWriters(map[string]string{name: body}); len(got) != 1 {
+			t.Errorf("%s (%s): expected one H4, got %v", name, body, got)
+		}
+	}
 	good := map[string]string{
+		"internal/config/prose.go":            "// we update sessions elsewhere; delete from calls is the ledger's job\nvar x = 1",
+		"internal/config/prose.sql":           "-- INSERT INTO calls is done by ledger\nSELECT 1;",
 		"internal/store/queries/ledger.sql":   "INSERT INTO calls (id) VALUES ($1)",
 		"internal/store/sqlc/audit.sql.go":    "INSERT INTO audit_log",
 		"internal/ledger/write.go":            "UPDATE sessions SET n = n + 1",
@@ -110,6 +126,9 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 		"web/src/c.ts":            "const m = await import(\"left-pad\")",
 		"web/src/d.ts":            "export * from '/abs/path'",
 		"web/src/features/e/e.ts": "import q from '@scope/pkg/deep'",
+		"web/src/zz.js":           "import x from 'left-pad-js'",
+		"web/src/tpl.mts":         "const m = await import(`tpl-pad`)",
+		"web/src/node.ts":         "import fs from 'node:fs'",
 	}
 	got := scanWeb(bad, `{"dependencies":{"react":"1","moment":"2"},"devDependencies":{"vite":"6"}}`)
 	if r := rules(got); !slices.Equal(r, []string{"H5"}) {
@@ -119,14 +138,15 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 	for _, v := range got {
 		text += v.Msg + "\n"
 	}
-	for _, want := range []string{"lodash", "leaves web/src", "left-pad", "absolute path", "@scope/pkg", `"moment"`} {
+	for _, want := range []string{"lodash", "leaves web/src", "left-pad", "absolute path", "@scope/pkg", `"moment"`, "left-pad-js", "tpl-pad", "node built-ins"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no finding mentions %s:\n%s", want, text)
 		}
 	}
 	good := map[string]string{
-		"web/src/ok.ts":   "import { a } from './a'\nimport z from 'zustand'\nimport { it } from 'vitest'\nimport fs from 'node:fs'\nimport t from '@tanstack/react-query'",
-		"web/src/f/g.tsx": "import x from '../ok'\nexport * from '@ant-design/icons'",
+		"web/src/ok.ts":      "import { a } from './a'\nimport z from 'zustand'\nimport { it } from 'vitest'\nimport t from '@tanstack/react-query'",
+		"web/src/ok.test.ts": "import fs from 'node:fs'",
+		"web/src/f/g.tsx":    "import x from '../ok'\nexport * from '@ant-design/icons'",
 	}
 	if got := scanWeb(good, `{"devDependencies":{"typescript":"5","@biomejs/biome":"2"}}`); len(got) != 0 {
 		t.Fatalf("legal web imports flagged: %v", got)
@@ -177,6 +197,12 @@ func TestSeededRepositoryGoesRedEndToEnd(t *testing.T) {
 		"internal/tenancy/q.sql":  "INSERT INTO calls (id) VALUES (1);\n",
 		// H6: unlisted third party
 		"internal/access/doc.go": "// Package access is RBAC.\npackage access\nimport _ \"github.com/gin-gonic/gin\"\n",
+		// H7: build constraint and platform suffix
+		"internal/config/doc.go":     "// Package config reads env.\npackage config\n",
+		"internal/config/hidden.go":  "//go:build offline\n\npackage config\n",
+		"internal/config/x_linux.go": "package config\n",
+		// H8: tests without nonet.Run
+		"internal/config/x_test.go": "package config\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
 		// H5: web
 		"web/src/a.ts":     "import _ from 'lodash'\n",
 		"web/package.json": `{"dependencies":{"moment":"2"}}`,
@@ -236,5 +262,50 @@ func TestEveryRuleHasASeededViolation(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestSeededBuildConstraintsGoRed(t *testing.T) {
+	bad := map[string]string{
+		"internal/savings/s.go":              "//go:build offline\n\npackage savings\n",
+		"internal/savings/t.go":              "// +build integration\n\npackage savings\n",
+		"internal/savings/u_linux.go":        "package savings\n",
+		"internal/savings/v_arm64.go":        "package savings\n",
+		"internal/savings/w_windows_test.go": "package savings\n",
+	}
+	for name, body := range bad {
+		if got := scanBuildConstraints(map[string]string{name: body}); len(got) == 0 || got[0].Rule != "H7" {
+			t.Errorf("%s not flagged: %v", name, got)
+		}
+	}
+	good := map[string]string{
+		"internal/savings/s.go":           "// Package savings.\n// The go:build text in a comment line is prose.\npackage savings\n",
+		"internal/savings/linux_notes.go": "package savings\n",
+		"internal/savings/s_test.go":      "package savings\n",
+		"internal/savings/price_table.go": "package savings\n",
+	}
+	if got := scanBuildConstraints(good); len(got) != 0 {
+		t.Fatalf("legal files flagged: %v", got)
+	}
+}
+
+func TestSeededMissingTestMainGoesRed(t *testing.T) {
+	const guarded = "package p\nimport (\"os\"; \"testing\"; \"x/nonet\")\nfunc TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }\n"
+	bad := map[string]string{
+		"internal/config/a_test.go": "package p\nfunc TestA(t *testing.T) {}\n",
+		"internal/store/b_test.go":  "package p\nfunc TestMain(m *testing.M) { os.Exit(m.Run()) }\n",
+	}
+	got := scanTestMain(bad)
+	if len(got) != 2 || got[0].Rule != "H8" {
+		t.Fatalf("want two H8 findings, got %v", got)
+	}
+	good := map[string]string{
+		"internal/config/a_test.go":    "package p\nfunc TestA(t *testing.T) {}\n",
+		"internal/config/main_test.go": guarded,
+		"internal/archtest/a_test.go":  "package p\n",
+		"internal/api/doc.go":          "package api\n",
+	}
+	if got := scanTestMain(good); len(got) != 0 {
+		t.Fatalf("guarded or exempt packages flagged: %v", got)
 	}
 }

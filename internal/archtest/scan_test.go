@@ -27,9 +27,20 @@ var writerFiles = []string{
 // writerDirs are the packages that own those tables (H4), non-test files only.
 var writerDirs = []string{"internal/ledger", "internal/audit"}
 
-var writesLedger = regexp.MustCompile(`(?i)\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(public\.)?(calls|sessions|monitor_events|audit_log)\b`)
+// ident matches a possibly quoted, possibly schema-qualified table name.
+const ident = `(?:"?public"?\.)?"?`
 
-// scanWriters applies H4 to files (repo-relative path -> content).
+var writesLedger = regexp.MustCompile(`(?i)\b(INSERT\s+INTO|DELETE\s+FROM(?:\s+ONLY)?|MERGE\s+INTO(?:\s+ONLY)?|TRUNCATE(?:\s+TABLE)?(?:\s+ONLY)?|COPY)\s+` + ident + `(?:calls|sessions|monitor_events|audit_log)"?(?:[^a-z0-9_]|$)`)
+
+var writesLedgerUpdate = regexp.MustCompile(`(?i)\bUPDATE\s+(?:ONLY\s+)?` + ident + `(?:calls|sessions|monitor_events|audit_log)"?\s+SET\b`)
+
+var (
+	goComments  = regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*`)
+	sqlComments = regexp.MustCompile(`(?s)/\*.*?\*/|--[^\n]*`)
+)
+
+// scanWriters applies H4 to files (repo-relative path -> content). Comments are
+// stripped first so prose such as "update sessions" never trips the rule.
 func scanWriters(files map[string]string) []Violation {
 	var out []Violation
 	for rel, body := range files {
@@ -40,8 +51,17 @@ func scanWriters(files map[string]string) []Violation {
 		if contains(writerFiles, rel) || underDirs(rel, writerDirs) {
 			continue
 		}
-		if m := writesLedger.FindString(body); m != "" {
-			out = append(out, Violation{"H4", fmt.Sprintf("%s writes a ledger table (%q); only internal/ledger and internal/audit own calls, sessions, monitor_events, audit_log", rel, m)})
+		strip := sqlComments
+		if ext == ".go" {
+			strip = goComments
+		}
+		code := strip.ReplaceAllString(body, " ")
+		m := writesLedger.FindString(code)
+		if m == "" {
+			m = writesLedgerUpdate.FindString(code)
+		}
+		if m != "" {
+			out = append(out, Violation{"H4", fmt.Sprintf("%s writes a ledger table (%q); only internal/ledger and internal/audit own calls, sessions, monitor_events, audit_log", rel, strings.Join(strings.Fields(m), " "))})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
@@ -76,7 +96,9 @@ var webAllow = []string{
 	"@testing-library/react", "@testing-library/jest-dom", "@testing-library/user-event",
 }
 
-var importRe = regexp.MustCompile(`(?m)(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\(\s*)["']([^"']+)["']`)
+var importRe = regexp.MustCompile("(?m)(?:\\bfrom\\s*|\\bimport\\s*\\(?\\s*|\\brequire\\(\\s*)[\"'`]([^\"'`]+)[\"'`]")
+
+var webSource = regexp.MustCompile(`\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$`)
 
 // scanWeb applies H5 to web sources (repo-relative path -> content) and to
 // web/package.json (pkgJSON, "" when absent).
@@ -84,8 +106,7 @@ func scanWeb(files map[string]string, pkgJSON string) []Violation {
 	var out []Violation
 	add := func(msg string) { out = append(out, Violation{"H5", msg}) }
 	for rel, body := range files {
-		isTS := strings.HasSuffix(rel, ".ts") || strings.HasSuffix(rel, ".tsx")
-		if !strings.HasPrefix(rel, "web/src/") || !isTS {
+		if !strings.HasPrefix(rel, "web/src/") || !webSource.MatchString(rel) {
 			continue
 		}
 		for _, m := range importRe.FindAllStringSubmatch(body, -1) {
@@ -116,7 +137,10 @@ func scanWeb(files map[string]string, pkgJSON string) []Violation {
 func checkWebImport(rel, spec string) string {
 	switch {
 	case strings.HasPrefix(spec, "node:"):
-		return ""
+		if strings.Contains(rel, ".test.") {
+			return ""
+		}
+		return fmt.Sprintf("%s imports %q: node built-ins are for tests only; web/src runs in the browser", rel, spec)
 	case strings.HasPrefix(spec, "./") || strings.HasPrefix(spec, "../"):
 		target := path.Join(path.Dir(rel), spec)
 		if !strings.HasPrefix(target+"/", "web/src/") {
@@ -159,6 +183,8 @@ func runOn(t *testing.T, dir string) []Violation {
 	out := analyze(pkgs)
 	out = append(out, scanWriters(files)...)
 	out = append(out, scanWeb(files, files["web/package.json"])...)
+	out = append(out, scanBuildConstraints(files)...)
+	out = append(out, scanTestMain(files)...)
 	return out
 }
 
@@ -166,7 +192,8 @@ func listPackages(t *testing.T, dir string) []pkg {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json", "./...")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
+	// readonly: the gate must never download modules or rewrite go.mod/go.sum
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=readonly")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -207,7 +234,7 @@ func readTree(t *testing.T, dir string) map[string]string {
 			return nil
 		}
 		switch path.Ext(name) {
-		case ".go", ".sql", ".ts", ".tsx":
+		case ".go", ".sql", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts":
 		default:
 			if name != "package.json" {
 				return nil
@@ -228,4 +255,81 @@ func readTree(t *testing.T, dir string) map[string]string {
 		t.Fatalf("walk %s: %v", dir, err)
 	}
 	return files
+}
+
+var knownOS = []string{"aix", "android", "darwin", "dragonfly", "freebsd", "hurd", "illumos", "ios", "js", "linux", "nacl", "netbsd", "openbsd", "plan9", "solaris", "wasip1", "windows", "zos"}
+var knownArch = []string{"386", "amd64", "amd64p32", "arm", "armbe", "arm64", "arm64be", "loong64", "mips", "mipsle", "mips64", "mips64le", "mips64p32", "mips64p32le", "ppc", "ppc64", "ppc64le", "riscv", "riscv64", "s390", "s390x", "sparc", "sparc64", "wasm"}
+
+// buildConstraintAllow lists Go files (repo-relative) that may carry a build
+// constraint or a GOOS/GOARCH suffix. Empty on purpose: a constraint can hide
+// code from every gate (the law, vet, lint, tests, coverage), so each one needs
+// an ADR and an entry here.
+var buildConstraintAllow = []string{}
+
+var buildLine = regexp.MustCompile(`(?m)^[ \t]*//(?:go:build|[ \t]*\+build)\b`)
+
+// scanBuildConstraints applies H7: no //go:build, // +build or GOOS/GOARCH
+// filename suffix in a Go file unless allowlisted.
+func scanBuildConstraints(files map[string]string) []Violation {
+	var out []Violation
+	for rel, body := range files {
+		if path.Ext(rel) != ".go" || contains(buildConstraintAllow, rel) {
+			continue
+		}
+		if buildLine.MatchString(body) {
+			out = append(out, Violation{"H7", rel + " has a build constraint; it can hide code from the gates (law, vet, lint, test, coverage). Remove it or allowlist the file in law_test.go with an ADR"})
+		}
+		if hasPlatformSuffix(strings.TrimSuffix(path.Base(rel), ".go")) {
+			out = append(out, Violation{"H7", rel + " has a GOOS/GOARCH filename suffix, which is an implicit build constraint; rename it or allowlist it with an ADR"})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
+	return out
+}
+
+func hasPlatformSuffix(base string) bool {
+	base = strings.TrimSuffix(base, "_test")
+	parts := strings.Split(base, "_")
+	if len(parts) < 2 {
+		return false
+	}
+	last := parts[len(parts)-1]
+	if contains(knownArch, last) {
+		return true
+	}
+	return contains(knownOS, last)
+}
+
+var (
+	testMainRe = regexp.MustCompile(`func\s+TestMain\s*\(`)
+	nonetRunRe = regexp.MustCompile(`\bnonet\.Run\s*\(`)
+)
+
+// testMainExempt packages may have tests without nonet.Run: archtest shells out
+// to `go list` and reads files only.
+var testMainExempt = []string{"internal/archtest"}
+
+// scanTestMain applies H8: every directory with a _test.go file has a TestMain
+// that calls nonet.Run, so no test can reach the external network.
+func scanTestMain(files map[string]string) []Violation {
+	hasTests := map[string]bool{}
+	guarded := map[string]bool{}
+	for rel, body := range files {
+		if !strings.HasSuffix(rel, "_test.go") {
+			continue
+		}
+		dir := path.Dir(rel)
+		hasTests[dir] = true
+		if testMainRe.MatchString(body) && nonetRunRe.MatchString(body) {
+			guarded[dir] = true
+		}
+	}
+	var out []Violation
+	for dir := range hasTests {
+		if !guarded[dir] && !contains(testMainExempt, dir) {
+			out = append(out, Violation{"H8", dir + " has tests but no TestMain calling nonet.Run; without it a test can reach the internet and stay green"})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
+	return out
 }
