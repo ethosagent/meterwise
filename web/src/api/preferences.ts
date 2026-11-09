@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "../auth/session";
 import type { Preferences, PreferencesPatch } from "../contract/generated";
 import { apiFetch } from "./client";
 
@@ -7,7 +8,9 @@ export const preferencesKey = ["me", "preferences"] as const;
 export const DEFAULT_PREFERENCES: Preferences = { theme: "system", reducedMotion: false };
 
 export function useServerPreferences() {
+  const signedIn = useSession((s) => s.signedIn);
   return useQuery({
+    enabled: signedIn,
     queryKey: preferencesKey,
     queryFn: () => apiFetch<Preferences>("/api/me/preferences"),
     staleTime: Number.POSITIVE_INFINITY,

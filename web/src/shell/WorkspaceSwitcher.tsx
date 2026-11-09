@@ -1,16 +1,24 @@
 import { AppstoreOutlined, DownOutlined } from "@ant-design/icons";
-import { Dropdown, Tooltip, Typography, theme } from "antd";
-import { useUi } from "../state/ui";
+import { App, Dropdown, Tooltip, Typography, theme } from "antd";
+import { useState } from "react";
+import { useActiveWorkspace, useMe, useSwitchWorkspace, useWorkspaces } from "../api/identity";
+import { hasPermission } from "../auth/permissions";
+import { CreateWorkspaceDialog } from "../features/workspace/CreateWorkspaceDialog";
 import { SIDER_WIDTH } from "../theme/theme";
-import { STUB_WORKSPACES } from "./stub";
+
+const CREATE_KEY = "__create";
 
 /** Workspace row only: one org, many workspaces, so there is no org switcher. */
 export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const { token } = theme.useToken();
-  const activeId = useUi((s) => s.activeWorkspaceId);
-  const setActive = useUi((s) => s.setActiveWorkspaceId);
-  const active = STUB_WORKSPACES.find((w) => w.id === activeId) ?? STUB_WORKSPACES[0];
+  const { message } = App.useApp();
+  const me = useMe().data;
+  const workspaces = useWorkspaces().data ?? [];
+  const active = useActiveWorkspace();
+  const switchTo = useSwitchWorkspace();
+  const [creating, setCreating] = useState(false);
   const name = active?.name ?? "";
+  const canCreate = hasPermission(me, "workspaces.manage");
 
   const trigger = (
     <button
@@ -54,6 +62,7 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div style={{ padding: `0 ${token.paddingSM}px ${token.paddingSM}px` }}>
+      <CreateWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
       <Dropdown
         trigger={["click"]}
         // The popup is as wide as its trigger; on the collapsed rail that is a few pixels and clips the names.
@@ -62,9 +71,18 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
           selectable: true,
           // The Sider tells every menu below it that it is collapsed, which would reduce these items to initials.
           inlineCollapsed: false,
-          selectedKeys: [activeId],
-          items: STUB_WORKSPACES.map((w) => ({ key: w.id, label: w.name })),
-          onClick: ({ key }) => setActive(key),
+          selectedKeys: active ? [active.id] : [],
+          items: [
+            ...workspaces.map((w) => ({ key: w.id, label: w.name })),
+            ...(canCreate
+              ? [{ type: "divider" as const }, { key: CREATE_KEY, label: "＋ New workspace" }]
+              : []),
+          ],
+          onClick: ({ key }) => {
+            if (key === CREATE_KEY) return setCreating(true);
+            if (key === active?.id) return;
+            switchTo.mutate(key, { onError: () => message.error("Could not switch workspace.") });
+          },
         }}
       >
         {collapsed ? (

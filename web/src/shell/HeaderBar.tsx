@@ -1,9 +1,11 @@
 import { SearchOutlined } from "@ant-design/icons";
 import { Avatar, Dropdown, Grid, Input, Typography, theme } from "antd";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useMe } from "../api/identity";
+import { useAuthContext } from "../auth/AuthProvider";
 import { ThemeToggle } from "../theme/ThemeToggle";
+import { initials } from "./initials";
 import { pageByPath } from "./nav";
-import { initials, STUB_USER } from "./stub";
 
 /** Top bar: page title, search, theme toggle, avatar menu. */
 export function HeaderBar() {
@@ -12,6 +14,8 @@ export function HeaderBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const page = pageByPath(pathname);
+  const user = useMe().data?.user;
+  const { session } = useAuthContext();
 
   return (
     <>
@@ -33,9 +37,12 @@ export function HeaderBar() {
         menu={{
           items: [
             { key: "profile", label: "Profile" },
-            { key: "signout", label: "Sign out", disabled: true },
+            { key: "signout", label: "Sign out" },
           ],
-          onClick: ({ key }) => key === "profile" && navigate("/settings/profile"),
+          onClick: ({ key }) => {
+            if (key === "profile") navigate("/settings/profile");
+            if (key === "signout") void session.signOut();
+          },
         }}
       >
         <button
@@ -43,7 +50,9 @@ export function HeaderBar() {
           aria-label="Account menu"
           style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
         >
-          <Avatar style={{ background: token.colorPrimary }}>{initials(STUB_USER.name)}</Avatar>
+          <Avatar style={{ background: token.colorPrimary }}>
+            {initials(user?.name || user?.email || "")}
+          </Avatar>
         </button>
       </Dropdown>
     </>
