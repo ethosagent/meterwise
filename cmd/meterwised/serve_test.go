@@ -295,7 +295,7 @@ func TestServeRefusesTheStubPrincipalOutsideDev(t *testing.T) {
 	kv["APP_ENV"] = "prod"
 	code, out, _ = exec(t, kv, "serve", "-json")
 	r = decode(t, out)
-	if code != 1 || r.Error.Code != contract.CodeConfigInvalid || len(r.Error.Details) != 4 {
+	if code != 1 || r.Error.Code != contract.CodeConfigInvalid || len(r.Error.Details) != 5 || !strings.Contains(strings.Join(r.Error.Details, "|"), "CLERK_AUTHORIZED_PARTIES") {
 		t.Fatalf("prod: %d %s", code, out)
 	}
 }

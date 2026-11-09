@@ -63,6 +63,7 @@ func TestVerifyRejectsEveryForgery(t *testing.T) {
 		{"alg none", mock.Token(clerkmock.Claims{Subject: "user_1", Alg: "none"})},
 		{"unknown kid", mock.Token(clerkmock.Claims{Subject: "user_1", KeyID: "ins_unknown"})},
 		{"no subject", mock.Token(clerkmock.Claims{OmitSubject: true})},
+		{"no exp (a token that never expires)", mock.Token(clerkmock.Claims{Subject: "user_1", OmitExpiry: true})},
 		{"garbage", "not.a.jwt"},
 		{"empty", ""},
 		{"huge", strings.Repeat("a", 9<<10)},
@@ -234,5 +235,37 @@ func TestAJWKSFetchDoesNotBlockVerificationsWithACachedKey(t *testing.T) {
 	close(g.release)
 	if err := <-slow; contract.AsError(err).Code != contract.CodeUnauthenticated {
 		t.Fatalf("slow caller: %v, want unauthenticated", err)
+	}
+}
+
+func TestAuthorizedPartyIsEnforcedWhenConfigured(t *testing.T) {
+	mock, c := newPair(t, func(cfg *identity.ClerkConfig) {
+		cfg.AuthorizedParties = []string{"https://app.example.test", "https://admin.example.test"}
+	})
+	for azp, want := range map[string]bool{
+		"https://app.example.test":   true,
+		"https://admin.example.test": true,
+		"https://evil.example.test":  false,
+		"https://app.example.test.x": false,
+		"":                           false, // a token with no azp is refused too
+	} {
+		_, err := c.Verify(context.Background(), mock.Token(clerkmock.Claims{Subject: "user_1", AuthorizedParty: azp}))
+		if (err == nil) != want {
+			t.Errorf("azp %q: err=%v, want accepted=%v", azp, err, want)
+		}
+		if err != nil {
+			if e := contract.AsError(err); e.Code != contract.CodeUnauthenticated {
+				t.Errorf("azp %q: code %s", azp, e.Code)
+			}
+		}
+	}
+}
+
+func TestWithoutConfiguredPartiesAzpIsNotChecked(t *testing.T) {
+	mock, c := newPair(t)
+	for _, azp := range []string{"", "https://anything.example.test"} {
+		if _, err := c.Verify(context.Background(), mock.Token(clerkmock.Claims{Subject: "user_1", AuthorizedParty: azp})); err != nil {
+			t.Errorf("azp %q rejected with no parties configured: %v", azp, err)
+		}
 	}
 }

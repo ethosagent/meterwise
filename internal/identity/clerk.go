@@ -41,6 +41,9 @@ type ClerkConfig struct {
 	HTTPClient  *http.Client
 	Now         func() time.Time // injected clock; default time.Now
 	Leeway      time.Duration    // clock skew allowed on exp/nbf; default 5s
+	// AuthorizedParties are the origins a token's azp may name. Empty disables
+	// the check (dev only; config validation requires it elsewhere).
+	AuthorizedParties []string
 }
 
 // Clerk implements contract.IdentityProvider against a Clerk instance.
@@ -122,15 +125,30 @@ func (c *Clerk) Verify(ctx context.Context, bearer string) (contract.Identity, e
 	claims, err := jwt.Verify(ctx, &jwt.VerifyParams{
 		Token: bearer, JWK: key, Clock: clock{c.cfg.Now}, Leeway: c.cfg.Leeway,
 		ProxyURL:                &issuer,
+		AuthorizedPartyHandler:  c.authorizedParty,
 		CustomClaimsConstructor: func(context.Context) any { return custom },
 	})
-	if err != nil || claims.Issuer != c.cfg.Issuer || claims.Subject == "" {
+	if err != nil || claims.Issuer != c.cfg.Issuer || claims.Subject == "" || claims.Expiry == nil {
 		return contract.Identity{}, unauthenticated()
 	}
 	return contract.Identity{
 		Subject: claims.Subject, Email: strings.TrimSpace(custom.Email), EmailVerified: custom.EmailVerified && custom.Email != "",
 		Name: custom.Name, AvatarURL: custom.ImageURL,
 	}, nil
+}
+
+// authorizedParty is the azp check: with parties configured, the token must name
+// one of them (a missing azp is refused); with none configured it passes.
+func (c *Clerk) authorizedParty(azp string) bool {
+	if len(c.cfg.AuthorizedParties) == 0 {
+		return true
+	}
+	for _, p := range c.cfg.AuthorizedParties {
+		if azp != "" && azp == p {
+			return true
+		}
+	}
+	return false
 }
 
 // key returns the signing key for kid, refreshing the JWKS when it is stale or

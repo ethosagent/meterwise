@@ -209,3 +209,75 @@ func TestRedactedMasksEveryCredentialShape(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigCheckDoesNotPrintURLCredentials(t *testing.T) {
+	c, err := config.Load(env(map[string]string{
+		config.EnvDatabaseURL:     goodDB,
+		config.EnvOTLPEndpoint:    "https://otelUser:otelPass@collector.example:4318/v1?api_key=otelKey",
+		config.EnvClerkAPIURL:     "https://clerkTOKEN@api.clerk.test/v1",
+		config.EnvClerkIssuer:     "https://issuerUser:issuerPass@clerk.example",
+		config.EnvClerkJWKSURL:    "https://jwksTOKEN@clerk.example/.well-known/jwks.json",
+		config.EnvAppURL:          "https://appUser:appPass@app.example",
+		config.EnvClerkParties:    "https://app.example",
+		config.EnvClerkSecretKey:  "sk_live_abc",
+		config.EnvClerkWebhookKey: "whsec_ZGVtbw==",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range c.Redacted() {
+		for _, leak := range []string{"otelUser", "otelPass", "otelKey", "clerkTOKEN", "issuerUser", "issuerPass", "jwksTOKEN", "appUser", "appPass", "sk_live", "whsec_"} {
+			if strings.Contains(v, leak) {
+				t.Errorf("%s leaks %q: %s", k, leak, v)
+			}
+		}
+	}
+	if got := c.Redacted()[config.EnvOTLPEndpoint]; !strings.Contains(got, "collector.example:4318") {
+		t.Errorf("the host must stay visible: %s", got)
+	}
+}
+
+func TestAuthorizedPartiesAreRequiredOutsideDevAndReportedWithTheOtherProblems(t *testing.T) {
+	base := map[string]string{
+		config.EnvDatabaseURL: goodDB, config.EnvClerkIssuer: "https://clerk.example", config.EnvClerkJWKSURL: "https://clerk.example/jwks",
+		config.EnvClerkSecretKey: "sk_test_x", config.EnvClerkWebhookKey: "whsec_ZGVtbw==",
+	}
+	with := func(extra map[string]string) map[string]string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	// prod: reported together with the other missing values
+	cfg, err := config.Load(rawEnv(map[string]string{config.EnvDatabaseURL: goodDB}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := strings.Join(contract.AsError(cfg.CheckServe()).Details, "|"); !strings.Contains(d, config.EnvClerkParties+": required") || !strings.Contains(d, config.EnvClerkIssuer+": required") {
+		t.Fatalf("prod: %s", d)
+	}
+	// test env with Clerk configured needs them; dev does not
+	for env, wantErr := range map[string]bool{"prod": true, "test": true, "dev": false} {
+		c, err := config.Load(rawEnv(with(map[string]string{config.EnvAppEnv: env})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.CheckServe() != nil; got != wantErr {
+			t.Errorf("APP_ENV=%s without parties: error=%v, want %v", env, got, wantErr)
+		}
+	}
+	ok, err := config.Load(rawEnv(with(map[string]string{config.EnvAppEnv: "prod", config.EnvClerkParties: "https://app.example, https://admin.example/"})))
+	if err != nil || ok.CheckServe() != nil || len(ok.Clerk.AuthorizedParties) != 2 || ok.Clerk.AuthorizedParties[1] != "https://admin.example" {
+		t.Fatalf("%+v %v %v", ok.Clerk.AuthorizedParties, err, ok.CheckServe())
+	}
+	for _, bad := range []string{"app.example", "https://app.example/path", "ftp://app.example", "https://u:p@app.example"} {
+		_, err := config.Load(rawEnv(with(map[string]string{config.EnvClerkParties: bad})))
+		if e := contract.AsError(err); e.Code != contract.CodeConfigInvalid || !hasDetail(e.Details, config.EnvClerkParties) {
+			t.Errorf("%q accepted: %v", bad, err)
+		}
+	}
+}

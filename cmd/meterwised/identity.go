@@ -37,7 +37,7 @@ func newIdentity(cfg config.Config, devSession func(context.Context) (contract.S
 	}
 	provider, err := identity.NewClerk(identity.ClerkConfig{
 		Issuer: cfg.Clerk.Issuer, JWKSURL: cfg.Clerk.JWKSURL, SecretKey: cfg.Clerk.SecretKey, APIURL: cfg.Clerk.APIURL,
-		RedirectURL: acceptInviteURL(cfg.AppURL),
+		RedirectURL: acceptInviteURL(cfg.AppURL), AuthorizedParties: cfg.Clerk.AuthorizedParties,
 	})
 	if err != nil {
 		return identitySetup{}, contract.NewError(contract.CodeConfigInvalid, "cannot set up the identity provider", err.Error())

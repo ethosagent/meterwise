@@ -28,6 +28,7 @@ const (
 	EnvClerkSecretKey  = "CLERK_SECRET_KEY"
 	EnvClerkWebhookKey = "CLERK_WEBHOOK_SECRET"
 	EnvClerkAPIURL     = "CLERK_API_URL"
+	EnvClerkParties    = "CLERK_AUTHORIZED_PARTIES"
 	EnvAppURL          = "APP_URL"
 	EnvOTLPEndpoint    = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	EnvPrivacyMode     = "PRIVACY_MODE"
@@ -48,6 +49,9 @@ type Clerk struct {
 	SecretKey      string // backend API key (invitations); secret, never displayed
 	WebhookSecret  string // Svix signing secret (whsec_...); secret, never displayed
 	APIURL         string // backend API base
+	// AuthorizedParties are the origins allowed in a session token's azp claim (the web app's origin).
+	// Required outside dev, so a token minted for another app on the same Clerk instance is refused.
+	AuthorizedParties []string
 }
 
 // Configured reports whether the settings needed to verify tokens are present.
@@ -123,6 +127,7 @@ func Load(get Lookup) (Config, error) {
 		LogLevel:     strings.ToLower(str(get, EnvLogLevel, DefaultLogLevel)),
 		Env:          strings.ToLower(str(get, EnvAppEnv, DefaultEnv)),
 	}
+	c.Clerk.AuthorizedParties = list(str(get, EnvClerkParties, ""))
 	c.PrivacyMode = boolean(get, EnvPrivacyMode, true, &p)
 	c.MaxWorkspaces = positive(get, EnvMaxWorkspaces, DefaultMaxWorkspaces, &p)
 	c.MaxConcurrentPerWorkspace = positive(get, EnvMaxConcurrent, DefaultMaxConcurrentPerWorkspace, &p)
@@ -187,6 +192,24 @@ func (c Config) validateIdentity(p *problems) {
 	if c.AppURL != "" && !hasScheme(c.AppURL, "http", "https") {
 		p.add(EnvAppURL, "must be an http(s):// URL")
 	}
+	for _, party := range c.Clerk.AuthorizedParties {
+		u, err := url.Parse(party)
+		if err != nil || !hasScheme(party, "http", "https") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil {
+			p.add(EnvClerkParties, "each entry must be an origin such as https://app.example.com (scheme and host, no path)")
+			break
+		}
+	}
+}
+
+// list splits a comma-separated value, trimming blanks and trailing slashes.
+func list(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimRight(strings.TrimSpace(part), "/"); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // CheckServe reports what only a serving process needs, so `migrate` and
@@ -195,10 +218,16 @@ func (c Config) validateIdentity(p *problems) {
 // they may be unset, which selects the dev-only principal resolver (and boot
 // refuses that outside dev).
 func (c Config) CheckServe() error {
+	var p problems
+	if c.Env != "dev" && (c.Env == "prod" || c.Clerk.Configured()) && len(c.Clerk.AuthorizedParties) == 0 {
+		p.add(EnvClerkParties, "required outside dev: the origin(s) allowed in a session token's azp claim")
+	}
 	if c.Env != "prod" {
+		if len(p) > 0 {
+			return contract.NewError(contract.CodeConfigInvalid, "configuration is invalid", p...)
+		}
 		return nil
 	}
-	var p problems
 	for _, r := range []struct{ key, val string }{
 		{EnvClerkIssuer, c.Clerk.Issuer}, {EnvClerkJWKSURL, c.Clerk.JWKSURL},
 		{EnvClerkSecretKey, c.Clerk.SecretKey}, {EnvClerkWebhookKey, c.Clerk.WebhookSecret},
@@ -223,14 +252,15 @@ func (c Config) Redacted() map[string]string {
 		EnvListenAdmin:     c.ListenAdmin,
 		EnvProxyPublicHost: c.ProxyPublicHost,
 		EnvAppName:         c.AppName,
-		EnvClerkIssuer:     c.Clerk.Issuer,
-		EnvClerkJWKSURL:    c.Clerk.JWKSURL,
+		EnvClerkIssuer:     redactURL(c.Clerk.Issuer),
+		EnvClerkJWKSURL:    redactURL(c.Clerk.JWKSURL),
 		EnvClerkPubKey:     c.Clerk.PublishableKey,
 		EnvClerkSecretKey:  secretState(c.Clerk.SecretKey),
 		EnvClerkWebhookKey: secretState(c.Clerk.WebhookSecret),
-		EnvClerkAPIURL:     c.Clerk.APIURL,
-		EnvAppURL:          c.AppURL,
-		EnvOTLPEndpoint:    c.OTLPEndpoint,
+		EnvClerkAPIURL:     redactURL(c.Clerk.APIURL),
+		EnvClerkParties:    strings.Join(c.Clerk.AuthorizedParties, ","),
+		EnvAppURL:          redactURL(c.AppURL),
+		EnvOTLPEndpoint:    redactURL(c.OTLPEndpoint),
 		EnvPrivacyMode:     strconv.FormatBool(c.PrivacyMode),
 		EnvMaxWorkspaces:   strconv.Itoa(c.MaxWorkspaces),
 		EnvMaxConcurrent:   strconv.Itoa(c.MaxConcurrentPerWorkspace),
@@ -257,8 +287,14 @@ func redactURL(raw string) string {
 		return "<unparsable>"
 	}
 	if u.User != nil {
-		if _, has := u.User.Password(); has {
-			u.User = url.UserPassword(u.User.Username(), "xxxxx")
+		_, has := u.User.Password()
+		switch u.Scheme {
+		case "postgres", "postgresql":
+			if has {
+				u.User = url.UserPassword(u.User.Username(), "xxxxx")
+			}
+		default: // on an http(s) URL the username is a login or a token
+			u.User = url.User("xxxxx")
 		}
 	}
 	q := u.Query()
