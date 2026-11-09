@@ -24,7 +24,7 @@ for step in check typecheck test build; do
   npm run --silent "$step" || err "npm run $step failed"
 done
 
-barrels="$(find src \( -name 'index.ts' -o -name 'index.tsx' \) -not -path '*/node_modules/*' | sort)"
+barrels="$(find src \( -name 'index.ts' -o -name 'index.tsx' -o -name 'index.mts' -o -name 'index.js' -o -name 'index.jsx' -o -name 'index.mjs' \) -not -path '*/node_modules/*' | sort)"
 [ -z "$barrels" ] || err "index.ts barrels are banned (grep-friendly names, no re-export chains): $(echo "$barrels" | tr '\n' ' ')"
 
 shopt -s nullglob

@@ -51,11 +51,32 @@ cover_gate() {
 
 # ensure_pg prints a loopback DSN for the compose Postgres, starting it when
 # docker is available. It prints nothing and returns 1 when no database can be
-# reached. METERWISE_PG_PORT overrides the host port (default 54329).
+# reached, or when TEST_DATABASE_URL names a non-loopback host or has no database
+# name: gates run CREATE/DROP DATABASE, so they only ever touch a local server
+# (ruling R6). METERWISE_PG_PORT overrides the host port (default 54329).
 PG_PORT="${METERWISE_PG_PORT:-54329}"
 PG_DSN_DEFAULT="postgres://meterwise:meterwise@127.0.0.1:${PG_PORT}/meterwise?sslmode=disable"
+
+# dsn_problem DSN prints why a DSN is unusable for gates (empty when fine).
+dsn_problem() {
+  local dsn="$1" auth host
+  case "$dsn" in postgres://* | postgresql://*) ;; *) echo "not a postgres:// URL"; return ;; esac
+  auth="$(printf '%s' "$dsn" | sed -E 's#^[a-z]+://([^/?]*).*#\1#')"
+  case "$auth" in *,*) echo "multiple hosts are not allowed"; return ;; esac
+  if printf '%s' "$dsn" | grep -qiE '[?&](host|hostaddr|service)='; then echo "host/hostaddr/service query parameters are not allowed"; return; fi
+  host="$(printf '%s' "${auth##*@}" | sed -E 's#^(\[[^]]*\]|[^:]*).*#\1#')"
+  if ! printf '%s' "$host" | grep -qE '^(localhost|127(\.[0-9]+){3}|\[::1\])$'; then echo "host '$host' is not loopback"; return; fi
+  printf '%s' "$dsn" | grep -qE '^[a-z]+://[^/?]*/[^/?]+' || echo "no database name in the URL path"
+}
+
 ensure_pg() {
-  if [ -n "${TEST_DATABASE_URL:-}" ]; then printf '%s\n' "$TEST_DATABASE_URL"; return 0; fi
+  if [ -n "${TEST_DATABASE_URL:-}" ]; then
+    local why
+    why="$(dsn_problem "$TEST_DATABASE_URL")"
+    if [ -n "$why" ]; then echo "✗ TEST_DATABASE_URL rejected: $why (gates only touch a local Postgres)" >&2; return 1; fi
+    printf '%s\n' "$TEST_DATABASE_URL"
+    return 0
+  fi
   if ! pg_isready -q -h 127.0.0.1 -p "$PG_PORT" 2>/dev/null; then
     command -v docker >/dev/null 2>&1 || return 1
     (cd "$REPO_ROOT" && METERWISE_PG_PORT="$PG_PORT" docker compose up -d --wait postgres >/dev/null 2>&1) || return 1
@@ -65,6 +86,25 @@ ensure_pg() {
     psql "$PG_DSN_DEFAULT" -qtAc 'select 1' >/dev/null 2>&1 || return 1
   fi
   printf '%s\n' "$PG_DSN_DEFAULT"
+}
+
+# sqlc_state prints "none", "ready" or "error: <why>". SKIP is only legal when no
+# sqlc input of any shape exists (ruling R5): a misnamed config (sqlc.yml, sqlc.json,
+# a nested one), queries or generated output without sqlc.yaml are errors, never SKIPs.
+sqlc_state() {
+  local cfgs q o
+  cfgs="$(list_files | grep -E '(^|/)sqlc\.(ya?ml|json)$' || true)"
+  q="$(list_files internal/store/queries | head -n 1)"
+  o="$(list_files internal/store/sqlc | head -n 1)"
+  if [ -n "$cfgs" ] && [ "$cfgs" != "sqlc.yaml" ]; then
+    echo "error: sqlc config must be exactly one root sqlc.yaml (found: $(echo "$cfgs" | tr '\n' ' '))"; return
+  fi
+  if [ -z "$cfgs" ]; then
+    if [ -n "$q$o" ]; then echo "error: sqlc inputs exist (internal/store/queries or internal/store/sqlc) but there is no sqlc.yaml"; return; fi
+    echo none; return
+  fi
+  if [ -z "$q" ]; then echo "error: sqlc.yaml exists but internal/store/queries/ has no files"; return; fi
+  echo ready
 }
 
 # list_files PATTERN... lists tracked and untracked-but-not-ignored files, so

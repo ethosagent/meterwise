@@ -62,6 +62,13 @@ seq 1 450 >"$P/prod.env"
 rm -f "$SCRATCH/port.seen"
 read_hook "$P/prod.env" "" >/dev/null 2>&1
 if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ reader mode never sends .env files"; pass=$((pass + 1)); else echo "✗ reader mode sent a .env file"; bad=$((bad + 1)); fi
+rm -f "$SCRATCH/port.seen"
+seq 1 450 | sed 's/^1$/api_key = abcdef1234567890/' >"$P/notes.txt"
+read_hook "$P/notes.txt" "" >/dev/null 2>&1
+seq 1 450 >"$P/id_ed25519"; read_hook "$P/id_ed25519" "" >/dev/null 2>&1
+if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ reader mode never sends a file whose content or name looks secret"; pass=$((pass + 1)); else echo "✗ reader mode sent a secret-looking file"; bad=$((bad + 1)); fi
+METERWISE_READER_URL="http://127.0.0.1.evil.test:$(cat "$SCRATCH/port")" t "reader mode refuses a non-loopback reader URL" 2 "Use Grep" -- read_hook "$P/big.txt" ""
+if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ ...and sent nothing"; pass=$((pass + 1)); else echo "✗ non-loopback reader received data"; bad=$((bad + 1)); fi
 unset METERWISE_READER_URL
 t "reader mode is off by default (plain refusal)" 2 "Use Grep" -- read_hook "$P/big.txt" ""
 
@@ -104,6 +111,7 @@ t "stop-gate blocks a dirty tree that fails a fast gate" 2 "fast gates failed" -
 t "stop-gate does not loop when already active" 0 "" -- run_in "$H/stop-gate.sh" <<<'{"stop_hook_active":true}'
 (cd "$P" && git checkout -q -- .)
 echo "A harmless extra line." >>"$P/docs/orientation.md"
+t "stop-gate does not loop when already active, even without jq" 0 "" -- env PATH=/usr/bin:/bin CLAUDE_PROJECT_DIR="$P" "$H/stop-gate.sh" <<<'{"stop_hook_active": true}'
 t "stop-gate passes a dirty tree whose fast gates are green" 0 "" -- run_in "$H/stop-gate.sh" <<<'{}'
 (cd "$P" && git checkout -q -- .)
 

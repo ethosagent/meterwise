@@ -10,13 +10,15 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib.sh
 go run ./cmd/gen -check
-if [ -f sqlc.yaml ]; then
-  gotool sqlc diff || { echo "✗ sqlc output is stale or hand-edited. Fix: gotool sqlc generate"; exit 1; }
-else
-  skip generated/sqlc "no sqlc.yaml yet"
-fi
-if [ -f internal/contract/taxonomy.go ]; then
+state="$(sqlc_state)"
+case "$state" in
+  none) skip generated/sqlc "no sqlc input exists yet" ;;
+  error:*) echo "✗ ${state#error: }"; exit 1 ;;
+  *) gotool sqlc diff || { echo "✗ sqlc output is stale or hand-edited. Fix: gotool sqlc generate"; exit 1; } ;;
+esac
+# any file that looks like the RBAC taxonomy (Go or TS, any name) makes this branch real
+if [ -n "$(list_files | grep -iE 'taxonomy' | grep -v -E '\.md$|^(docs/|\.agents/|\.claude/|scripts/|internal/archtest/|cmd/gen/)' | head -n 1)" ]; then
   go run ./cmd/gen -check taxonomy
 else
-  skip generated/taxonomy "no internal/contract/taxonomy.go yet (Plan 03 adds the RBAC taxonomy twin)"
+  skip generated/taxonomy "no taxonomy source exists yet (Plan 03 adds the RBAC taxonomy twin)"
 fi

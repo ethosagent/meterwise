@@ -1,49 +1,109 @@
 #!/usr/bin/env bash
 # Gate: migrations are well-formed, append-only and reversible.
-#   1. cmd/gen migrations: NNNN_<feature>.sql, `-- feature:` header, a Down section,
-#      and one feature's tables per file.
-#   2. An applied migration is never edited: against the merge-base with main only
-#      new files (status A) may appear under internal/store/migrations.
-#   3. goose up -> down to 0 -> up on a THROWAWAY database of the loopback Postgres
-#      (TEST_DATABASE_URL, or the compose Postgres), dropped afterwards.
-# No migrations yet = explicit SKIP (ruling R5). Once one exists the gate fails
-# closed, including when no Postgres is reachable.
+#   1. SQL anywhere except internal/store/migrations (flat NNNN_<feature>.sql) and
+#      internal/store/queries is refused, so a misplaced migration is never a SKIP.
+#   2. cmd/gen migrations: file name, `-- feature:` header, non-generic feature, a Down
+#      section, and every table touched or created belongs to the file's one feature.
+#   3. An applied migration is never edited: against the merge-base with main (or
+#      origin/main when there is no local main) only new files (status A) may appear.
+#      On main itself the last commit is compared. No base to compare with fails under
+#      CI=true and prints a SKIP locally.
+#   4. goose, on a THROWAWAY database of a loopback Postgres (TEST_DATABASE_URL or the
+#      compose Postgres): for every migration, up-by-one, down, up must reproduce the
+#      schema exactly (a Down that does not undo its Up fails), then down-to 0 leaves
+#      no tables and up applies everything.
+# SKIP only when no SQL input of any shape exists (ruling R5); with inputs it fails closed,
+# including when no Postgres is reachable.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib.sh
 dir=internal/store/migrations
-if ! ls "$dir"/*.sql >/dev/null 2>&1; then
-  skip migrate "no migrations yet in $dir (Plan 01 adds the first); this gate fails closed once one exists"
+
+stray="$(list_files | grep -iE '\.sql$' | grep -v -E '^internal/store/queries/|(^|/)testdata/' | grep -v -E "^$dir/[^/]+\.sql\$" || true)"
+if [ -n "$stray" ]; then
+  echo "✗ SQL outside $dir (flat, lower-case .sql) and internal/store/queries:"
+  echo "$stray" | sed 's/^/    /'
+  exit 1
+fi
+if [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+  skip migrate "no migrations exist yet in $dir (Plan 01 adds the first); this gate fails closed the moment one does"
   exit 0
 fi
 
 go run ./cmd/gen migrations
 
-if base="$(git merge-base HEAD main 2>/dev/null)" && [ -n "$base" ]; then
-  changed="$(git diff --name-status "$base" -- "$dir" | grep -v -E '^A[[:space:]]' || true)"
+base_ref=""
+for r in main origin/main; do
+  if git rev-parse --verify -q "$r^{commit}" >/dev/null; then base_ref="$r"; break; fi
+done
+if [ -n "$base_ref" ] && mb="$(git merge-base HEAD "$base_ref" 2>/dev/null)" && [ -n "$mb" ]; then
+  # net change since the merge-base, including the working tree
+  diffs="$(git diff --name-status "$mb" -- "$dir")"
+  # on the base branch itself HEAD == merge-base: also compare the last commit
+  if [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then
+    diffs="$diffs
+$(git diff --name-status HEAD~1 HEAD -- "$dir")"
+  fi
+  changed="$(printf '%s\n' "$diffs" | grep -v -E '^(A[[:space:]]|$)' || true)"
   if [ -n "$changed" ]; then
     echo "✗ applied migrations were modified or removed (add a NEW migration instead):"
     echo "$changed"
     exit 1
   fi
+elif [ "${CI:-}" = "true" ]; then
+  echo "✗ no main or origin/main to compare with (shallow clone?): cannot prove applied migrations are unchanged. Use fetch-depth: 0."
+  exit 1
 else
-  skip migrate-immutability "no 'main' branch to compare against"
+  skip migrate-immutability "no 'main' or 'origin/main' to compare against"
 fi
 
 command -v psql >/dev/null 2>&1 || { echo "✗ psql not found; install the PostgreSQL client"; exit 1; }
-admin="$(ensure_pg)" || { echo "✗ no Postgres reachable: set TEST_DATABASE_URL or start docker (make db-up)"; exit 1; }
+admin="$(ensure_pg)" || { echo "✗ no usable Postgres: set a loopback TEST_DATABASE_URL (with a database name) or start docker (make db-up)"; exit 1; }
 name="mw_migrate_$$_$RANDOM"
 psql "$admin" -v ON_ERROR_STOP=1 -qc "CREATE DATABASE $name" >/dev/null ||
   { echo "✗ cannot create a throwaway database on the admin Postgres (is it reachable and is the role allowed CREATEDB?)"; exit 1; }
 trap 'psql "$admin" -qc "DROP DATABASE IF EXISTS $name WITH (FORCE)" >/dev/null 2>&1 || true' EXIT
-dsn="$(printf '%s' "$admin" | sed -E "s#(/)[^/?]+(\\?|\$)#\\1$name\\2#")"
+dsn="$(printf '%s' "$admin" | sed -E "s#^([a-z]+://[^/?]*/)[^/?]+#\\1$name#")"
+case "$dsn" in *"/$name"*) ;; *) echo "✗ could not point the DSN at the throwaway database"; exit 1 ;; esac
 goose() { gotool goose -dir "$dir" postgres "$dsn" "$@"; }
-tables() { psql "$dsn" -qtAc "select count(*) from information_schema.tables where table_schema = 'public' and table_name <> 'goose_db_version'"; }
-goose up
-[ "$(tables)" -gt 0 ] || { echo "✗ goose up created no tables"; exit 1; }
-goose down-to 0
-left="$(tables)"
-[ "$left" -eq 0 ] || { echo "✗ down-to 0 left $left table(s) behind: a Down section does not undo its Up"; exit 1; }
-goose up
+
+# A deterministic description of the public schema, excluding goose's own table.
+snap() {
+  psql "$dsn" -qtAX -v ON_ERROR_STOP=1 <<'SQL'
+select x from (
+  select 'col ' || table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '') as x
+    from information_schema.columns where table_schema = 'public' and table_name <> 'goose_db_version'
+  union all select 'idx ' || indexdef from pg_indexes where schemaname = 'public' and tablename <> 'goose_db_version'
+  union all select 'con ' || conrelid::regclass || ' ' || conname || ' ' || pg_get_constraintdef(oid)
+    from pg_constraint where connamespace = 'public'::regnamespace and conrelid::regclass::text <> 'goose_db_version'
+  union all select 'trg ' || pg_get_triggerdef(oid) from pg_trigger where not tgisinternal
+  union all select 'pol ' || tablename || ' ' || policyname || ' ' || coalesce(qual, '') || coalesce(with_check, '') from pg_policies where schemaname = 'public'
+  union all select 'view ' || viewname || ' ' || definition from pg_views where schemaname = 'public'
+  union all select 'func ' || proname from pg_proc where pronamespace = 'public'::regnamespace
+  union all select 'type ' || typname from pg_type where typnamespace = 'public'::regnamespace and typtype in ('e', 'd')
+) s order by x
+SQL
+}
+
+count="$(ls "$dir"/*.sql | wc -l | tr -d ' ')"
+prev="$(snap)"
+for i in $(seq 1 "$count"); do
+  goose up-by-one >/dev/null
+  cur="$(snap)"
+  goose down >/dev/null
+  after="$(snap)"
+  if [ "$after" != "$prev" ]; then
+    echo "✗ migration #$i: Down does not restore the schema that existed before its Up. Difference (< before Up, > after Down):"
+    diff <(echo "$prev") <(echo "$after") | head -n 20 || true
+    exit 1
+  fi
+  goose up-by-one >/dev/null
+  if [ "$(snap)" != "$cur" ]; then echo "✗ migration #$i: Up after Down produced a different schema"; exit 1; fi
+  prev="$cur"
+done
+goose down-to 0 >/dev/null
+left="$(psql "$dsn" -qtAX -c "select count(*) from information_schema.tables where table_schema = 'public' and table_name <> 'goose_db_version'")"
+[ "$left" -eq 0 ] || { echo "✗ down-to 0 left $left table(s) behind"; exit 1; }
+goose up >/dev/null
 if goose status | grep -q Pending; then echo "✗ migrations still pending after the final up"; exit 1; fi
-echo "✓ goose up, down-to 0 (schema empty), up on throwaway database $name"
+echo "✓ $count migration(s): each up/down/up reproduces the schema; down-to 0 leaves it empty; up applies all (throwaway database $name)"

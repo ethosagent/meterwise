@@ -24,11 +24,13 @@ cmp -s CLAUDE.md AGENTS.md || err "CLAUDE.md and AGENTS.md differ. Fix: edit one
 
 for s in .agents/skills/*/SKILL.md; do
   d="${s%/SKILL.md}"; name="${d##*/}"
-  # one pass over the frontmatter: prints "<first line>\t<name>\t<description>\t<manual flag>"
+  # one pass over the frontmatter (block scalars `>-` and `|` are unfolded): prints "<first line>\t<name>\t<description>\t<manual flag>"
   IFS=$'\t' read -r first fm_name desc manual < <(awk 'NR==1{f=$0} /^---$/{n++; next}
-    n==1 && /^name:/{sub(/^name:[ ]*/,""); nm=$0}
-    n==1 && /^description:/{sub(/^description:[ ]*/,""); ds=$0}
-    n==1 && /^disable-model-invocation:[ ]*true/{mn="true"}
+    n==1 && /^name:/{sub(/^name:[ ]*/,""); nm=$0; blk=0}
+    n==1 && /^description:/{sub(/^description:[ ]*/,""); ds=$0; blk=($0 ~ /^[>|][-+]?[0-9]*[ ]*$/); if (blk) ds=""; next}
+    n==1 && blk && /^[ \t]+[^ \t]/ {l=$0; sub(/^[ \t]+/,"",l); ds=(ds=="" ? l : ds " " l); next}
+    n==1 && /^disable-model-invocation:[ ]*true/{mn="true"; blk=0}
+    n==1 && /^[a-z-]+:/ {blk=0}
     END{printf "%s\t%s\t%s\t%s\n", f, nm, ds, (mn=="" ? "false" : mn)}' "$s")
   [ "$first" = "---" ] || { err "$s: missing frontmatter"; continue; }
   [ "$fm_name" = "$name" ] || err "$s: frontmatter name '$fm_name' != directory '$name'"
@@ -85,6 +87,12 @@ want_tier internal/dataplane/forward.go critical
 want_tier internal/access/evaluator.go critical
 want_tier scripts/check-test.sh gates
 want_tier internal/store/migrations/0001_orgs.sql gates
+want_tier internal/store/migration-families.txt gates
+want_tier web/biome.json gates
+want_tier web/vite.config.ts gates
+want_tier web/tsconfig.json gates
+want_tier sqlc.yaml gates
+want_tier .claude/skills/x/SKILL.md gates
 want_tier internal/tenancy/workspaces.go normal
 want_tier docs/orientation.md low
 [ "$(scripts/risk-tier.sh docs/a.md internal/ledger/x.go)" = critical ] || err "risk-tier: highest tier must win"
@@ -105,6 +113,11 @@ if command -v jq >/dev/null 2>&1; then
 else
   skip docs/hooks "jq not installed; cannot validate .claude/settings.json"
 fi
+
+tc="$(sed -n 's/^toolchain go//p' go.mod)"
+[ -n "$tc" ] || err "go.mod has no toolchain line"
+[ "$(sed -n 's/^toolchain go//p' tools/go.mod)" = "$tc" ] || err "tools/go.mod toolchain differs from go.mod ($tc)"
+grep -q "^ARG GO_VERSION=$tc\$" Dockerfile || err "Dockerfile ARG GO_VERSION must equal the go.mod toolchain ($tc)"
 
 for rb in local-dev release rotate-keys parallel-sessions model-policy agent-hygiene; do
   [ -f "docs/runbooks/$rb.md" ] || err "docs/runbooks/$rb.md is missing"

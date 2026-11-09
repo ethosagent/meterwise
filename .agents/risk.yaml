@@ -28,6 +28,12 @@ tiers:
     - .claude/hooks/**
     - ARCHITECTURE.md
     - internal/store/migrations/** # an applied migration is never edited; new file only
+    - internal/store/migration-families.txt # which feature owns which tables
+    - sqlc.yaml
+    - web/biome.json # lint rules and the format
+    - web/vite.config.ts # holds the 70 % web coverage floor
+    - web/tsconfig.json
+    - .claude/skills/** # the symlink resolves to .agents/skills
   normal:
     - internal/**
     - cmd/**
