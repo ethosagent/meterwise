@@ -22,6 +22,14 @@ func InvitationStatuses() []InvitationStatus {
 	return []InvitationStatus{InvitationPending, InvitationAccepted, InvitationRevoked, InvitationExpired}
 }
 
+// Profile is a user's stored UI state: preferences and the active workspace id
+// ("" when unset). The id is as stored and may name a workspace that is gone or
+// that the user can no longer read; resolving it is the caller's job.
+type Profile struct {
+	Preferences       Preferences
+	ActiveWorkspaceID string
+}
+
 // Identity is what an IdentityProvider proves about a bearer token. Email and
 // EmailVerified come from the session token's claims; an invitation is matched
 // only when EmailVerified is true.

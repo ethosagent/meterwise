@@ -101,9 +101,9 @@ func validName(raw string) (string, error) {
 // Resolve mirrors the identity into users (the lazy upsert: it works with zero
 // webhooks) and attaches the principal for an active membership. A soft-deleted
 // user is unauthenticated. Membership is read on every call, so removing it
-// takes effect on the next request.
+// takes effect on the next request. The common case is one joined read.
 func (s *Service) Resolve(ctx context.Context, id contract.Identity) (contract.Session, error) {
-	u, err := s.st.UpsertUser(ctx, s.org, id)
+	u, role, active, err := s.st.ResolveUser(ctx, s.org, id)
 	if err != nil {
 		return contract.Session{}, err
 	}
@@ -111,15 +111,17 @@ func (s *Service) Resolve(ctx context.Context, id contract.Identity) (contract.S
 		return contract.Session{}, contract.NewError(contract.CodeUnauthenticated, "invalid or expired token")
 	}
 	sess := contract.Session{Identity: id, User: u}
-	role, active, _, err := s.st.Membership(ctx, s.org, u.ID)
-	if err != nil {
-		return contract.Session{}, err
-	}
 	if active {
-		sess.Member = true
-		sess.Principal = contract.Principal{UserID: u.ID, OrgID: s.org, Email: u.Email, Role: role}
+		sess = s.asMember(sess, role)
 	}
 	return sess, nil
+}
+
+// asMember marks the session's user as an active member with role.
+func (s *Service) asMember(sess contract.Session, role contract.Role) contract.Session {
+	sess.Member = true
+	sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: role}
+	return sess
 }
 
 // CompleteSignup turns the pending invitation for the session's verified email
@@ -140,19 +142,20 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 	if err != nil {
 		return contract.Session{}, err
 	}
-	if !ok {
-		// Two tabs of the same person finish first login together: the loser finds the invitation
-		// already used, but the person is a member by then. Re-read before refusing.
-		if r, active, _, merr := s.st.Membership(ctx, s.org, sess.User.ID); merr == nil && active {
-			sess.Member = true
-			sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: r}
-			return sess, nil
-		}
+	if ok {
+		return s.asMember(sess, role), nil
+	}
+	// Two tabs of the same person finish first login together: the loser finds the invitation
+	// already used, but the person is a member by then. Re-read before refusing; a failed
+	// re-read is a failure of ours, never a verdict on the person.
+	r, active, _, err := s.st.Membership(ctx, s.org, sess.User.ID)
+	if err != nil {
+		return contract.Session{}, err
+	}
+	if !active {
 		return contract.Session{}, notInvited()
 	}
-	sess.Member = true
-	sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: role}
-	return sess, nil
+	return s.asMember(sess, r), nil
 }
 
 // EnsureMember makes a user an active member with role (the dev-only resolver and tests use it;
@@ -172,33 +175,29 @@ func (s *Service) DeleteWebhookUser(ctx context.Context, clerkUserID string) err
 	return s.st.SoftDeleteUser(ctx, s.org, clerkUserID)
 }
 
-// Profile returns the caller's stored preferences and the active workspace id.
-// An unset or stale (deleted) active workspace falls back to the default one.
-func (s *Service) Profile(ctx context.Context, userID string) (contract.Preferences, string, error) {
-	prefs, active, err := s.st.Preferences(ctx, s.org, userID)
-	if err != nil {
-		return contract.Preferences{}, "", err
-	}
-	list, err := s.st.ListWorkspaces(ctx, s.org)
-	if err != nil {
-		return contract.Preferences{}, "", err
-	}
-	fallback := ""
-	for _, w := range list {
-		if w.ID == active {
-			return prefs, active, nil
-		}
-		if w.IsDefault {
-			fallback = w.ID
-		}
-	}
-	return prefs, fallback, nil
+// Profile returns the caller's stored preferences and stored active workspace id.
+// ActiveWorkspace turns the latter into the workspace the caller really uses.
+func (s *Service) Profile(ctx context.Context, userID string) (contract.Profile, error) {
+	return s.st.Profile(ctx, s.org, userID)
 }
 
-// Preferences returns the user's UI preferences (the real contract-backed store).
-func (s *Service) Preferences(ctx context.Context, userID string) (contract.Preferences, error) {
-	p, _, err := s.st.Preferences(ctx, s.org, userID)
-	return p, err
+// ActiveWorkspace picks the caller's active workspace: the stored one when it still
+// exists and readable allows it, otherwise the first readable workspace of the
+// list (which arrives default first). "" means the caller can read none.
+func ActiveWorkspace(stored string, list []contract.Workspace, readable func(id string) bool) string {
+	first := ""
+	for _, w := range list {
+		if !readable(w.ID) {
+			continue
+		}
+		if w.ID == stored {
+			return stored
+		}
+		if first == "" {
+			first = w.ID
+		}
+	}
+	return first
 }
 
 // UpdatePreferences applies the fields present in patch.
@@ -210,8 +209,8 @@ func (s *Service) UpdatePreferences(ctx context.Context, userID string, patch co
 	if patch.ReducedMotion != nil {
 		m["reducedMotion"] = *patch.ReducedMotion
 	}
-	p, _, err := s.st.MergePreferences(ctx, s.org, userID, m)
-	return p, err
+	p, err := s.st.MergeProfile(ctx, s.org, userID, m)
+	return p.Preferences, err
 }
 
 // ListWorkspaces returns the org's workspaces.
@@ -219,40 +218,41 @@ func (s *Service) ListWorkspaces(ctx context.Context, p contract.Principal) ([]c
 	return s.dir.List(ctx, p)
 }
 
-// CreateWorkspace creates a workspace with a fresh CSPRNG public id, honouring MAX_WORKSPACES.
-func (s *Service) CreateWorkspace(ctx context.Context, p contract.Principal, name string) (contract.Workspace, error) {
-	n, err := validName(name)
-	if err != nil {
-		return contract.Workspace{}, err
-	}
-	for range maxIDAttempts {
-		pid, err := NewPublicID(s.cfg.Rand)
-		if err != nil {
-			return contract.Workspace{}, err
-		}
-		ws, err := s.st.CreateWorkspace(ctx, p.OrgID, n, pid, s.cfg.MaxWorkspaces)
-		if errors.Is(err, store.ErrPublicIDTaken) {
-			continue
-		}
-		return ws, err
-	}
-	return contract.Workspace{}, contract.NewError(contract.CodeInternal, "could not allocate a workspace id")
-}
-
-// EnsureDefaults creates the default workspace when the org has none. It is idempotent.
-func (s *Service) EnsureDefaults(ctx context.Context) error {
+// withPublicID draws a fresh CSPRNG public id and calls try with it, drawing again
+// when try reports a collision (store.ErrPublicIDTaken).
+func (s *Service) withPublicID(try func(publicID string) error) error {
 	for range maxIDAttempts {
 		pid, err := NewPublicID(s.cfg.Rand)
 		if err != nil {
 			return err
 		}
-		_, err = s.st.EnsureDefaultWorkspace(ctx, s.org, DefaultWorkspaceName, pid)
-		if errors.Is(err, store.ErrPublicIDTaken) {
-			continue
+		if err := try(pid); !errors.Is(err, store.ErrPublicIDTaken) {
+			return err
 		}
-		return err
 	}
 	return contract.NewError(contract.CodeInternal, "could not allocate a workspace id")
+}
+
+// CreateWorkspace creates a workspace with a fresh CSPRNG public id, honouring MAX_WORKSPACES.
+func (s *Service) CreateWorkspace(ctx context.Context, p contract.Principal, name string) (ws contract.Workspace, err error) {
+	n, err := validName(name)
+	if err != nil {
+		return contract.Workspace{}, err
+	}
+	err = s.withPublicID(func(pid string) error {
+		var cerr error
+		ws, cerr = s.st.CreateWorkspace(ctx, p.OrgID, n, pid, s.cfg.MaxWorkspaces)
+		return cerr
+	})
+	return ws, err
+}
+
+// EnsureDefaults creates the default workspace when the org has none. It is idempotent.
+func (s *Service) EnsureDefaults(ctx context.Context) error {
+	return s.withPublicID(func(pid string) error {
+		_, err := s.st.EnsureDefaultWorkspace(ctx, s.org, DefaultWorkspaceName, pid)
+		return err
+	})
 }
 
 // UpdateWorkspace renames a workspace and/or replaces its settings, then busts the directory cache.
@@ -287,7 +287,7 @@ func (s *Service) SwitchWorkspace(ctx context.Context, p contract.Principal, id 
 	if err != nil {
 		return "", err
 	}
-	if _, _, err := s.st.MergePreferences(ctx, p.OrgID, p.UserID, map[string]any{"activeWorkspaceId": ws.ID}); err != nil {
+	if _, err := s.st.MergeProfile(ctx, p.OrgID, p.UserID, map[string]any{"activeWorkspaceId": ws.ID}); err != nil {
 		return "", err
 	}
 	return ws.ID, nil

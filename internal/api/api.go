@@ -145,12 +145,12 @@ func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
 		writeError(w, contract.NewError(contract.CodeUnauthenticated, "authentication required"))
 		return
 	}
-	prefs, err := s.Tenancy.Preferences(r.Context(), sess.User.ID)
+	prof, err := s.Tenancy.Profile(r.Context(), sess.User.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, prefs)
+	writeJSON(w, http.StatusOK, prof.Preferences)
 }
 
 func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
@@ -160,14 +160,7 @@ func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var patch contract.PreferencesPatch
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&patch); err != nil {
-		writeError(w, contract.NewError(contract.CodeInvalidRequest, "body must be a JSON object with theme and/or reducedMotion", "body: "+decodeProblem(err)))
-		return
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		writeError(w, contract.NewError(contract.CodeInvalidRequest, "body must be a single JSON object"))
+	if !readJSON(w, r, &patch) {
 		return
 	}
 	if patch.Theme != nil && !patch.Theme.Valid() {

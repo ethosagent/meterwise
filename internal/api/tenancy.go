@@ -10,14 +10,14 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
+	"github.com/ethosagent/meterwise/internal/tenancy"
 )
 
 // Tenancy is what the handlers need from the tenancy layer; *tenancy.Service
 // implements it. Every method that touches org data takes the calling principal.
 type Tenancy interface {
 	CompleteSignup(ctx context.Context, sess contract.Session) (contract.Session, error)
-	Profile(ctx context.Context, userID string) (contract.Preferences, string, error)
-	Preferences(ctx context.Context, userID string) (contract.Preferences, error)
+	Profile(ctx context.Context, userID string) (contract.Profile, error)
 	UpdatePreferences(ctx context.Context, userID string, patch contract.PreferencesPatch) (contract.Preferences, error)
 
 	ListWorkspaces(ctx context.Context, p contract.Principal) ([]contract.Workspace, error)
@@ -84,13 +84,18 @@ func invitationView(i contract.Invitation, now time.Time) contract.InvitationVie
 
 // me builds the Me body for a session that holds a membership.
 func (s *server) me(ctx context.Context, sess contract.Session) (contract.Me, error) {
-	prefs, active, err := s.Tenancy.Profile(ctx, sess.User.ID)
+	prof, err := s.Tenancy.Profile(ctx, sess.User.ID)
 	if err != nil {
 		return contract.Me{}, err
 	}
+	list, err := s.Tenancy.ListWorkspaces(ctx, sess.Principal)
+	if err != nil {
+		return contract.Me{}, err
+	}
+	active := tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list, func(string) bool { return true })
 	return contract.Me{
 		User:  contract.MeUser{ID: sess.User.ID, Email: sess.User.Email, Name: sess.User.Name, AvatarURL: sess.User.AvatarURL},
-		OrgID: sess.Principal.OrgID, Role: sess.Principal.Role, ActiveWorkspaceID: active, Preferences: prefs,
+		OrgID: sess.Principal.OrgID, Role: sess.Principal.Role, ActiveWorkspaceID: active, Preferences: prof.Preferences,
 	}, nil
 }
 

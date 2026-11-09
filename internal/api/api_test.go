@@ -57,18 +57,14 @@ type memTenancy struct {
 
 func newMemTenancy() *memTenancy { return &memTenancy{byID: map[string]contract.Preferences{}} }
 
-func (m *memTenancy) Preferences(_ context.Context, id string) (contract.Preferences, error) {
+func (m *memTenancy) Profile(_ context.Context, id string) (contract.Profile, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.gets = append(m.gets, id)
 	if p, ok := m.byID[id]; ok {
-		return p, nil
+		return contract.Profile{Preferences: p, ActiveWorkspaceID: "ws-1"}, nil
 	}
-	return api.DefaultPreferences(), nil
-}
-
-func (m *memTenancy) Profile(context.Context, string) (contract.Preferences, string, error) {
-	return api.DefaultPreferences(), "ws-1", nil
+	return contract.Profile{Preferences: api.DefaultPreferences(), ActiveWorkspaceID: "ws-1"}, nil
 }
 
 func (m *memTenancy) ListWorkspaces(context.Context, contract.Principal) ([]contract.Workspace, error) {
@@ -223,8 +219,12 @@ func TestPreferencesLifecycle(t *testing.T) {
 
 func TestPreferencesRejectBadBodiesWithTypedErrors(t *testing.T) {
 	f := newFixture(t, nil)
+	// A bad theme value is a well-formed body with a bad value (400); every malformed body
+	// is validation_failed 422 like on every other route.
+	if resp, b := f.do(t, "PATCH", "/api/me/preferences", `{"theme":"neon"}`); resp.StatusCode != http.StatusBadRequest || decodeErr(t, b).Code != contract.CodeInvalidRequest {
+		t.Fatalf("bad theme: %d %s", resp.StatusCode, b)
+	}
 	tests := map[string]string{
-		"bad theme":     `{"theme":"neon"}`,
 		"unknown field": `{"colour":"red"}`,
 		"wrong type":    `{"reducedMotion":"yes"}`,
 		"not json":      `theme=dark`,
@@ -236,7 +236,7 @@ func TestPreferencesRejectBadBodiesWithTypedErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			resp, b := f.do(t, "PATCH", "/api/me/preferences", body)
 			e := decodeErr(t, b)
-			if resp.StatusCode != http.StatusBadRequest || e.Code != contract.CodeInvalidRequest {
+			if resp.StatusCode != http.StatusUnprocessableEntity || e.Code != contract.CodeValidationFailed {
 				t.Fatalf("%d %s", resp.StatusCode, b)
 			}
 		})

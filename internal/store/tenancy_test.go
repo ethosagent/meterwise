@@ -58,32 +58,32 @@ func TestUsersMirrorLazilyAndNeverClobberWithEmptyClaims(t *testing.T) {
 func TestPreferencesMergeAndDefaults(t *testing.T) {
 	s, ctx, org := openMigrated(t), context.Background(), store.OrgID()
 	u, _ := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_1"})
-	p, active, err := s.Preferences(ctx, org, u.ID)
-	if err != nil || p.Theme != contract.ThemeSystem || p.ReducedMotion || active != "" {
-		t.Fatalf("defaults: %+v %q %v", p, active, err)
+	prof, err := s.Profile(ctx, org, u.ID)
+	if p, active := prof.Preferences, prof.ActiveWorkspaceID; err != nil || p.Theme != contract.ThemeSystem || p.ReducedMotion || active != "" {
+		t.Fatalf("defaults: %+v %v", prof, err)
 	}
-	if _, _, err = s.MergePreferences(ctx, org, u.ID, map[string]any{"theme": "dark"}); err != nil {
+	if _, err = s.MergeProfile(ctx, org, u.ID, map[string]any{"theme": "dark"}); err != nil {
 		t.Fatal(err)
 	}
-	p, active, err = s.MergePreferences(ctx, org, u.ID, map[string]any{"reducedMotion": true, "activeWorkspaceId": missingID})
-	if err != nil || p.Theme != contract.ThemeDark || !p.ReducedMotion || active != missingID {
-		t.Fatalf("merge: %+v %q %v", p, active, err)
+	prof, err = s.MergeProfile(ctx, org, u.ID, map[string]any{"reducedMotion": true, "activeWorkspaceId": missingID})
+	if p, active := prof.Preferences, prof.ActiveWorkspaceID; err != nil || p.Theme != contract.ThemeDark || !p.ReducedMotion || active != missingID {
+		t.Fatalf("merge: %+v %v", prof, err)
 	}
-	if _, _, err = s.MergePreferences(ctx, org, u.ID, map[string]any{"theme": "neon"}); err != nil {
+	if _, err = s.MergeProfile(ctx, org, u.ID, map[string]any{"theme": "neon"}); err != nil {
 		t.Fatal(err)
 	}
-	if p, _, _ = s.Preferences(ctx, org, u.ID); p.Theme != contract.ThemeSystem {
-		t.Fatalf("a stored invalid theme must read as system, got %q", p.Theme)
+	if prof, _ = s.Profile(ctx, org, u.ID); prof.Preferences.Theme != contract.ThemeSystem {
+		t.Fatalf("a stored invalid theme must read as system, got %q", prof.Preferences.Theme)
 	}
 	for _, id := range []string{"nope", missingID} {
-		if _, _, err := s.Preferences(ctx, org, id); code(err) != contract.CodeNotFound {
-			t.Errorf("Preferences(%q) = %v", id, err)
+		if _, err := s.Profile(ctx, org, id); code(err) != contract.CodeNotFound {
+			t.Errorf("Profile(%q) = %v", id, err)
 		}
-		if _, _, err := s.MergePreferences(ctx, org, id, map[string]any{}); code(err) != contract.CodeNotFound {
-			t.Errorf("MergePreferences(%q) = %v", id, err)
+		if _, err := s.MergeProfile(ctx, org, id, map[string]any{}); code(err) != contract.CodeNotFound {
+			t.Errorf("MergeProfile(%q) = %v", id, err)
 		}
 	}
-	if _, _, err := s.MergePreferences(ctx, org, u.ID, map[string]any{"x": func() {}}); err == nil {
+	if _, err := s.MergeProfile(ctx, org, u.ID, map[string]any{"x": func() {}}); err == nil {
 		t.Fatal("a non-JSON patch was accepted")
 	}
 }
