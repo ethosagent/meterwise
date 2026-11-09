@@ -261,7 +261,7 @@ type ResetURLRequest struct {
 // URL does not entitle anyone to see it.
 type ResetURLResponse struct {
 	ProxyURL           *string `json:"proxyUrl"`
-	PreviousGraceUntil string `json:"previousGraceUntil"`
+	PreviousGraceUntil string  `json:"previousGraceUntil"`
 }
 
 // AllowedCIDRs is the PUT /api/workspaces/{id}/url/allowed-cidrs body and response: the source
