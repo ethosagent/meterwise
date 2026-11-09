@@ -12,14 +12,14 @@ import {
   theme,
 } from "antd";
 import { useEffect } from "react";
-import type { WorkspaceView } from "../../api/contract04";
 import { useActiveWorkspace, useDeleteWorkspace, useRenameWorkspace } from "../../api/identity";
 import { usePermission } from "../../auth/usePermission";
+import type { Workspace } from "../../contract/generated";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { WorkspaceUrl } from "./WorkspaceUrl";
 
-function General({ ws, canManage }: { ws: WorkspaceView; canManage: boolean }) {
+function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
   const { message } = App.useApp();
   const rename = useRenameWorkspace();
   const [form] = Form.useForm<{ name: string }>();
@@ -61,7 +61,7 @@ function General({ ws, canManage }: { ws: WorkspaceView; canManage: boolean }) {
   );
 }
 
-function DangerZone({ ws }: { ws: WorkspaceView }) {
+function DangerZone({ ws }: { ws: Workspace }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const del = useDeleteWorkspace();

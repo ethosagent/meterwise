@@ -1,8 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AuditEntry } from "../../api/contract04";
-import type { PermissionSnapshot } from "../../contract/generated";
+import type { AuditEntry, PermissionSnapshot } from "../../contract/generated";
 import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { MEMBER_ME, mockApi } from "../../test/mockApi";
 import { renderAt } from "../../test/render";

@@ -1,7 +1,7 @@
 import { Alert, App, Button, Select, Space, Typography } from "antd";
 import { useState } from "react";
-import { ALLOWED_CIDRS_MAX } from "../../api/contract04";
 import { describeApiError } from "../../api/errors";
+import { ALLOWED_CIDRS_MAX } from "../../api/limits";
 import { useSetAllowedCidrs } from "../../api/setup";
 
 /**

@@ -1,12 +1,14 @@
+import { ALLOWED_CIDRS_MAX, GRACE_MINUTES_MAX } from "../api/limits";
 import type {
+  AuditAction,
   AuditActor,
   AuditEntry,
-  ResetUrlResult,
+  ResetURLResponse,
   Setup,
   SetupStatus,
-  WorkspaceView,
-} from "../api/contract04";
-import { ALLOWED_CIDRS_MAX, AUDIT_ACTIONS, GRACE_MINUTES_MAX } from "../api/contract04";
+  Workspace,
+} from "../contract/generated";
+import { AUDIT_ACTIONS } from "../contract/generated";
 import { type AccessMock, errorResponse, jsonResponse } from "./mockAccess";
 
 export interface UrlInit {
@@ -20,15 +22,15 @@ export interface UrlContext {
   access: AccessMock;
   host: string;
   actor: AuditActor;
-  workspaces: () => WorkspaceView[];
-  update: (w: WorkspaceView) => void;
+  workspaces: () => Workspace[];
+  update: (w: Workspace) => void;
 }
 
 export interface UrlMock {
   audit: AuditEntry[];
   status: SetupStatus;
   /** A workspace as the API sends it: the URL fields are null without workspace_url:read. */
-  mask: (w: WorkspaceView) => WorkspaceView;
+  mask: (w: Workspace) => Workspace;
   route: (method: string, path: string, body: Record<string, unknown>) => Response | undefined;
 }
 
@@ -72,7 +74,7 @@ export function createUrlMock(ctx: UrlContext, init: UrlInit = {}): UrlMock {
   return m;
 }
 
-function record(m: UrlMock, ctx: UrlContext, action: string, ws: WorkspaceView) {
+function record(m: UrlMock, ctx: UrlContext, action: AuditAction, ws: Workspace) {
   m.audit = [
     {
       id: `aud_${++seq}`,
@@ -136,7 +138,7 @@ function handle(
   return undefined;
 }
 
-function reset(m: UrlMock, ctx: UrlContext, ws: WorkspaceView, body: Record<string, unknown>) {
+function reset(m: UrlMock, ctx: UrlContext, ws: Workspace, body: Record<string, unknown>) {
   const grace = body.graceMinutes === undefined ? 10 : body.graceMinutes;
   if (!Number.isInteger(grace) || (grace as number) < 0 || (grace as number) > GRACE_MINUTES_MAX) {
     return invalid(`graceMinutes must be a whole number from 0 to ${GRACE_MINUTES_MAX}`);
@@ -145,14 +147,14 @@ function reset(m: UrlMock, ctx: UrlContext, ws: WorkspaceView, body: Record<stri
   const proxyUrl = `https://${ctx.host}/w/${publicId}`;
   ctx.update({ ...ws, publicId, proxyUrl });
   record(m, ctx, "workspace.url_reset", ws);
-  const result: ResetUrlResult = {
+  const result: ResetURLResponse = {
     proxyUrl,
     previousGraceUntil: new Date(Date.now() + (grace as number) * 60_000).toISOString(),
   };
   return jsonResponse(result);
 }
 
-function cidrs(m: UrlMock, ctx: UrlContext, ws: WorkspaceView, body: Record<string, unknown>) {
+function cidrs(m: UrlMock, ctx: UrlContext, ws: Workspace, body: Record<string, unknown>) {
   const raw = body.cidrs;
   if (!Array.isArray(raw)) return invalid("cidrs must be a list");
   if (raw.length > ALLOWED_CIDRS_MAX) return invalid(`at most ${ALLOWED_CIDRS_MAX} entries`);

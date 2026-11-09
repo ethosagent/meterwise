@@ -1,12 +1,9 @@
 import { Alert, App, Button, InputNumber, Popconfirm, Space, Typography } from "antd";
 import { useState } from "react";
-import {
-  GRACE_MINUTES_DEFAULT,
-  GRACE_MINUTES_MAX,
-  type ResetUrlResult,
-} from "../../api/contract04";
 import { describeApiError } from "../../api/errors";
+import { GRACE_MINUTES_DEFAULT, GRACE_MINUTES_MAX } from "../../api/limits";
 import { useResetUrl, useRetirePrevious } from "../../api/setup";
+import type { ResetURLResponse } from "../../contract/generated";
 
 /**
  * Reset URL: a Popconfirm that explains the grace window, then a notice that the previous URL
@@ -17,7 +14,7 @@ export function ResetUrl({ workspaceId }: { workspaceId: string }) {
   const reset = useResetUrl();
   const retire = useRetirePrevious();
   const [grace, setGrace] = useState<number>(GRACE_MINUTES_DEFAULT);
-  const [result, setResult] = useState<ResetUrlResult | null>(null);
+  const [result, setResult] = useState<ResetURLResponse | null>(null);
   const fail = (e: unknown, fallback: string) => message.error(describeApiError(e, { fallback }));
   return (
     <Space vertical style={{ width: "100%" }}>

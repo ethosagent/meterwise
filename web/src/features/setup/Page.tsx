@@ -1,8 +1,8 @@
 import { Alert, Button, Card, Skeleton, Tabs, Typography, theme } from "antd";
-import type { Setup } from "../../api/contract04";
 import { useActiveWorkspace } from "../../api/identity";
 import { useSetup } from "../../api/setup";
 import { usePermission } from "../../auth/usePermission";
+import type { Setup } from "../../contract/generated";
 import { NoWorkspaceAccess } from "../../shell/NoWorkspaceAccess";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";

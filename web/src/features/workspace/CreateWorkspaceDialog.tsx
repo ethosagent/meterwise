@@ -1,8 +1,8 @@
 import { Alert, Button, Form, Input, Modal, Typography, theme } from "antd";
 import { useState } from "react";
-import type { WorkspaceView } from "../../api/contract04";
 import { describeApiError } from "../../api/errors";
 import { IDENTITY_ERRORS, useCreateWorkspace } from "../../api/identity";
+import type { Workspace } from "../../contract/generated";
 import { ProxyUrl } from "./ProxyUrl";
 import { UrlHidden } from "./WorkspaceUrl";
 
@@ -21,7 +21,7 @@ export function createErrorText(e: unknown): string {
 export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { token } = theme.useToken();
   const create = useCreateWorkspace();
-  const [created, setCreated] = useState<WorkspaceView | null>(null);
+  const [created, setCreated] = useState<Workspace | null>(null);
   const [form] = Form.useForm<{ name: string }>();
 
   const close = () => {

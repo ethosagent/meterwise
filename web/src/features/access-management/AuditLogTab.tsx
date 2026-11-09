@@ -1,10 +1,10 @@
 import { Alert, Button, Flex, Select, Table, Typography, theme } from "antd";
 import { useState } from "react";
-import { AUDIT_ACTIONS, type AuditAction, type AuditEntry } from "../../api/contract04";
 import { useWorkspaces } from "../../api/identity";
 import { useAuditLog } from "../../api/setup";
+import { AUDIT_ACTIONS, type AuditAction, type AuditEntry } from "../../contract/generated";
 
-const ACTION_OPTIONS = AUDIT_ACTIONS.map((a) => ({ value: a, label: a }));
+export const ACTION_OPTIONS = AUDIT_ACTIONS.map((a) => ({ value: a, label: a }));
 
 function actorText(e: AuditEntry): string {
   return e.actor ? e.actor.name || e.actor.email : "System";

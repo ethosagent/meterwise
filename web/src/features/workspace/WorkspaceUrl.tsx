@@ -1,6 +1,6 @@
 import { Alert, Space } from "antd";
-import type { WorkspaceView } from "../../api/contract04";
 import { usePermission } from "../../auth/usePermission";
+import type { Workspace } from "../../contract/generated";
 import { AllowedCidrs } from "./AllowedCidrs";
 import { ProxyUrl } from "./ProxyUrl";
 import { ResetUrl } from "./ResetUrl";
@@ -18,13 +18,7 @@ export function UrlHidden() {
 }
 
 /** The proxy URL with Copy and Reset URL (per-workspace state is keyed by workspace id, so a switch never carries it over): one component for Setup and Settings > Workspace. */
-export function WorkspaceUrl({
-  ws,
-  withCidrs = false,
-}: {
-  ws: WorkspaceView;
-  withCidrs?: boolean;
-}) {
+export function WorkspaceUrl({ ws, withCidrs = false }: { ws: Workspace; withCidrs?: boolean }) {
   const canManage = usePermission("workspace_url:manage", ws.id);
   if (ws.proxyUrl === null) return <UrlHidden />;
   return (

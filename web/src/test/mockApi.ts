@@ -1,12 +1,14 @@
 import { vi } from "vitest";
-import type { AuditEntry, SetupStatus, WorkspaceView } from "../api/contract04";
 import type {
   AppConfig,
+  AuditEntry,
   Invitation,
   Me,
   Preferences,
   PreferencesPatch,
   Role,
+  SetupStatus,
+  Workspace,
 } from "../contract/generated";
 import {
   type AccessInit,
@@ -30,7 +32,7 @@ export const ADMIN_ME: Me = {
 };
 export const MEMBER_ME: Me = { ...ADMIN_ME, role: "member" as Role };
 
-function workspace(n: number, name: string, isDefault = false): WorkspaceView {
+function workspace(n: number, name: string, isDefault = false): Workspace {
   const publicId = `pub${String(n).padStart(19, "0")}`;
   return {
     id: `ws_${n}`,
@@ -44,7 +46,7 @@ function workspace(n: number, name: string, isDefault = false): WorkspaceView {
   };
 }
 
-export const TEST_WORKSPACES: WorkspaceView[] = [
+export const TEST_WORKSPACES: Workspace[] = [
   workspace(1, "Default workspace", true),
   workspace(2, "Staging"),
   workspace(3, "Research"),
@@ -83,11 +85,11 @@ interface Options {
   me?: Me | null;
   /** With me:null, whether POST /auth/complete-signup finds a pending invitation and creates the membership. */
   claimable?: boolean;
-  workspaces?: WorkspaceView[];
+  workspaces?: Workspace[];
   invitations?: Invitation[];
   maxWorkspaces?: number;
   /** Workspaces the list only includes from its second fetch on (a stale list that a refetch repairs). */
-  revealOnRefetch?: WorkspaceView[];
+  revealOnRefetch?: Workspace[];
   /** Plan 03 state: the caller's permission snapshot (default by role), members, groups. */
   access?: AccessInit;
   /** Plan 04 state: seeded audit rows (newest first) and the Setup status. */

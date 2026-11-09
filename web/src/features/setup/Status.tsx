@@ -1,6 +1,6 @@
 import { Badge, Typography } from "antd";
-import type { SetupStatus } from "../../api/contract04";
 import { relativeTime } from "../../api/relative";
+import type { SetupStatus } from "../../contract/generated";
 
 /** "waiting for first call…" until the workspace has traffic, then "connected · last call 2 minutes ago · 5 calls today". */
 export function Status({ status }: { status: SetupStatus }) {

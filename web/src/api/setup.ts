@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { AuditAction, AuditList, ResetURLResponse, Setup } from "../contract/generated";
 import { apiFetch } from "./client";
-import type { AuditAction, AuditPage, ResetUrlResult, Setup } from "./contract04";
 import { workspaceScoped, workspacesKey } from "./identity";
 import { enc, json, useInvalidatingMutation } from "./mutation";
 
@@ -28,7 +28,7 @@ const URL_KEYS = [setupRootKey, workspacesKey, auditLogKey] as const;
 export function useResetUrl() {
   return useInvalidatingMutation(
     (v: { workspaceId: string; graceMinutes: number }) =>
-      apiFetch<ResetUrlResult>(`/api/workspaces/${enc(v.workspaceId)}/url/reset`, {
+      apiFetch<ResetURLResponse>(`/api/workspaces/${enc(v.workspaceId)}/url/reset`, {
         method: "POST",
         body: json({ graceMinutes: v.graceMinutes }),
       }),
@@ -68,14 +68,14 @@ export function useAuditLog(filters: AuditFilters, enabled: boolean) {
     queryKey: [...auditLogKey, filters],
     enabled,
     initialPageParam: null as string | null,
-    getNextPageParam: (last: AuditPage) => last.nextCursor,
+    getNextPageParam: (last: AuditList) => last.nextCursor,
     queryFn: ({ pageParam }) => {
       const q = new URLSearchParams();
       if (pageParam) q.set("cursor", pageParam);
       if (filters.action) q.set("action", filters.action);
       if (filters.workspaceId) q.set("workspaceId", filters.workspaceId);
       const qs = q.toString();
-      return apiFetch<AuditPage>(`/api/audit-log${qs ? `?${qs}` : ""}`);
+      return apiFetch<AuditList>(`/api/audit-log${qs ? `?${qs}` : ""}`);
     },
   });
 }
