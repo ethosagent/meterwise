@@ -48,7 +48,7 @@ export function SetupPage() {
       ) : (
         <>
           <Card title="Your proxy URL">
-            <WorkspaceUrl ws={ws} />
+            <WorkspaceUrl key={ws.id} ws={ws} />
           </Card>
           <Card title="Point your agent at it" style={gap}>
             <Typography.Paragraph>

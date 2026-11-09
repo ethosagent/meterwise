@@ -1,7 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { act } from "react";
+import { describe, expect, it, vi } from "vitest";
+import { SETUP_POLL_MS, useAuditLog } from "../../api/setup";
 import type { PermissionSnapshot } from "../../contract/generated";
+import { AppRoutes } from "../../routes";
 import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { ADMIN_ME, MEMBER_ME, mockApi, TEST_WORKSPACES } from "../../test/mockApi";
 import { renderAt } from "../../test/render";
@@ -128,4 +131,72 @@ describe("SetupPage", () => {
     );
     await waitFor(() => expect(screen.queryByText(/previous URL still works/)).toBeNull());
   });
+
+  it("a workspace switch drops the grace notice and the setup follows the new workspace", async () => {
+    const api = mockApi();
+    renderAt(<AppRoutes />, PATH);
+    await screen.findByLabelText("Proxy URL");
+    await userEvent.click(screen.getByRole("button", { name: "Reset URL" }));
+    await screen.findByText(/keeps working for the grace period/);
+    const buttons = screen.getAllByRole("button", { name: "Reset URL" });
+    await userEvent.click(buttons[buttons.length - 1] as HTMLElement);
+    expect(await screen.findByText(/previous URL still works/)).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("workspace-switcher"));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Staging" }));
+    await waitFor(() => expect(screen.queryByText(/previous URL still works/)).toBeNull());
+    await waitFor(() =>
+      expect(api.callsTo("GET", "/api/workspaces/ws_2/setup")).not.toHaveLength(0),
+    );
+  });
+
+  it("an audit log observer is refreshed by a reset (the audit key is invalidated)", async () => {
+    const api = mockApi({ audit: [] });
+    renderAt(
+      <>
+        <AuditObserver />
+        <SetupPage />
+      </>,
+      PATH,
+    );
+    await screen.findByLabelText("Proxy URL");
+    await waitFor(() => expect(api.callsTo("GET", /\/api\/audit-log/)).toHaveLength(1));
+    await userEvent.click(screen.getByRole("button", { name: "Reset URL" }));
+    await screen.findByText(/keeps working for the grace period/);
+    const buttons = screen.getAllByRole("button", { name: "Reset URL" });
+    await userEvent.click(buttons[buttons.length - 1] as HTMLElement);
+    await waitFor(() => expect(api.callsTo("GET", /\/api\/audit-log/)).toHaveLength(2));
+    expect(await screen.findByText("workspace.url_reset")).toBeInTheDocument();
+  });
+
+  it("polls the setup endpoint: waiting flips to connected when the poll interval elapses", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = mockApi();
+      renderAt(<SetupPage />, PATH);
+      expect(await screen.findByText("waiting for first call…")).toBeInTheDocument();
+      const last = new Date(Date.now() - 60_000).toISOString();
+      api.url.status = { firstCallAt: last, lastCallAt: last, callsToday: 3 };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SETUP_POLL_MS + 100);
+      });
+      expect(
+        await screen.findByText(/connected · last call 1 minute ago · 3 calls today/),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+
+function AuditObserver() {
+  const log = useAuditLog({}, true);
+  return (
+    <ul>
+      {log.data?.pages
+        .flatMap((p) => p.items)
+        .map((e) => (
+          <li key={e.id}>{e.action}</li>
+        ))}
+    </ul>
+  );
+}

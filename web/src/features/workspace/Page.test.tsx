@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { AppRoutes } from "../../routes";
 import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { ADMIN_ME, MEMBER_ME, mockApi, TEST_WORKSPACES } from "../../test/mockApi";
 import { renderAt } from "../../test/render";
@@ -228,5 +229,37 @@ describe("the active workspace is never substituted", () => {
     const sw = await screen.findByTestId("workspace-switcher");
     await waitFor(() => expect(sw).toHaveTextContent("Workspace unavailable"));
     expect(sw).not.toHaveTextContent("Default workspace");
+  });
+});
+
+describe("switching workspace under the mounted page", () => {
+  it("drops the grace notice and a dirty CIDR draft, shows the new workspace's list and acts on it", async () => {
+    const withCidrs = TEST_WORKSPACES.map((w) =>
+      w.id === "ws_2" ? { ...w, allowedClientCidrs: ["192.0.2.0/24"] } : w,
+    );
+    const api = mockApi({ workspaces: withCidrs });
+    renderAt(<AppRoutes />, PATH);
+    const input = await screen.findByLabelText("Allowed client CIDRs");
+    await userEvent.type(input, "10.9.0.0/16{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Reset URL" }));
+    const pop = within(document.querySelector(".ant-popover") as HTMLElement);
+    await userEvent.click(await pop.findByRole("button", { name: "Reset URL" }));
+    expect(await screen.findByText(/previous URL still works/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("workspace-switcher"));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Staging" }));
+    expect(await screen.findByText("192.0.2.0/24")).toBeInTheDocument();
+    expect(await screen.findByText("192.0.2.0/24")).toBeInTheDocument();
+    expect(screen.queryByText("10.9.0.0/16")).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/previous URL still works/)).toBeNull());
+    expect(screen.getByRole("button", { name: "Save CIDRs" })).toBeDisabled();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Reset URL" }));
+    await screen.findByText(/keeps working for the grace period/);
+    const buttons = screen.getAllByRole("button", { name: "Reset URL" });
+    await userEvent.click(buttons[buttons.length - 1] as HTMLElement); // the popover's confirm
+    await waitFor(() =>
+      expect(api.callsTo("POST", "/api/workspaces/ws_2/url/reset")).toHaveLength(1),
+    );
   });
 });

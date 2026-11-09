@@ -10,7 +10,7 @@ export const setupKey = (workspaceId: string) => workspaceScoped("setup", worksp
 export const auditLogKey = ["audit-log"] as const;
 
 /** How often an open Setup page asks again, so "waiting for first call" flips to "connected" by itself. */
-const SETUP_POLL_MS = 15_000;
+export const SETUP_POLL_MS = 15_000;
 
 export function useSetup(workspaceId: string | null, enabled: boolean) {
   return useQuery({

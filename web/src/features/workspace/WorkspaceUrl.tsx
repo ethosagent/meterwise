@@ -17,7 +17,7 @@ export function UrlHidden() {
   );
 }
 
-/** The proxy URL with Copy and Reset URL: one component for Setup and Settings > Workspace. */
+/** The proxy URL with Copy and Reset URL (per-workspace state is keyed by workspace id, so a switch never carries it over): one component for Setup and Settings > Workspace. */
 export function WorkspaceUrl({
   ws,
   withCidrs = false,
@@ -30,9 +30,9 @@ export function WorkspaceUrl({
   return (
     <Space vertical size="middle" style={{ width: "100%" }}>
       <ProxyUrl url={ws.proxyUrl} />
-      {canManage ? <ResetUrl workspaceId={ws.id} /> : null}
+      {canManage ? <ResetUrl key={ws.id} workspaceId={ws.id} /> : null}
       {canManage && withCidrs && ws.allowedClientCidrs !== null ? (
-        <AllowedCidrs workspaceId={ws.id} saved={ws.allowedClientCidrs} />
+        <AllowedCidrs key={ws.id} workspaceId={ws.id} saved={ws.allowedClientCidrs} />
       ) : null}
     </Space>
   );
