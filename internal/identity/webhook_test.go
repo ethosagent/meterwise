@@ -2,6 +2,7 @@ package identity_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -116,4 +117,59 @@ func TestNewWebhookVerifierRejectsAnInvalidSecret(t *testing.T) {
 	if _, err := identity.NewWebhookVerifier("whsec_!!!notbase64", nil); err == nil {
 		t.Fatal("invalid secret accepted")
 	}
+}
+
+// asWebhookFamily renames a signed set of svix-* headers to the standard-webhooks webhook-* names.
+func asWebhookFamily(h http.Header) http.Header {
+	out := http.Header{}
+	out.Set("webhook-id", h.Get("svix-id"))
+	out.Set("webhook-timestamp", h.Get("svix-timestamp"))
+	out.Set("webhook-signature", h.Get("svix-signature"))
+	return out
+}
+
+// Seeded bypasses (Plan 02 fix round 1, B2): the library falls back to webhook-* when any svix-*
+// header is missing, so checks that read svix-* while the signature reads webhook-* could be split.
+func TestWebhookHeaderFamiliesCannotBeMixed(t *testing.T) {
+	now := time.Now()
+	v, secret := newVerifier(t, &now)
+	body, _ := clerkmock.Fixture("user.updated")
+	old := clerkmock.SignWebhook(secret, "msg_captured", now.Add(-time.Hour), body)
+
+	t.Run("old capture with a fresh svix-timestamp and the captured webhook-* headers", func(t *testing.T) {
+		h := asWebhookFamily(old)
+		h.Set("svix-timestamp", fmt.Sprint(now.Unix()))
+		if _, err := v.Verify(body, h); !errors.Is(err, identity.ErrWebhook) {
+			t.Fatalf("an hour-old message passed the window check: %v", err)
+		}
+	})
+
+	t.Run("replay under a fresh svix-id with the captured webhook-* headers and no svix-signature", func(t *testing.T) {
+		fresh := clerkmock.SignWebhook(secret, "msg_fresh", now, body)
+		if _, err := v.Verify(body, fresh); err != nil {
+			t.Fatal(err)
+		}
+		v.MarkProcessed("msg_fresh")
+		h := asWebhookFamily(fresh)
+		h.Set("svix-id", "msg_brand_new")
+		if _, err := v.Verify(body, h); !errors.Is(err, identity.ErrWebhook) {
+			t.Fatalf("a replay under a fresh svix-id passed: %v", err)
+		}
+	})
+
+	t.Run("a correct webhook-* family alone is refused", func(t *testing.T) {
+		if _, err := v.Verify(body, asWebhookFamily(clerkmock.SignWebhook(secret, "msg_wh", now, body))); !errors.Is(err, identity.ErrWebhook) {
+			t.Fatalf("webhook-* headers were accepted: %v", err)
+		}
+	})
+
+	t.Run("each svix-* header is required", func(t *testing.T) {
+		for _, name := range []string{"svix-id", "svix-timestamp", "svix-signature"} {
+			h := clerkmock.SignWebhook(secret, "msg_"+name, now, body)
+			h.Del(name)
+			if _, err := v.Verify(body, h); !errors.Is(err, identity.ErrWebhook) {
+				t.Fatalf("without %s: %v", name, err)
+			}
+		}
+	})
 }

@@ -59,25 +59,33 @@ func NewWebhookVerifier(secret string, now func() time.Time) (*WebhookVerifier, 
 	return &WebhookVerifier{wh: wh, now: now, seen: map[string]time.Time{}}, nil
 }
 
-func messageID(h http.Header) string {
-	if id := h.Get("svix-id"); id != "" {
-		return id
+// svixHeaders returns the one header family this verifier accepts: svix-id, svix-timestamp and
+// svix-signature, all three present. The same values feed the window, the replay check and the
+// signature check, so no header can be spoofed for one check and left to the other. The library
+// would fall back to the webhook-* family when any svix-* header is missing; a caller of this
+// verifier never gets that fallback because only this family is passed on.
+func svixHeaders(h http.Header) (id, ts string, fam http.Header, ok bool) {
+	id, ts = h.Get("svix-id"), h.Get("svix-timestamp")
+	sig := h.Get("svix-signature")
+	if id == "" || ts == "" || sig == "" {
+		return "", "", nil, false
 	}
-	return h.Get("webhook-id")
-}
-
-func messageTimestamp(h http.Header) string {
-	if ts := h.Get("svix-timestamp"); ts != "" {
-		return ts
-	}
-	return h.Get("webhook-timestamp")
+	fam = http.Header{}
+	fam.Set("svix-id", id)
+	fam.Set("svix-timestamp", ts)
+	fam.Set("svix-signature", sig)
+	return id, ts, fam, true
 }
 
 // Verify authenticates payload and headers and parses the event. It rejects a bad
-// or missing signature, a timestamp outside WebhookTolerance, and a message id
-// already marked processed.
+// or missing signature, an incomplete svix-* header set, a timestamp outside
+// WebhookTolerance, and a message id already marked processed.
 func (v *WebhookVerifier) Verify(payload []byte, h http.Header) (WebhookEvent, error) {
-	secs, err := strconv.ParseInt(messageTimestamp(h), 10, 64)
+	id, ts, fam, ok := svixHeaders(h)
+	if !ok {
+		return WebhookEvent{}, ErrWebhook
+	}
+	secs, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {
 		return WebhookEvent{}, ErrWebhook
 	}
@@ -85,10 +93,9 @@ func (v *WebhookVerifier) Verify(payload []byte, h http.Header) (WebhookEvent, e
 	if d := now.Sub(time.Unix(secs, 0)); d > WebhookTolerance || d < -WebhookTolerance {
 		return WebhookEvent{}, ErrWebhook
 	}
-	if err := v.wh.VerifyIgnoringTimestamp(payload, h); err != nil {
+	if err := v.wh.VerifyIgnoringTimestamp(payload, fam); err != nil {
 		return WebhookEvent{}, ErrWebhook
 	}
-	id := messageID(h)
 	v.mu.Lock()
 	_, replay := v.seen[id]
 	v.mu.Unlock()
