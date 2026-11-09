@@ -44,7 +44,7 @@ type instance struct {
 }
 
 func cmdServe(ctx context.Context, e *env, args []string) int {
-	asJSON, _, code := parseFlags(e, "serve", args)
+	asJSON, _, code := parseFlags(e, "serve", args, nil)
 	if code != exitOK {
 		return code
 	}

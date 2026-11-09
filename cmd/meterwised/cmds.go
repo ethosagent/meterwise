@@ -13,7 +13,7 @@ import (
 )
 
 func cmdVersion(_ context.Context, e *env, args []string) int {
-	asJSON, _, code := parseFlags(e, "version", args)
+	asJSON, _, code := parseFlags(e, "version", args, nil)
 	if code != exitOK {
 		return code
 	}
@@ -25,7 +25,7 @@ func cmdVersion(_ context.Context, e *env, args []string) int {
 }
 
 func cmdConfig(_ context.Context, e *env, args []string) int {
-	asJSON, rest, code := parseFlags(e, "config", args)
+	asJSON, rest, code := parseFlags(e, "config", args, nil)
 	if code != exitOK {
 		return code
 	}
@@ -44,7 +44,7 @@ func cmdConfig(_ context.Context, e *env, args []string) int {
 
 // cmdMigrate applies pending migrations (default, or "up") or lists them ("status").
 func cmdMigrate(ctx context.Context, e *env, args []string) int {
-	asJSON, rest, code := parseFlags(e, "migrate", args)
+	asJSON, rest, code := parseFlags(e, "migrate", args, nil)
 	if code != exitOK {
 		return code
 	}
