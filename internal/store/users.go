@@ -55,6 +55,11 @@ func (s *Store) ResolveUser(ctx context.Context, orgID string, id contract.Ident
 // for a user that never signed in here).
 func (s *Store) SoftDeleteUser(ctx context.Context, orgID, clerkUserID string) error {
 	return queryErr(s.inTx(ctx, func(q *sqlc.Queries) error {
+		// The webhook still removes even the last admin (recovery is bootstrap-admin); it takes the
+		// admin lock so it cannot interleave with a guarded demotion or removal.
+		if _, err := lockAdmins(ctx, q, orgID); err != nil {
+			return err
+		}
 		if _, err := q.SoftDeleteUser(ctx, sqlc.SoftDeleteUserParams{OrgID: orgID, ClerkUserID: clerkUserID}); err != nil && !isNotFound(err) {
 			return err
 		}
