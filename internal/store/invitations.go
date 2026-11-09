@@ -69,11 +69,19 @@ type NewInvitation struct {
 	Now               time.Time
 }
 
-// CreateInvitation inserts an invitation. An open invitation for the same email
+// CreateInvitation inserts an invitation. An email that belongs to an active member is
+// CodeAlreadyMember (checked in the same transaction as the insert). An open invitation for the same email
 // answers CodeDuplicateInvitation; an expired one is superseded first.
 func (s *Store) CreateInvitation(ctx context.Context, in NewInvitation) (contract.Invitation, error) {
 	var id string
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
+		member, err := q.ActiveMemberEmailExists(ctx, sqlc.ActiveMemberEmailExistsParams{OrgID: in.OrgID, Email: in.Email})
+		if err != nil {
+			return err
+		}
+		if member {
+			return contract.NewError(contract.CodeAlreadyMember, "that email already belongs to an active member")
+		}
 		if err := q.SupersedeExpiredInvitations(ctx, sqlc.SupersedeExpiredInvitationsParams{Now: pgts(in.Now), OrgID: in.OrgID, Email: in.Email}); err != nil {
 			return err
 		}
@@ -81,7 +89,6 @@ func (s *Store) CreateInvitation(ctx context.Context, in NewInvitation) (contrac
 		if validID(in.InvitedBy) {
 			by = pgtype.Text{String: in.InvitedBy, Valid: true}
 		}
-		var err error
 		id, err = q.InsertInvitation(ctx, sqlc.InsertInvitationParams{
 			OrgID: in.OrgID, Email: in.Email, Role: string(in.Role),
 			ClerkInvitationID: pgtype.Text{String: in.ClerkInvitationID, Valid: in.ClerkInvitationID != ""},

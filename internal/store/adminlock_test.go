@@ -83,3 +83,24 @@ func TestEveryAdminEndingPathTakesTheAdminLock(t *testing.T) {
 		})
 	}
 }
+
+// The already_member check is part of the insert transaction: a member that exists when the row is
+// written blocks it, whatever the caller checked a moment earlier.
+func TestCreateInvitationRefusesAnActiveMemberInsideItsTransaction(t *testing.T) {
+	s, ctx, org := openMigrated(t), context.Background(), store.OrgID()
+	u, err := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_m", Email: "m@corp.test", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertActiveMembership(ctx, org, u.ID, contract.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	_, err = s.CreateInvitation(ctx, store.NewInvitation{OrgID: org, Email: "m@corp.test", Role: contract.RoleMember, ExpiresAt: now.Add(time.Hour), Now: now})
+	if code(err) != contract.CodeAlreadyMember {
+		t.Fatalf("got %v, want already_member", err)
+	}
+	if list, _ := s.ListInvitations(ctx, org); len(list) != 0 {
+		t.Fatalf("a refused invitation left %d row(s)", len(list))
+	}
+}
