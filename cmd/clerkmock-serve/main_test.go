@@ -82,8 +82,8 @@ func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mint := func(email string) string {
-		req, err := http.NewRequest(http.MethodGet, env["MINT_URL"]+"?name=Ada&email="+email, nil)
+	mintAs := func(email, extra string) string {
+		req, err := http.NewRequest(http.MethodGet, env["MINT_URL"]+"?name=Ada&email="+email+extra, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,12 +102,20 @@ func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
 		}
 		return b.Token
 	}
+	mint := func(email string) string { return mintAs(email, "") }
 	id, err := idp.Verify(context.Background(), mint("Ada@Example.test"))
 	if err != nil || id.Email != "ada@example.test" || !id.EmailVerified || !strings.HasPrefix(id.Subject, "user_") {
 		t.Fatalf("verify: %+v %v", id, err)
 	}
 	if id2, _ := idp.Verify(context.Background(), mint("ada@example.test")); id2.Subject != id.Subject {
 		t.Fatal("the subject is not stable per email")
+	}
+	// A person who deleted their account and registered again has the same email and a new subject.
+	if again, err := idp.Verify(context.Background(), mintAs("ada@example.test", "&sub=user_registered_again")); err != nil || again.Subject != "user_registered_again" || again.Email != id.Email {
+		t.Fatalf("explicit subject: %+v %v", again, err)
+	}
+	if resp, err := http.Get(env["MINT_URL"] + "?email=ada@example.test&sub=evil%20sub"); err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a malformed subject must be refused: %v %v", resp, err)
 	}
 	post := func(path string) {
 		resp, err := http.Post("http://"+httpAddr+path, "", nil)

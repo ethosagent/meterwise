@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -46,17 +47,22 @@ type minter struct {
 	expired map[string]bool
 }
 
+var validSubject = regexp.MustCompile(`^user_[A-Za-z0-9_]{1,40}$`)
+
 func subjectFor(email string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(email)))
 	return "user_" + hex.EncodeToString(sum[:6])
 }
 
-func (m *minter) token(email, name string) string {
+func (m *minter) token(email, name, sub string) string {
 	email = strings.ToLower(strings.TrimSpace(email))
 	m.mu.Lock()
 	gone := m.expired[email]
 	m.mu.Unlock()
-	c := clerkmock.Claims{Subject: subjectFor(email), Email: email, Name: name, Issuer: m.issuer}
+	if sub == "" {
+		sub = subjectFor(email)
+	}
+	c := clerkmock.Claims{Subject: sub, Email: email, Name: name, Issuer: m.issuer}
 	if gone {
 		c.ExpiresIn = -time.Hour
 	}
@@ -71,7 +77,14 @@ func (m *minter) handler() http.Handler {
 			http.Error(w, `{"error":"email is required"}`, http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"token": m.token(email, r.URL.Query().Get("name"))})
+		// sub is optional: a person who deleted their account and registered again keeps the email
+		// and gets a new provider user id.
+		sub := r.URL.Query().Get("sub")
+		if sub != "" && !validSubject.MatchString(sub) {
+			http.Error(w, `{"error":"sub must look like user_<letters or digits>"}`, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"token": m.token(email, r.URL.Query().Get("name"), sub)})
 	})
 	setExpired := func(v bool) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
