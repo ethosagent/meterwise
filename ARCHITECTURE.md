@@ -54,7 +54,7 @@ internal/archtest             standalone: standard library only, imported by nob
 | H7 | No `//go:build`, `// +build` or GOOS/GOARCH file suffix: a constraint can hide code from every gate. Allowlist per file with an ADR. |
 | H8 | Every package with tests has a `TestMain` that really calls `nonet.Run` (checked on the AST, a comment does not count): no test reaches the external network by name. |
 | H9 | One module plus `tools/`: a nested `go.mod` or any `go.work` hides packages from every gate. |
-| H11 | No inline role checks (`.Role ==`, `RoleAdmin` comparisons, `contract.Allows`) outside `contract`, `access`, `store`: access is decided by the gateway and the evaluator only. |
+| H11 | No decision on a `contract.Role` outside `contract`, `access`, `store`, checked on type information (go/types), so aliases, dot imports, conversions, local copies and string literals do not hide it: no comparison, switch, map lookup or `strings`/`slices`-style helper on a role or a value derived from one, and no comparison with "admin"/"member". Access is decided by the gateway and the evaluator; callers ask `access.IsAdmin` and `access.MayAssignRole`. |
 
 The arch gate runs `go list` with `-mod=readonly`: it never downloads a module or rewrites `go.mod`.
 
