@@ -132,8 +132,8 @@ m_h7() { gofile internal/savings/s.go <<<'//go:build offline
 package savings
 import _ "net/http"'; }
 m_h7s() { gofile internal/config/plat_linux.go <<<'package config'; }
-m_h8() { gofile internal/audit/doc.go <<<'// Package audit appends audit events.
-package audit'; gofile internal/audit/net_test.go <<<'package audit
+m_h8() { gofile internal/zzselftestpkg/doc.go <<<'// Package zzselftestpkg is a fixture that never exists in the tree.
+package zzselftestpkg'; gofile internal/zzselftestpkg/net_test.go <<<'package zzselftestpkg
 import "testing"
 func TestDials(t *testing.T) {}'; }
 m_h6store() { gofile internal/api/x.go <<<'// Package api is the base.
@@ -149,8 +149,8 @@ package dist'; gofile internal/savings/dist/x.go <<<'//go:build offline
 
 package dist
 import _ "net/http"'; }
-m_h8c() { gofile internal/audit/doc.go <<<'// Package audit appends audit events.
-package audit'; gofile internal/audit/net_test.go <<<'package audit
+m_h8c() { gofile internal/zzselftestpkg/doc.go <<<'// Package zzselftestpkg is a fixture that never exists in the tree.
+package zzselftestpkg'; gofile internal/zzselftestpkg/net_test.go <<<'package zzselftestpkg
 import (
 	"os"
 	"testing"
