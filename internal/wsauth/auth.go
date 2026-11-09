@@ -40,7 +40,9 @@ type Error struct {
 	Msg    string
 }
 
-func (e *Error) Error() string   { return e.Msg }
+func (e *Error) Error() string { return e.Msg }
+
+// HTTPStatus implements tollgate.StatusError: the status the proxy answers with.
 func (e *Error) HTTPStatus() int { return e.Status }
 
 var (

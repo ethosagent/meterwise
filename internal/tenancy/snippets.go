@@ -30,23 +30,36 @@ func (SnippetRenderer) Render(proxyURL string) contract.SetupSnippets {
 
 // opencodeBlock is an opencode.json with one OpenAI-compatible provider pointing at the workspace
 // URL; the key is read from the environment so the file holds no secret.
+type opencodeFile struct {
+	Schema   string                      `json:"$schema"`
+	Provider map[string]opencodeProvider `json:"provider"`
+}
+
+type opencodeProvider struct {
+	NPM     string                       `json:"npm"`
+	Name    string                       `json:"name"`
+	Options opencodeOptions              `json:"options"`
+	Models  map[string]map[string]string `json:"models"`
+}
+
+type opencodeOptions struct {
+	BaseURL string `json:"baseURL"`
+	Auth    string `json:"apiKey"` // an {env:NAME} reference: the file holds no secret
+}
+
+// opencodeBlock is an opencode.json with one OpenAI-compatible provider pointing at the workspace
+// URL; the key is read from the environment so the file holds no secret.
 func opencodeBlock(proxyURL string) string {
-	doc := map[string]any{
-		"$schema": "https://opencode.ai/config.json",
-		"provider": map[string]any{
-			"meterwise": map[string]any{
-				"npm":  "@ai-sdk/openai-compatible",
-				"name": "Meterwise",
-				"options": map[string]any{
-					"baseURL": proxyURL + "/v1",
-					"apiKey":  "{env:OPENAI_API_KEY}",
-				},
-				"models": map[string]any{"gpt-4o-mini": map[string]any{"name": "gpt-4o-mini"}},
-			},
-		},
+	doc := opencodeFile{
+		Schema: "https://opencode.ai/config.json",
+		Provider: map[string]opencodeProvider{"meterwise": {
+			NPM: "@ai-sdk/openai-compatible", Name: "Meterwise",
+			Options: opencodeOptions{BaseURL: proxyURL + "/v1", Auth: "{env:OPENAI_API_KEY}"},
+			Models:  map[string]map[string]string{"gpt-4o-mini": {"name": "gpt-4o-mini"}},
+		}},
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil { // a map of strings cannot fail to marshal
+	if err != nil { // plain strings cannot fail to marshal
 		return "{}"
 	}
 	return string(b) + "\n"

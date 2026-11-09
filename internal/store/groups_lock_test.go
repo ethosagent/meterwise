@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -134,7 +135,7 @@ func TestDeleteRacingAttachLeavesNoOrphanAndNoDriverError(t *testing.T) {
 		var n int
 		if err := conn.QueryRow(ctx, `SELECT (SELECT count(*) FROM group_workspaces WHERE group_id = $1)
  + (SELECT count(*) FROM group_permissions WHERE group_id = $1) + (SELECT count(*) FROM group_users WHERE group_id = $1)
- WHERE NOT EXISTS (SELECT 1 FROM groups WHERE id = $1)`, g.ID).Scan(&n); err != nil && err != pgx.ErrNoRows {
+ WHERE NOT EXISTS (SELECT 1 FROM groups WHERE id = $1)`, g.ID).Scan(&n); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			t.Fatal(err)
 		}
 		if n > 0 {

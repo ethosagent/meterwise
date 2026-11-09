@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -44,7 +45,10 @@ func TestEndToEndResetURLGraceThen410AuditRowsAreAppendOnly(t *testing.T) {
 		r.RemoteAddr = "198.51.100.9:4000"
 		ten, err := auth.Authenticate(ctx, r)
 		if err != nil {
-			se, _ := err.(*wsauth.Error)
+			var se *wsauth.Error
+			if !errors.As(err, &se) {
+				t.Fatalf("authenticate: %v", err)
+			}
 			return nil, se.Status
 		}
 		return ten.Attrs, 0
