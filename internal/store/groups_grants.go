@@ -7,23 +7,34 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-// GroupGrants returns a group's grants in one read; an unknown group is CodeNotFound.
+// groupExists is CodeNotFound for an unknown (or malformed) group id.
+func (s *Store) groupExists(ctx context.Context, orgID, id string) error {
+	if !validID(id) {
+		return errNotFound
+	}
+	found, err := s.q.GroupExists(ctx, sqlc.GroupExistsParams{OrgID: orgID, ID: id})
+	if err != nil {
+		return queryErr(err)
+	}
+	if !found {
+		return errNotFound
+	}
+	return nil
+}
+
+// GroupGrants returns a group's grants (existence check, then a plain list); an unknown group is
+// CodeNotFound.
 func (s *Store) GroupGrants(ctx context.Context, orgID, groupID string) ([]contract.Grant, error) {
-	if !validID(groupID) {
-		return nil, errNotFound
+	if err := s.groupExists(ctx, orgID, groupID); err != nil {
+		return nil, err
 	}
 	rows, err := s.q.ListGroupGrants(ctx, sqlc.ListGroupGrantsParams{OrgID: orgID, GroupID: groupID})
 	if err != nil {
 		return nil, queryErr(err)
 	}
-	if len(rows) == 0 {
-		return nil, errNotFound // the query yields a row for every grant, or one empty row for a group without any
-	}
 	out := make([]contract.Grant, 0, len(rows))
 	for _, r := range rows {
-		if r.ResourceType != "" {
-			out = append(out, contract.GrantRow{WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action}.ToGrant())
-		}
+		out = append(out, contract.GrantRow{WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action}.ToGrant())
 	}
 	return out, nil
 }

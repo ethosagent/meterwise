@@ -8,23 +8,19 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-// GroupMembers lists a group's active members in one read; an unknown group is CodeNotFound.
+// GroupMembers lists a group's active members (existence check, then a plain list); an unknown
+// group is CodeNotFound.
 func (s *Store) GroupMembers(ctx context.Context, orgID, groupID string) ([]contract.Member, error) {
-	if !validID(groupID) {
-		return nil, errNotFound
+	if err := s.groupExists(ctx, orgID, groupID); err != nil {
+		return nil, err
 	}
 	rows, err := s.q.ListGroupMembers(ctx, sqlc.ListGroupMembersParams{OrgID: orgID, GroupID: groupID})
 	if err != nil {
 		return nil, queryErr(err)
 	}
-	if len(rows) == 0 {
-		return nil, errNotFound // a group that exists always yields at least one row
-	}
 	out := make([]contract.Member, 0, len(rows))
 	for _, r := range rows {
-		if r.UserID != "" { // the placeholder row of a group with no active member
-			out = append(out, toMember(r.UserID, r.Email, r.Name, r.AvatarUrl, r.Role, r.JoinedAt, r.GroupIds))
-		}
+		out = append(out, toMember(r.UserID, r.Email, r.Name, r.AvatarUrl, r.Role, r.JoinedAt, r.GroupIds))
 	}
 	return out, nil
 }

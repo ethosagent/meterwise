@@ -286,6 +286,22 @@ func (q *Queries) GrantToGroup(ctx context.Context, arg GrantToGroupParams) erro
 	return err
 }
 
+const groupExists = `-- name: GroupExists :one
+SELECT EXISTS (SELECT 1 FROM groups WHERE org_id = $1::text::uuid AND id = $2::text::uuid) AS found
+`
+
+type GroupExistsParams struct {
+	OrgID string
+	ID    string
+}
+
+func (q *Queries) GroupExists(ctx context.Context, arg GroupExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, groupExists, arg.OrgID, arg.ID)
+	var found bool
+	err := row.Scan(&found)
+	return found, err
+}
+
 const insertGroup = `-- name: InsertGroup :one
 INSERT INTO groups (org_id, name) VALUES ($1::text::uuid, $2)
 RETURNING id::text AS id
@@ -362,13 +378,11 @@ func (q *Queries) ListGrantsForUser(ctx context.Context, arg ListGrantsForUserPa
 }
 
 const listGroupGrants = `-- name: ListGroupGrants :many
-SELECT COALESCE(rp.workspace_id::text, '')::text AS workspace_id, COALESCE(rp.resource_type, '')::text AS resource_type,
-       COALESCE(rp.action, '')::text AS action
-FROM groups g
-LEFT JOIN group_permissions gp ON gp.group_id = g.id AND gp.org_id = g.org_id
-LEFT JOIN resource_permissions rp ON rp.id = gp.permission_id
-WHERE g.org_id = $1::text::uuid AND g.id = $2::text::uuid
-ORDER BY rp.resource_type NULLS FIRST, rp.action, rp.workspace_id NULLS FIRST
+SELECT COALESCE(rp.workspace_id::text, '')::text AS workspace_id, rp.resource_type, rp.action
+FROM group_permissions gp
+JOIN resource_permissions rp ON rp.id = gp.permission_id
+WHERE gp.org_id = $1::text::uuid AND gp.group_id = $2::text::uuid
+ORDER BY rp.resource_type, rp.action, rp.workspace_id NULLS FIRST
 `
 
 type ListGroupGrantsParams struct {
@@ -382,8 +396,7 @@ type ListGroupGrantsRow struct {
 	Action       string
 }
 
-// One read for the group and its grants: a missing group yields no row at all (not_found), a group
-// without grants yields one row whose resource_type is empty.
+// The grants of one group (none for an unknown group or one without grants: GroupExists tells them apart).
 func (q *Queries) ListGroupGrants(ctx context.Context, arg ListGroupGrantsParams) ([]ListGroupGrantsRow, error) {
 	rows, err := q.db.Query(ctx, listGroupGrants, arg.OrgID, arg.GroupID)
 	if err != nil {
@@ -405,14 +418,12 @@ func (q *Queries) ListGroupGrants(ctx context.Context, arg ListGroupGrantsParams
 }
 
 const listGroupMembers = `-- name: ListGroupMembers :many
-SELECT COALESCE(u.id::text, '')::text AS user_id, COALESCE(u.email, '')::text AS email, COALESCE(u.name, '')::text AS name,
-       COALESCE(u.avatar_url, '')::text AS avatar_url, COALESCE(m.role, '')::text AS role, m.created_at AS joined_at,
-       COALESCE((SELECT array_agg(x.group_id::text ORDER BY x.group_id) FROM group_users x WHERE x.user_id = u.id AND x.org_id = g.org_id), '{}')::text[] AS group_ids
-FROM groups g
-LEFT JOIN group_users gu ON gu.group_id = g.id AND gu.org_id = g.org_id
-LEFT JOIN memberships m ON m.user_id = gu.user_id AND m.org_id = gu.org_id AND m.status = 'active'
-LEFT JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id AND u.deleted_at IS NULL
-WHERE g.org_id = $1::text::uuid AND g.id = $2::text::uuid
+SELECT u.id::text AS user_id, u.email, u.name, COALESCE(u.avatar_url, '')::text AS avatar_url, m.role, m.created_at AS joined_at,
+       COALESCE((SELECT array_agg(x.group_id::text ORDER BY x.group_id) FROM group_users x WHERE x.user_id = u.id AND x.org_id = gu.org_id), '{}')::text[] AS group_ids
+FROM group_users gu
+JOIN memberships m ON m.user_id = gu.user_id AND m.org_id = gu.org_id AND m.status = 'active'
+JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id AND u.deleted_at IS NULL
+WHERE gu.org_id = $1::text::uuid AND gu.group_id = $2::text::uuid
 ORDER BY u.email, u.id
 `
 
@@ -431,8 +442,8 @@ type ListGroupMembersRow struct {
 	GroupIds  []string
 }
 
-// One read for the group and its active members: a missing group yields no row (not_found); a
-// group with no active member yields rows whose user_id is empty, which the caller skips.
+// The active members of one group (none for an unknown group or one without members: GroupExists
+// tells them apart).
 func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersParams) ([]ListGroupMembersRow, error) {
 	rows, err := q.db.Query(ctx, listGroupMembers, arg.OrgID, arg.GroupID)
 	if err != nil {
