@@ -1,9 +1,10 @@
 import { Alert, Button, Form, Input, Modal, Typography, theme } from "antd";
 import { useState } from "react";
+import type { WorkspaceView } from "../../api/contract04";
 import { describeApiError } from "../../api/errors";
 import { IDENTITY_ERRORS, useCreateWorkspace } from "../../api/identity";
-import type { Workspace } from "../../contract/generated";
 import { ProxyUrl } from "./ProxyUrl";
+import { UrlHidden } from "./WorkspaceUrl";
 
 /** What to tell the person when a create fails; the limit is the one they can act on. */
 export function createErrorText(e: unknown): string {
@@ -20,7 +21,7 @@ export function createErrorText(e: unknown): string {
 export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { token } = theme.useToken();
   const create = useCreateWorkspace();
-  const [created, setCreated] = useState<Workspace | null>(null);
+  const [created, setCreated] = useState<WorkspaceView | null>(null);
   const [form] = Form.useForm<{ name: string }>();
 
   const close = () => {
@@ -56,7 +57,7 @@ export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClos
           <Typography.Paragraph>
             Point your agent&apos;s base URL at this address. Keep your own provider keys.
           </Typography.Paragraph>
-          <ProxyUrl url={created.proxyUrl} />
+          {created.proxyUrl === null ? <UrlHidden /> : <ProxyUrl url={created.proxyUrl} />}
         </>
       ) : (
         <Form

@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import type { AuditEntry, SetupStatus, WorkspaceView } from "../api/contract04";
 import type {
   AppConfig,
   Invitation,
@@ -6,7 +7,6 @@ import type {
   Preferences,
   PreferencesPatch,
   Role,
-  Workspace,
 } from "../contract/generated";
 import {
   type AccessInit,
@@ -15,6 +15,7 @@ import {
   errorResponse,
   jsonResponse as json,
 } from "./mockAccess";
+import { createUrlMock, type UrlMock } from "./mockUrl";
 
 export { errorResponse };
 
@@ -29,7 +30,7 @@ export const ADMIN_ME: Me = {
 };
 export const MEMBER_ME: Me = { ...ADMIN_ME, role: "member" as Role };
 
-function workspace(n: number, name: string, isDefault = false): Workspace {
+function workspace(n: number, name: string, isDefault = false): WorkspaceView {
   const publicId = `pub${String(n).padStart(19, "0")}`;
   return {
     id: `ws_${n}`,
@@ -37,12 +38,13 @@ function workspace(n: number, name: string, isDefault = false): Workspace {
     name,
     isDefault,
     proxyUrl: `https://${TEST_CONFIG.proxyPublicHost}/w/${publicId}`,
+    allowedClientCidrs: [],
     settings: {},
     createdAt: "2026-11-01T00:00:00Z",
   };
 }
 
-export const TEST_WORKSPACES: Workspace[] = [
+export const TEST_WORKSPACES: WorkspaceView[] = [
   workspace(1, "Default workspace", true),
   workspace(2, "Staging"),
   workspace(3, "Research"),
@@ -64,6 +66,8 @@ export interface MockApi {
   callsTo: (method: string, path: string | RegExp) => Call[];
   /** The Plan 03 in-memory server: snapshot, members, groups. */
   access: AccessMock;
+  /** The Plan 04 in-memory server: setup status, audit log, URL reset and allowed CIDRs. */
+  url: UrlMock;
   /** From now on every authenticated route answers 401 (the session ended). */
   expireSession: () => void;
 }
@@ -79,13 +83,16 @@ interface Options {
   me?: Me | null;
   /** With me:null, whether POST /auth/complete-signup finds a pending invitation and creates the membership. */
   claimable?: boolean;
-  workspaces?: Workspace[];
+  workspaces?: WorkspaceView[];
   invitations?: Invitation[];
   maxWorkspaces?: number;
   /** Workspaces the list only includes from its second fetch on (a stale list that a refetch repairs). */
-  revealOnRefetch?: Workspace[];
+  revealOnRefetch?: WorkspaceView[];
   /** Plan 03 state: the caller's permission snapshot (default by role), members, groups. */
   access?: AccessInit;
+  /** Plan 04 state: seeded audit rows (newest first) and the Setup status. */
+  audit?: AuditEntry[];
+  setupStatus?: SetupStatus;
 }
 
 /** Stubs global fetch with the Plan 01 and Plan 02 endpoints, backed by a small in-memory server. */
@@ -101,6 +108,19 @@ export function mockApi(opts: Options = {}): MockApi {
   const calls: Call[] = [];
 
   const access = createAccessMock(me?.role === "admin", opts.access);
+  const actor = (me ?? ADMIN_ME).user;
+  const url = createUrlMock(
+    {
+      access,
+      host: TEST_CONFIG.proxyPublicHost,
+      actor: { userId: actor.id, email: actor.email, name: actor.name },
+      workspaces: () => workspaces,
+      update: (w) => {
+        workspaces = workspaces.map((x) => (x.id === w.id ? w : x));
+      },
+    },
+    { audit: opts.audit, status: opts.setupStatus },
+  );
   const notInvited = () => errorResponse(403, "not_invited", "no invitation");
   const notFound = () => errorResponse(404, "not_found", "no such thing");
 
@@ -131,12 +151,14 @@ export function mockApi(opts: Options = {}): MockApi {
     if (!me) return notInvited();
     const granted = access.route(method, path, body);
     if (granted) return granted;
+    const urlRoute = url.route(method, path, body);
+    if (urlRoute) return urlRoute;
     const ws = /^\/api\/workspaces\/([^/]+)(\/switch)?$/.exec(path);
     if (path === "/api/workspaces" && method === "GET") {
       listFetches++;
       const late = listFetches > 1 ? (opts.revealOnRefetch ?? []) : [];
       const all = [...workspaces, ...late].filter((w) => access.can("workspace", "read", w.id));
-      return json({ items: all });
+      return json({ items: all.map(url.mask) });
     }
     if (path === "/api/workspaces" && method === "POST") {
       if (workspaces.length >= (opts.maxWorkspaces ?? 20)) {
@@ -144,7 +166,7 @@ export function mockApi(opts: Options = {}): MockApi {
       }
       const created = workspace(nextId++, String(body.name));
       workspaces = [...workspaces, created];
-      return json(created, 201);
+      return json(url.mask(created), 201);
     }
     if (ws) {
       const target = workspaces.find((w) => w.id === ws[1]);
@@ -161,7 +183,7 @@ export function mockApi(opts: Options = {}): MockApi {
       if (method === "PATCH") {
         const next = { ...target, name: String(body.name ?? target.name) };
         workspaces = workspaces.map((w) => (w.id === target.id ? next : w));
-        return json(next);
+        return json(url.mask(next));
       }
       if (method === "DELETE") {
         if (target.isDefault) return errorResponse(409, "default_workspace", "default workspace");
@@ -228,6 +250,7 @@ export function mockApi(opts: Options = {}): MockApi {
     fetch: fn,
     patches,
     access,
+    url,
     calls,
     callsTo: (method, path) =>
       calls.filter(

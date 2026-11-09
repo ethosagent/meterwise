@@ -12,14 +12,14 @@ import {
   theme,
 } from "antd";
 import { useEffect } from "react";
+import type { WorkspaceView } from "../../api/contract04";
 import { useActiveWorkspace, useDeleteWorkspace, useRenameWorkspace } from "../../api/identity";
 import { usePermission } from "../../auth/usePermission";
-import type { Workspace } from "../../contract/generated";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
-import { ProxyUrl } from "./ProxyUrl";
+import { WorkspaceUrl } from "./WorkspaceUrl";
 
-function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
+function General({ ws, canManage }: { ws: WorkspaceView; canManage: boolean }) {
   const { message } = App.useApp();
   const rename = useRenameWorkspace();
   const [form] = Form.useForm<{ name: string }>();
@@ -56,12 +56,12 @@ function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
         ) : null}
       </Form>
       <Typography.Title level={5}>Proxy URL</Typography.Title>
-      <ProxyUrl url={ws.proxyUrl} />
+      <WorkspaceUrl ws={ws} withCidrs />
     </Card>
   );
 }
 
-function DangerZone({ ws }: { ws: Workspace }) {
+function DangerZone({ ws }: { ws: WorkspaceView }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const del = useDeleteWorkspace();

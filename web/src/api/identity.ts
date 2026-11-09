@@ -1,7 +1,8 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import type { ErrorCode, Invitation, Me, Role, Workspace } from "../contract/generated";
+import type { ErrorCode, Invitation, Me, Role } from "../contract/generated";
 import { apiFetch } from "./client";
+import type { WorkspaceView } from "./contract04";
 import { ApiError } from "./errors";
 import { enc, json, useInvalidatingMutation } from "./mutation";
 
@@ -55,7 +56,7 @@ export function useMe(enabled = true) {
 export function useWorkspaces() {
   return useQuery({
     queryKey: workspacesKey,
-    queryFn: async () => (await apiFetch<{ items: Workspace[] }>("/api/workspaces")).items,
+    queryFn: async () => (await apiFetch<{ items: WorkspaceView[] }>("/api/workspaces")).items,
   });
 }
 
@@ -69,7 +70,7 @@ export type ActiveWorkspace =
   | { state: "loading" }
   | { state: "none" }
   | { state: "missing" }
-  | { state: "ready"; workspace: Workspace };
+  | { state: "ready"; workspace: WorkspaceView };
 
 export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
   const meQuery = useMe();
@@ -102,7 +103,7 @@ export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
 export function useCreateWorkspace() {
   return useInvalidatingMutation(
     (name: string) =>
-      apiFetch<Workspace>("/api/workspaces", { method: "POST", body: json({ name }) }),
+      apiFetch<WorkspaceView>("/api/workspaces", { method: "POST", body: json({ name }) }),
     [workspacesKey],
   );
 }
@@ -110,7 +111,7 @@ export function useCreateWorkspace() {
 export function useRenameWorkspace() {
   return useInvalidatingMutation(
     (v: { id: string; name: string }) =>
-      apiFetch<Workspace>(`/api/workspaces/${enc(v.id)}`, {
+      apiFetch<WorkspaceView>(`/api/workspaces/${enc(v.id)}`, {
         method: "PATCH",
         body: json({ name: v.name }),
       }),
