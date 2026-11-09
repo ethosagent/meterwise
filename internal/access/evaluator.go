@@ -52,7 +52,7 @@ type PermissionEvaluator struct{}
 // NeedsGrants reports whether Evaluate for req can depend on grants, so the caller loads them
 // only when they matter (an admin, PermSelf, PermMember and PermAdmin never need them).
 func (PermissionEvaluator) NeedsGrants(req Request) bool {
-	if req.Subject.Role == contract.RoleAdmin {
+	if IsAdmin(req.Subject.Role) {
 		return false
 	}
 	switch req.Permission {
@@ -71,7 +71,7 @@ func (PermissionEvaluator) Evaluate(req Request, grants []Grant) Result {
 		return Result{true, ReasonSelf}
 	case !role.Valid():
 		return Result{false, ReasonNoGrant}
-	case role == contract.RoleAdmin:
+	case IsAdmin(role):
 		return Result{true, ReasonAdmin}
 	case req.Permission == contract.PermMember:
 		return Result{true, ReasonMember}
@@ -121,7 +121,7 @@ func covers(scope Scope, grantWS, want string) bool {
 // Snapshot flattens a member's grants for GET /api/me/permissions: an admin is {admin: true} with
 // no grants; anyone else gets the sorted, de-duplicated union of group grants and org defaults.
 func (PermissionEvaluator) Snapshot(subject Subject, grants []Grant) contract.PermissionSnapshot {
-	if subject.Role == contract.RoleAdmin {
+	if IsAdmin(subject.Role) {
 		return contract.PermissionSnapshot{Admin: true, Grants: []contract.Grant{}}
 	}
 	seen := map[string]bool{}

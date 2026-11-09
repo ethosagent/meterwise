@@ -31,6 +31,15 @@ func NewAuthorizer(repo GrantRepository, ws WorkspaceLookup) *Authorizer {
 	return &Authorizer{Repo: repo, Workspaces: ws}
 }
 
+// grantsFor reads the principal's grants when need is true and nothing otherwise: the one place
+// the repository is called, so a request that cannot depend on grants never pays for them.
+func (a *Authorizer) grantsFor(ctx context.Context, p contract.Principal, need bool) ([]Grant, error) {
+	if !need {
+		return nil, nil
+	}
+	return a.Repo.Grants(ctx, p.OrgID, p.UserID)
+}
+
 func subjectOf(p contract.Principal) Subject { return Subject{UserID: p.UserID, Role: p.Role} }
 
 // Authorize decides whether the principal may use perm, on workspaceID when it is not empty.
@@ -44,12 +53,9 @@ func (a *Authorizer) Authorize(ctx context.Context, p contract.Principal, perm c
 		}
 	}
 	req := Request{Subject: subjectOf(p), Permission: perm, WorkspaceID: workspaceID}
-	var grants []Grant
-	if a.Eval.NeedsGrants(req) {
-		var err error
-		if grants, err = a.Repo.Grants(ctx, p.OrgID, p.UserID); err != nil {
-			return Result{}, err
-		}
+	grants, err := a.grantsFor(ctx, p, a.Eval.NeedsGrants(req))
+	if err != nil {
+		return Result{}, err
 	}
 	return a.Eval.Evaluate(req, grants), nil
 }
@@ -57,13 +63,10 @@ func (a *Authorizer) Authorize(ctx context.Context, p contract.Principal, perm c
 // Filter returns the ids among workspaceIDs on which the principal holds perm, in order, with one
 // grant read at most.
 func (a *Authorizer) Filter(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceIDs []string) ([]string, error) {
-	var grants []Grant
 	probe := Request{Subject: subjectOf(p), Permission: perm, WorkspaceID: "probe"}
-	if a.Eval.NeedsGrants(probe) {
-		var err error
-		if grants, err = a.Repo.Grants(ctx, p.OrgID, p.UserID); err != nil {
-			return nil, err
-		}
+	grants, err := a.grantsFor(ctx, p, a.Eval.NeedsGrants(probe))
+	if err != nil {
+		return nil, err
 	}
 	out := make([]string, 0, len(workspaceIDs))
 	for _, id := range workspaceIDs {
@@ -76,12 +79,9 @@ func (a *Authorizer) Filter(ctx context.Context, p contract.Principal, perm cont
 
 // Snapshot returns the caller's permission snapshot (GET /api/me/permissions).
 func (a *Authorizer) Snapshot(ctx context.Context, p contract.Principal) (contract.PermissionSnapshot, error) {
-	var grants []Grant
-	if !IsAdmin(p.Role) {
-		var err error
-		if grants, err = a.Repo.Grants(ctx, p.OrgID, p.UserID); err != nil {
-			return contract.PermissionSnapshot{}, err
-		}
+	grants, err := a.grantsFor(ctx, p, !IsAdmin(p.Role))
+	if err != nil {
+		return contract.PermissionSnapshot{}, err
 	}
 	return a.Eval.Snapshot(subjectOf(p), grants), nil
 }
