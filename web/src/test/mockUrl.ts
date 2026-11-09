@@ -147,8 +147,9 @@ function reset(m: UrlMock, ctx: UrlContext, ws: Workspace, body: Record<string, 
   const proxyUrl = `https://${ctx.host}/w/${publicId}`;
   ctx.update({ ...ws, publicId, proxyUrl });
   record(m, ctx, "workspace.url_reset", ws);
+  // managing the URL is not reading it (server rule): without workspace_url:read the new URL is not returned
   const result: ResetURLResponse = {
-    proxyUrl,
+    proxyUrl: ctx.access.can("workspace_url", "read", ws.id) ? proxyUrl : null,
     previousGraceUntil: new Date(Date.now() + (grace as number) * 60_000).toISOString(),
   };
   return jsonResponse(result);

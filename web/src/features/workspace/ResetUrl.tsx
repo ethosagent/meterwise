@@ -62,7 +62,11 @@ export function ResetUrl({ workspaceId }: { workspaceId: string }) {
         <Alert
           type="info"
           showIcon
-          title={`The previous URL still works until ${new Date(result.previousGraceUntil).toLocaleTimeString()}.`}
+          title={
+            result.proxyUrl === null
+              ? `URL reset; you don't have permission to view it. The previous URL still works until ${new Date(result.previousGraceUntil).toLocaleTimeString()}.`
+              : `The previous URL still works until ${new Date(result.previousGraceUntil).toLocaleTimeString()}.`
+          }
           action={
             <Button
               size="small"
