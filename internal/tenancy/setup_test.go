@@ -59,7 +59,7 @@ func TestNormalizeCIDRs(t *testing.T) {
 		t.Fatalf("empty: %#v %v", got, err)
 	}
 	for name, in := range map[string][]string{
-		"junk": {"10.0.0.0/8", "nope", "1.2.3.4/33"}, "empty entry": {""}, "too many": make([]string, tenancy.MaxAllowedCIDRs+1),
+		"junk": {"10.0.0.0/8", "nope", "1.2.3.4/33"}, "ipv6 zone": {"fe80::1%eth0"}, "ipv6 zone with mask": {"fe80::1%eth0/64"}, "empty entry": {""}, "too many": make([]string, tenancy.MaxAllowedCIDRs+1),
 	} {
 		_, err := tenancy.NormalizeCIDRs(in)
 		e := contract.AsError(err)

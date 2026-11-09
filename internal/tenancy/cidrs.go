@@ -1,6 +1,7 @@
 package tenancy
 
 import (
+	"errors"
 	"net/netip"
 	"strconv"
 
@@ -39,8 +40,13 @@ func NormalizeCIDRs(in []string) ([]string, error) {
 	return out, nil
 }
 
+var errZone = errors.New("IPv6 zone")
+
 func parseCIDR(raw string) (netip.Prefix, error) {
 	if a, err := netip.ParseAddr(raw); err == nil {
+		if a.Zone() != "" { // a zone names a local interface, never a client network: refuse, do not drop it
+			return netip.Prefix{}, errZone
+		}
 		a = a.Unmap()
 		return netip.PrefixFrom(a, a.BitLen()), nil
 	}
