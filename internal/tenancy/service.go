@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -17,7 +15,6 @@ import (
 )
 
 const (
-	maxNameRunes  = 80
 	maxIDAttempts = 5
 	// DefaultWorkspaceName names the workspace created at first boot.
 	DefaultWorkspaceName = "Default"
@@ -60,28 +57,13 @@ func New(st *store.Store, idp contract.IdentityProvider, cfg Config) *Service {
 // Directory returns the cached workspace directory.
 func (s *Service) Directory() *Directory { return s.dir }
 
-func invalid(field, msg string) error {
-	return contract.NewError(contract.CodeValidationFailed, "request validation failed", field+": "+msg)
-}
-
 // inviteEmail normalises an address typed by a person: surrounding ASCII whitespace is dropped (the
 // one place anything is trimmed), then contract.NormalizeEmail judges the rest.
 func inviteEmail(raw string) (string, error) {
 	if e, ok := contract.NormalizeEmail(strings.Trim(raw, " \t\r\n")); ok {
 		return e, nil
 	}
-	return "", invalid("email", "must be a plain ASCII email address")
-}
-
-func validName(raw string) (string, error) {
-	n := strings.TrimSpace(raw)
-	switch {
-	case n == "" || utf8.RuneCountInString(n) > maxNameRunes:
-		return "", invalid("name", "must be 1-80 characters")
-	case strings.IndexFunc(n, unicode.IsControl) >= 0:
-		return "", invalid("name", "must not contain control characters")
-	}
-	return n, nil
+	return "", contract.Invalid("email", "must be a plain ASCII email address")
 }
 
 // Resolve mirrors the identity into users (the lazy upsert: it works with zero
@@ -225,7 +207,7 @@ func (s *Service) withPublicID(try func(publicID string) error) error {
 
 // CreateWorkspace creates a workspace with a fresh CSPRNG public id, honouring MAX_WORKSPACES.
 func (s *Service) CreateWorkspace(ctx context.Context, p contract.Principal, name string) (ws contract.Workspace, err error) {
-	n, err := validName(name)
+	n, err := contract.ValidName(name)
 	if err != nil {
 		return contract.Workspace{}, err
 	}
@@ -249,7 +231,7 @@ func (s *Service) EnsureDefaults(ctx context.Context) error {
 func (s *Service) UpdateWorkspace(ctx context.Context, p contract.Principal, id string, req contract.UpdateWorkspaceRequest) (contract.Workspace, error) {
 	var name *string
 	if req.Name != nil {
-		n, err := validName(*req.Name)
+		n, err := contract.ValidName(*req.Name)
 		if err != nil {
 			return contract.Workspace{}, err
 		}
@@ -304,7 +286,7 @@ func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role co
 		return contract.Invitation{}, err
 	}
 	if !role.Valid() {
-		return contract.Invitation{}, invalid("role", "must be admin or member")
+		return contract.Invitation{}, contract.Invalid("role", "must be admin or member")
 	}
 	if member, err := s.st.ActiveMemberWithEmail(ctx, s.org, email); err != nil {
 		return contract.Invitation{}, err

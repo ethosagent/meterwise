@@ -3,14 +3,9 @@ package access
 import (
 	"context"
 	"strconv"
-	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
-
-const maxGroupNameRunes = 80
 
 // Service is the use-case layer of groups, group membership and org defaults. Authorization of
 // who may call it is the gateway's job (the route table); this layer validates input and keeps the
@@ -41,21 +36,6 @@ type Store interface {
 // NewService builds the service over a store for one organization.
 func NewService(st Store, orgID string) *Service { return &Service{st: st, org: orgID} }
 
-func invalid(field, msg string) error {
-	return contract.NewError(contract.CodeValidationFailed, "request validation failed", field+": "+msg)
-}
-
-func validGroupName(raw string) (string, error) {
-	n := strings.TrimSpace(raw)
-	switch {
-	case n == "" || utf8.RuneCountInString(n) > maxGroupNameRunes:
-		return "", invalid("name", "must be 1-80 characters")
-	case strings.IndexFunc(n, unicode.IsControl) >= 0:
-		return "", invalid("name", "must not contain control characters")
-	}
-	return n, nil
-}
-
 // ListGroups returns the org's groups.
 func (s *Service) ListGroups(ctx context.Context) ([]contract.Group, error) {
 	return s.st.ListGroups(ctx, s.org)
@@ -68,7 +48,7 @@ func (s *Service) Group(ctx context.Context, id string) (contract.Group, error) 
 
 // CreateGroup creates a group; the name must be free (case-insensitively).
 func (s *Service) CreateGroup(ctx context.Context, name string) (contract.Group, error) {
-	n, err := validGroupName(name)
+	n, err := contract.ValidName(name)
 	if err != nil {
 		return contract.Group{}, err
 	}
@@ -77,7 +57,7 @@ func (s *Service) CreateGroup(ctx context.Context, name string) (contract.Group,
 
 // RenameGroup renames a group.
 func (s *Service) RenameGroup(ctx context.Context, id, name string) (contract.Group, error) {
-	n, err := validGroupName(name)
+	n, err := contract.ValidName(name)
 	if err != nil {
 		return contract.Group{}, err
 	}

@@ -72,3 +72,22 @@ func TestGrantHelpers(t *testing.T) {
 		t.Fatalf("Key: %q %q", g.Key(), org.Key())
 	}
 }
+
+func TestValidNameAndInvalid(t *testing.T) {
+	if n, err := contract.ValidName("  Alpha  "); err != nil || n != "Alpha" {
+		t.Fatalf("%q %v", n, err)
+	}
+	for _, bad := range []string{"", "   ", strings.Repeat("x", 81), "tab\tname", "ctl\x01"} {
+		_, err := contract.ValidName(bad)
+		e := contract.AsError(err)
+		if e.Code != contract.CodeValidationFailed || len(e.Details) != 1 || !strings.HasPrefix(e.Details[0], "name: ") {
+			t.Errorf("ValidName(%q) = %v", bad, err)
+		}
+	}
+	if _, err := contract.ValidName(strings.Repeat("é", 80)); err != nil {
+		t.Errorf("80 runes of 2 bytes each are fine: %v", err)
+	}
+	if e := contract.Invalid("role", "bad"); e.Code != contract.CodeValidationFailed || e.Details[0] != "role: bad" {
+		t.Fatalf("%+v", e)
+	}
+}
