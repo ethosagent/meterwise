@@ -20,6 +20,9 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0013](0013-clerk-go-sdk-and-svix-for-identity.md) | The Clerk Go SDK and Svix verify identity and webhooks | Accepted |
 | [0014](0014-single-org-now-org-id-everywhere-rls-deferred.md) | Single org now, org_id everywhere, RLS deferred | Accepted |
 | [0015](0015-rbac-kernel-grants-one-gateway-last-admin-lock.md) | RBAC kernel: grants, one gateway, last-admin lock | Accepted |
+| [0016](0016-workspace-url-reset-and-grace.md) | The workspace URL is the credential: reset with grace, optional CIDR guard, no proxy key | Accepted |
+| [0017](0017-authenticator-inlinesafe-bounded-lookup.md) | The workspace authenticator is InlineSafe, with a bounded miss | Accepted |
+| [0018](0018-audit-log-append-only-by-trigger.md) | The audit log is append-only by trigger and emitted after commit | Accepted |
 
 Template: [`template.md`](template.md).
 

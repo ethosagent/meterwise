@@ -60,7 +60,7 @@ func (s *stack) defaultWorkspace(t *testing.T, tok string) (publicID, id string)
 	}
 	for _, w := range decodeAs[contract.WorkspaceList](t, b).Items {
 		if w.IsDefault {
-			return w.PublicID, w.ID
+			return deref(w.PublicID), w.ID
 		}
 	}
 	t.Fatal("no default workspace")

@@ -25,6 +25,10 @@ type Tenancy interface {
 	UpdateWorkspace(ctx context.Context, p contract.Principal, id string, req contract.UpdateWorkspaceRequest) (contract.Workspace, error)
 	DeleteWorkspace(ctx context.Context, p contract.Principal, id string) error
 	SwitchWorkspace(ctx context.Context, p contract.Principal, id string) (string, error)
+	Setup(ctx context.Context, p contract.Principal, workspaceID, proxyPrefix string) (contract.Setup, error)
+	ResetURL(ctx context.Context, p contract.Principal, workspaceID string, grace time.Duration) (contract.URLReset, error)
+	RetirePreviousURL(ctx context.Context, p contract.Principal, workspaceID string) error
+	SetAllowedCIDRs(ctx context.Context, p contract.Principal, workspaceID string, cidrs []string) ([]string, error)
 
 	ListInvitations(ctx context.Context, p contract.Principal) ([]contract.Invitation, error)
 	CreateInvitation(ctx context.Context, p contract.Principal, email string, role contract.Role) (contract.Invitation, error)
@@ -64,17 +68,6 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 
 func rfc3339(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
-func (s *server) workspaceView(ws contract.Workspace) contract.WorkspaceView {
-	settings := ws.Settings
-	if settings == nil {
-		settings = map[string]any{}
-	}
-	return contract.WorkspaceView{
-		ID: ws.ID, PublicID: ws.PublicID, Name: ws.Name, IsDefault: ws.IsDefault,
-		ProxyURL: "https://" + s.ProxyPublicHost + "/w/" + ws.PublicID, Settings: settings, CreatedAt: rfc3339(ws.CreatedAt),
-	}
-}
-
 func invitationView(i contract.Invitation, now time.Time) contract.InvitationView {
 	by := i.InvitedBy
 	if by == "" {
@@ -99,7 +92,7 @@ func (s *server) me(c Call) (contract.Me, error) {
 		return contract.Me{}, err
 	}
 	var active *string
-	if id := tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list, func(string) bool { return true }); id != "" {
+	if id := tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list); id != "" {
 		active = &id
 	}
 	u := c.Session.User
@@ -123,26 +116,20 @@ func (s *server) readableWorkspaces(c Call) ([]contract.Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	keep := make(map[string]bool, len(ok))
-	for _, id := range ok {
-		keep[id] = true
+	byID := make(map[string]contract.Workspace, len(all))
+	for _, w := range all {
+		byID[w.ID] = w
 	}
 	out := make([]contract.Workspace, 0, len(ok))
-	for _, w := range all {
-		if keep[w.ID] {
-			out = append(out, w)
-		}
+	for _, id := range ok { // Filter keeps the input order, default first
+		out = append(out, byID[id])
 	}
 	return out, nil
 }
 
-func notInvitedErr() error {
-	return contract.NewError(contract.CodeNotInvited, "this account has not been invited to the organization")
-}
-
 func (s *server) getMe(c Call, _ none) (contract.Me, error) {
 	if !c.Session.Member {
-		return contract.Me{}, notInvitedErr()
+		return contract.Me{}, contract.NotInvited()
 	}
 	return s.me(c)
 }
@@ -158,7 +145,7 @@ func (s *server) completeSignup(c Call, _ none) (contract.Me, error) {
 
 func (s *server) mePermissions(c Call, _ none) (contract.PermissionSnapshot, error) {
 	if !c.Session.Member {
-		return contract.PermissionSnapshot{}, notInvitedErr()
+		return contract.PermissionSnapshot{}, contract.NotInvited()
 	}
 	return s.Authz.Snapshot(c.Ctx, c.Principal)
 }
@@ -168,30 +155,68 @@ func (s *server) listWorkspaces(c Call, _ none) (contract.WorkspaceList, error) 
 	if err != nil {
 		return contract.WorkspaceList{}, err
 	}
-	out := contract.WorkspaceList{Items: make([]contract.WorkspaceView, 0, len(list))}
-	for _, ws := range list {
-		out.Items = append(out.Items, s.workspaceView(ws))
-	}
-	return out, nil
+	views, err := s.workspaceViews(c, list)
+	return contract.WorkspaceList{Items: views}, err
 }
 
 func (s *server) createWorkspace(c Call, req contract.CreateWorkspaceRequest) (contract.WorkspaceView, error) {
 	ws, err := s.Tenancy.CreateWorkspace(c.Ctx, c.Principal, req.Name)
-	return s.workspaceView(ws), err
+	if err != nil {
+		return contract.WorkspaceView{}, err
+	}
+	s.audit(c, contract.AuditWorkspaceCreate, "workspace", ws.ID, ws.ID, nil)
+	return s.workspaceViewOf(c, ws)
 }
 
 func (s *server) updateWorkspace(c Call, req contract.UpdateWorkspaceRequest) (contract.WorkspaceView, error) {
 	ws, err := s.Tenancy.UpdateWorkspace(c.Ctx, c.Principal, c.Path("id"), req)
-	return s.workspaceView(ws), err
+	if err != nil {
+		return contract.WorkspaceView{}, err
+	}
+	fields := []string{}
+	if req.Name != nil {
+		fields = append(fields, "name")
+	}
+	if req.Settings != nil {
+		fields = append(fields, "settings")
+	}
+	s.audit(c, contract.AuditWorkspaceUpdate, "workspace", ws.ID, ws.ID, map[string]any{"fields": fields})
+	return s.workspaceViewOf(c, ws)
 }
 
 func (s *server) deleteWorkspace(c Call, _ none) (none, error) {
-	return none{}, s.Tenancy.DeleteWorkspace(c.Ctx, c.Principal, c.Path("id"))
+	id := c.Path("id")
+	if err := s.Tenancy.DeleteWorkspace(c.Ctx, c.Principal, id); err != nil {
+		return none{}, err
+	}
+	s.audit(c, contract.AuditWorkspaceDelete, "workspace", id, id, nil)
+	return none{}, nil
 }
 
 func (s *server) switchWorkspace(c Call, _ none) (contract.SwitchWorkspaceResponse, error) {
 	id, err := s.Tenancy.SwitchWorkspace(c.Ctx, c.Principal, c.Path("id"))
 	return contract.SwitchWorkspaceResponse{ActiveWorkspaceID: id}, err
+}
+
+func (s *server) listMembers(c Call, _ none) (contract.MemberList, error) {
+	list, err := s.Tenancy.ListMembers(c.Ctx, c.Principal)
+	return contract.MemberList{Items: list}, err
+}
+
+func (s *server) updateMember(c Call, req contract.UpdateMemberRequest) (contract.Member, error) {
+	m, err := s.Tenancy.SetMemberRole(c.Ctx, c.Principal, c.Path("userId"), req.Role)
+	if err == nil {
+		s.audit(c, contract.AuditMemberRoleChange, "member", c.Path("userId"), "", map[string]any{"role": string(req.Role)})
+	}
+	return m, err
+}
+
+func (s *server) removeMember(c Call, _ none) (none, error) {
+	if err := s.Tenancy.RemoveMember(c.Ctx, c.Principal, c.Path("userId")); err != nil {
+		return none{}, err
+	}
+	s.audit(c, contract.AuditMemberRemove, "member", c.Path("userId"), "", nil)
+	return none{}, nil
 }
 
 func (s *server) listInvitations(c Call, _ none) (contract.InvitationList, error) {
@@ -209,16 +234,28 @@ func (s *server) listInvitations(c Call, _ none) (contract.InvitationList, error
 
 func (s *server) createInvitation(c Call, req contract.CreateInvitationRequest) (contract.InvitationView, error) {
 	inv, err := s.Tenancy.CreateInvitation(c.Ctx, c.Principal, req.Email, req.Role)
-	return invitationView(inv, time.Now()), err
+	if err != nil {
+		return contract.InvitationView{}, err
+	}
+	s.audit(c, contract.AuditInvitationCreate, "invitation", inv.ID, "", map[string]any{"role": string(req.Role)})
+	return invitationView(inv, time.Now()), nil
 }
 
 func (s *server) resendInvitation(c Call, _ none) (contract.InvitationView, error) {
 	inv, err := s.Tenancy.ResendInvitation(c.Ctx, c.Principal, c.Path("id"))
-	return invitationView(inv, time.Now()), err
+	if err != nil {
+		return contract.InvitationView{}, err
+	}
+	s.audit(c, contract.AuditInvitationResend, "invitation", inv.ID, "", nil)
+	return invitationView(inv, time.Now()), nil
 }
 
 func (s *server) revokeInvitation(c Call, _ none) (none, error) {
-	return none{}, s.Tenancy.RevokeInvitation(c.Ctx, c.Principal, c.Path("id"))
+	if err := s.Tenancy.RevokeInvitation(c.Ctx, c.Principal, c.Path("id")); err != nil {
+		return none{}, err
+	}
+	s.audit(c, contract.AuditInvitationRevoke, "invitation", c.Path("id"), "", nil)
+	return none{}, nil
 }
 
 // clerkWebhook authenticates by Svix signature, not by bearer token. A bad

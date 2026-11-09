@@ -28,6 +28,24 @@ func (q *Queries) AddGroupUser(ctx context.Context, arg AddGroupUserParams) erro
 	return err
 }
 
+const addGroupUsers = `-- name: AddGroupUsers :exec
+INSERT INTO group_users (group_id, user_id, org_id)
+SELECT $1::text::uuid, u, $2::text::uuid
+FROM unnest($3::text[]::uuid[]) AS u
+ON CONFLICT DO NOTHING
+`
+
+type AddGroupUsersParams struct {
+	GroupID string
+	OrgID   string
+	UserIds []string
+}
+
+func (q *Queries) AddGroupUsers(ctx context.Context, arg AddGroupUsersParams) error {
+	_, err := q.db.Exec(ctx, addGroupUsers, arg.GroupID, arg.OrgID, arg.UserIds)
+	return err
+}
+
 const attachGroupWorkspace = `-- name: AttachGroupWorkspace :execrows
 INSERT INTO group_workspaces (group_id, workspace_id, org_id)
 VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid)
@@ -96,6 +114,24 @@ type DeleteGroupGrantsOnWorkspaceParams struct {
 
 func (q *Queries) DeleteGroupGrantsOnWorkspace(ctx context.Context, arg DeleteGroupGrantsOnWorkspaceParams) error {
 	_, err := q.db.Exec(ctx, deleteGroupGrantsOnWorkspace, arg.OrgID, arg.GroupID, arg.WorkspaceID)
+	return err
+}
+
+const deleteGroupUsersExcept = `-- name: DeleteGroupUsersExcept :exec
+DELETE FROM group_users
+WHERE org_id = $1::text::uuid AND group_id = $2::text::uuid
+  AND NOT (user_id = ANY($3::text[]::uuid[]))
+`
+
+type DeleteGroupUsersExceptParams struct {
+	OrgID   string
+	GroupID string
+	UserIds []string
+}
+
+// Drops every member of the group that is not in user_ids (an empty list drops them all).
+func (q *Queries) DeleteGroupUsersExcept(ctx context.Context, arg DeleteGroupUsersExceptParams) error {
+	_, err := q.db.Exec(ctx, deleteGroupUsersExcept, arg.OrgID, arg.GroupID, arg.UserIds)
 	return err
 }
 
@@ -179,6 +215,43 @@ func (q *Queries) GetGroup(ctx context.Context, arg GetGroupParams) (GetGroupRow
 		&i.WorkspaceIds,
 	)
 	return i, err
+}
+
+const grantManyToGroup = `-- name: GrantManyToGroup :exec
+WITH input AS (
+    SELECT DISTINCT NULLIF(($3::text[])[i], '')::uuid AS workspace_id,
+           ($4::text[])[i] AS resource_type, ($5::text[])[i] AS action
+    FROM generate_subscripts($4::text[], 1) AS i
+), perm AS (
+    INSERT INTO resource_permissions (org_id, workspace_id, resource_type, action)
+    SELECT $2::text::uuid, workspace_id, resource_type, action FROM input
+    ON CONFLICT ON CONSTRAINT resource_permissions_identity DO UPDATE SET action = EXCLUDED.action
+    RETURNING id
+)
+INSERT INTO group_permissions (group_id, permission_id, org_id)
+SELECT $1::text::uuid, perm.id, $2::text::uuid FROM perm
+ON CONFLICT DO NOTHING
+`
+
+type GrantManyToGroupParams struct {
+	GroupID       string
+	OrgID         string
+	WorkspaceIds  []string
+	ResourceTypes []string
+	Actions       []string
+}
+
+// GrantToGroup for a whole list in one statement: the parallel arrays are one grant per index
+// (workspace_ids holds the empty string for an org-wide grant; generate_subscripts because sqlc cannot analyse a multi-array unnest). DISTINCT keeps ON CONFLICT from seeing a row twice.
+func (q *Queries) GrantManyToGroup(ctx context.Context, arg GrantManyToGroupParams) error {
+	_, err := q.db.Exec(ctx, grantManyToGroup,
+		arg.GroupID,
+		arg.OrgID,
+		arg.WorkspaceIds,
+		arg.ResourceTypes,
+		arg.Actions,
+	)
+	return err
 }
 
 const grantToGroup = `-- name: GrantToGroup :exec
@@ -289,10 +362,13 @@ func (q *Queries) ListGrantsForUser(ctx context.Context, arg ListGrantsForUserPa
 }
 
 const listGroupGrants = `-- name: ListGroupGrants :many
-SELECT COALESCE(rp.workspace_id::text, '')::text AS workspace_id, rp.resource_type, rp.action
-FROM group_permissions gp JOIN resource_permissions rp ON rp.id = gp.permission_id
-WHERE gp.org_id = $1::text::uuid AND gp.group_id = $2::text::uuid
-ORDER BY rp.resource_type, rp.action, rp.workspace_id NULLS FIRST
+SELECT COALESCE(rp.workspace_id::text, '')::text AS workspace_id, COALESCE(rp.resource_type, '')::text AS resource_type,
+       COALESCE(rp.action, '')::text AS action
+FROM groups g
+LEFT JOIN group_permissions gp ON gp.group_id = g.id AND gp.org_id = g.org_id
+LEFT JOIN resource_permissions rp ON rp.id = gp.permission_id
+WHERE g.org_id = $1::text::uuid AND g.id = $2::text::uuid
+ORDER BY rp.resource_type NULLS FIRST, rp.action, rp.workspace_id NULLS FIRST
 `
 
 type ListGroupGrantsParams struct {
@@ -306,6 +382,8 @@ type ListGroupGrantsRow struct {
 	Action       string
 }
 
+// One read for the group and its grants: a missing group yields no row at all (not_found), a group
+// without grants yields one row whose resource_type is empty.
 func (q *Queries) ListGroupGrants(ctx context.Context, arg ListGroupGrantsParams) ([]ListGroupGrantsRow, error) {
 	rows, err := q.db.Query(ctx, listGroupGrants, arg.OrgID, arg.GroupID)
 	if err != nil {
@@ -327,12 +405,14 @@ func (q *Queries) ListGroupGrants(ctx context.Context, arg ListGroupGrantsParams
 }
 
 const listGroupMembers = `-- name: ListGroupMembers :many
-SELECT u.id::text AS user_id, u.email, u.name, u.avatar_url, m.role, m.created_at AS joined_at,
-       COALESCE((SELECT array_agg(x.group_id::text ORDER BY x.group_id) FROM group_users x WHERE x.user_id = u.id AND x.org_id = m.org_id), '{}')::text[] AS group_ids
-FROM group_users gu
-JOIN memberships m ON m.user_id = gu.user_id AND m.org_id = gu.org_id AND m.status = 'active'
-JOIN users u ON u.id = gu.user_id AND u.org_id = gu.org_id AND u.deleted_at IS NULL
-WHERE gu.org_id = $1::text::uuid AND gu.group_id = $2::text::uuid
+SELECT COALESCE(u.id::text, '')::text AS user_id, COALESCE(u.email, '')::text AS email, COALESCE(u.name, '')::text AS name,
+       COALESCE(u.avatar_url, '')::text AS avatar_url, COALESCE(m.role, '')::text AS role, m.created_at AS joined_at,
+       COALESCE((SELECT array_agg(x.group_id::text ORDER BY x.group_id) FROM group_users x WHERE x.user_id = u.id AND x.org_id = g.org_id), '{}')::text[] AS group_ids
+FROM groups g
+LEFT JOIN group_users gu ON gu.group_id = g.id AND gu.org_id = g.org_id
+LEFT JOIN memberships m ON m.user_id = gu.user_id AND m.org_id = gu.org_id AND m.status = 'active'
+LEFT JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id AND u.deleted_at IS NULL
+WHERE g.org_id = $1::text::uuid AND g.id = $2::text::uuid
 ORDER BY u.email, u.id
 `
 
@@ -351,6 +431,8 @@ type ListGroupMembersRow struct {
 	GroupIds  []string
 }
 
+// One read for the group and its active members: a missing group yields no row (not_found); a
+// group with no active member yields rows whose user_id is empty, which the caller skips.
 func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersParams) ([]ListGroupMembersRow, error) {
 	rows, err := q.db.Query(ctx, listGroupMembers, arg.OrgID, arg.GroupID)
 	if err != nil {
@@ -414,6 +496,39 @@ func (q *Queries) ListGroups(ctx context.Context, orgID string) ([]ListGroupsRow
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockActiveMembershipsShared = `-- name: LockActiveMembershipsShared :many
+SELECT user_id::text AS user_id FROM memberships
+WHERE org_id = $1::text::uuid AND status = 'active' AND user_id = ANY($2::text[]::uuid[])
+FOR SHARE
+`
+
+type LockActiveMembershipsSharedParams struct {
+	OrgID   string
+	UserIds []string
+}
+
+// LockActiveMembershipShared for a list: the ids that are active members, rows held so a
+// concurrent removal waits for the statement that relies on them.
+func (q *Queries) LockActiveMembershipsShared(ctx context.Context, arg LockActiveMembershipsSharedParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, lockActiveMembershipsShared, arg.OrgID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var user_id string
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

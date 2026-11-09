@@ -10,6 +10,13 @@ import (
 	"github.com/ethosagent/meterwise/internal/store"
 )
 
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 var base62ID = regexp.MustCompile(`^[0-9A-Za-z]{22}$`)
 
 func TestWorkspaceLifecycle(t *testing.T) {
@@ -22,15 +29,15 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("create: %d %s", code, b)
 	}
 	ws := decodeAs[contract.WorkspaceView](t, b)
-	if ws.Name != "Payments" || ws.IsDefault || !base62ID.MatchString(ws.PublicID) || ws.PublicID == defPublic ||
-		ws.ProxyURL != "https://proxy.test/w/"+ws.PublicID || ws.Settings == nil || ws.CreatedAt == "" {
+	if ws.Name != "Payments" || ws.IsDefault || !base62ID.MatchString(deref(ws.PublicID)) || deref(ws.PublicID) == defPublic ||
+		deref(ws.ProxyURL) != "https://proxy.test/w/"+deref(ws.PublicID) || ws.Settings == nil || ws.CreatedAt == "" {
 		t.Fatalf("created workspace = %+v", ws)
 	}
 
 	// rename and settings
 	code, b = s.call(t, "PATCH", "/api/workspaces/"+ws.ID, tok, `{"name":"Billing","settings":{"capture":true,"mode":"observe"}}`)
 	upd := decodeAs[contract.WorkspaceView](t, b)
-	if code != 200 || upd.Name != "Billing" || upd.Settings["capture"] != true || upd.PublicID != ws.PublicID {
+	if code != 200 || upd.Name != "Billing" || upd.Settings["capture"] != true || deref(upd.PublicID) != deref(ws.PublicID) {
 		t.Fatalf("patch: %d %s", code, b)
 	}
 	code, b = s.call(t, "PATCH", "/api/workspaces/"+ws.ID, tok, `{"name":"Billing 2"}`)
@@ -78,7 +85,7 @@ func TestMaxWorkspacesIsEnforced(t *testing.T) {
 		if code != 201 {
 			t.Fatalf("create %d: %d %s", i, code, b)
 		}
-		seen[decodeAs[contract.WorkspaceView](t, b).PublicID] = true
+		seen[deref(decodeAs[contract.WorkspaceView](t, b).PublicID)] = true
 	}
 	code, b := s.call(t, "POST", "/api/workspaces", tok, `{"name":"one too many"}`)
 	wantErr(t, code, b, 409, contract.CodeWorkspaceLimit)

@@ -20,6 +20,7 @@ export const ERROR_CODES = [
   "unavailable",
   "validation_failed",
   "workspace_limit",
+  "workspace_url_reset",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -35,6 +36,10 @@ export type Role = (typeof ROLES)[number];
 export const INVITATION_STATUSES = ["pending", "accepted", "revoked", "expired"] as const;
 
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
+
+export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace.delete", "workspace.url_reset", "workspace.url_retire_previous", "workspace.allowed_cidrs_update", "invitation.create", "invitation.resend", "invitation.revoke", "member.role_change", "member.remove", "group.create", "group.update", "group.delete", "group.permissions_update", "group.workspace_attach", "group.workspace_detach", "group.member_add", "group.member_remove", "group.members_update", "org.permissions_update"] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export const ERROR_STATUS: Record<ErrorCode, number> = {
   already_member: 409,
@@ -56,6 +61,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   unavailable: 503,
   validation_failed: 422,
   workspace_limit: 409,
+  workspace_url_reset: 410,
 };
 
 export interface Health {
@@ -105,10 +111,11 @@ export interface MeUser {
 
 export interface Workspace {
   id: string;
-  publicId: string;
+  publicId: string | null;
   name: string;
   isDefault: boolean;
-  proxyUrl: string;
+  proxyUrl: string | null;
+  allowedClientCidrs: string[] | null;
   settings: Record<string, unknown>;
   createdAt: string;
 }
@@ -206,6 +213,66 @@ export interface AddGroupMemberRequest {
   userId: string;
 }
 
+export interface ReplaceGroupMembersRequest {
+  userIds: string[];
+}
+
+export interface SetupSnippets {
+  openaiEnv: string;
+  anthropicEnv: string;
+  opencodeJson: string;
+  claudeCodeEnv: string;
+  curl: string;
+}
+
+export interface SetupStatus {
+  firstCallAt: string | null;
+  lastCallAt: string | null;
+  callsToday: number;
+}
+
+export interface Setup {
+  proxyUrl: string;
+  snippets: SetupSnippets;
+  status: SetupStatus;
+}
+
+export interface ResetURLRequest {
+  graceMinutes?: number;
+}
+
+export interface ResetURLResponse {
+  proxyUrl: string;
+  previousGraceUntil: string;
+}
+
+export interface AllowedCIDRs {
+  cidrs: string[];
+}
+
+export interface AuditActor {
+  userId: string;
+  email: string;
+  name: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actor: AuditActor | null;
+  action: AuditAction;
+  resourceType: string;
+  resourceId: string | null;
+  workspaceId: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditList {
+  items: AuditEntry[];
+  nextCursor: string | null;
+}
+
 export interface RouteSpec {
   method: string;
   pattern: string;
@@ -215,6 +282,7 @@ export interface RouteSpec {
 }
 
 export const ROUTES: readonly RouteSpec[] = [
+  { method: "GET", pattern: "/api/audit-log", permission: "audit_log:read", public: false },
   { method: "POST", pattern: "/api/auth/complete-signup", permission: "self", public: false },
   { method: "GET", pattern: "/api/config", permission: "", public: true },
   { method: "GET", pattern: "/api/groups", permission: "member:read", public: false },
@@ -224,6 +292,7 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "PATCH", pattern: "/api/groups/{id}", permission: "admin", public: false },
   { method: "GET", pattern: "/api/groups/{id}/members", permission: "member:read", public: false },
   { method: "POST", pattern: "/api/groups/{id}/members", permission: "admin", public: false },
+  { method: "PUT", pattern: "/api/groups/{id}/members", permission: "admin", public: false },
   { method: "DELETE", pattern: "/api/groups/{id}/members/{userId}", permission: "admin", public: false },
   { method: "GET", pattern: "/api/groups/{id}/permissions", permission: "member:read", public: false },
   { method: "PUT", pattern: "/api/groups/{id}/permissions", permission: "admin", public: false },
@@ -248,6 +317,10 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "POST", pattern: "/api/workspaces", permission: "member", public: false },
   { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "workspace:manage", workspaceParam: "id", public: false },
   { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "workspace:write", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/setup", permission: "workspace_url:read", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/switch", permission: "workspace:read", workspaceParam: "id", public: false },
+  { method: "PUT", pattern: "/api/workspaces/{id}/url/allowed-cidrs", permission: "workspace_url:manage", workspaceParam: "id", public: false },
+  { method: "POST", pattern: "/api/workspaces/{id}/url/reset", permission: "workspace_url:manage", workspaceParam: "id", public: false },
+  { method: "POST", pattern: "/api/workspaces/{id}/url/retire-previous", permission: "workspace_url:manage", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/healthz", permission: "", public: true },
 ];

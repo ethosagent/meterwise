@@ -3,14 +3,9 @@ package access
 import (
 	"context"
 	"strconv"
-	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
-
-const maxGroupNameRunes = 80
 
 // Service is the use-case layer of groups, group membership and org defaults. Authorization of
 // who may call it is the gateway's job (the route table); this layer validates input and keeps the
@@ -36,25 +31,11 @@ type Store interface {
 	GroupMembers(ctx context.Context, orgID, groupID string) ([]contract.Member, error)
 	AddGroupMember(ctx context.Context, orgID, groupID, userID string) error
 	RemoveGroupMember(ctx context.Context, orgID, groupID, userID string) error
+	ReplaceGroupMembers(ctx context.Context, orgID, groupID string, userIDs []string) ([]contract.Member, error)
 }
 
 // NewService builds the service over a store for one organization.
 func NewService(st Store, orgID string) *Service { return &Service{st: st, org: orgID} }
-
-func invalid(field, msg string) error {
-	return contract.NewError(contract.CodeValidationFailed, "request validation failed", field+": "+msg)
-}
-
-func validGroupName(raw string) (string, error) {
-	n := strings.TrimSpace(raw)
-	switch {
-	case n == "" || utf8.RuneCountInString(n) > maxGroupNameRunes:
-		return "", invalid("name", "must be 1-80 characters")
-	case strings.IndexFunc(n, unicode.IsControl) >= 0:
-		return "", invalid("name", "must not contain control characters")
-	}
-	return n, nil
-}
 
 // ListGroups returns the org's groups.
 func (s *Service) ListGroups(ctx context.Context) ([]contract.Group, error) {
@@ -68,7 +49,7 @@ func (s *Service) Group(ctx context.Context, id string) (contract.Group, error) 
 
 // CreateGroup creates a group; the name must be free (case-insensitively).
 func (s *Service) CreateGroup(ctx context.Context, name string) (contract.Group, error) {
-	n, err := validGroupName(name)
+	n, err := contract.ValidName(name)
 	if err != nil {
 		return contract.Group{}, err
 	}
@@ -77,7 +58,7 @@ func (s *Service) CreateGroup(ctx context.Context, name string) (contract.Group,
 
 // RenameGroup renames a group.
 func (s *Service) RenameGroup(ctx context.Context, id, name string) (contract.Group, error) {
-	n, err := validGroupName(name)
+	n, err := contract.ValidName(name)
 	if err != nil {
 		return contract.Group{}, err
 	}
@@ -92,11 +73,7 @@ func (s *Service) DeleteGroup(ctx context.Context, id string) error {
 // AttachWorkspace attaches a group to a workspace and, in the same transaction, seeds the read
 // action of every workspace-scoped resource for it. It is idempotent.
 func (s *Service) AttachWorkspace(ctx context.Context, groupID, workspaceID string) (contract.Group, error) {
-	var seed []contract.GrantSpec
-	for _, g := range WorkspaceReadSeed() {
-		seed = append(seed, contract.GrantSpec{ResourceType: g.ResourceType, Action: g.Action})
-	}
-	return s.st.AttachGroupWorkspace(ctx, s.org, groupID, workspaceID, seed)
+	return s.st.AttachGroupWorkspace(ctx, s.org, groupID, workspaceID, WorkspaceReadSeed())
 }
 
 // DetachWorkspace detaches a group and drops its grants on that workspace.
@@ -145,6 +122,12 @@ func (s *Service) AddGroupMember(ctx context.Context, groupID, userID string) ([
 	return s.st.GroupMembers(ctx, s.org, groupID)
 }
 
+// SetGroupMembers makes userIDs the group's whole member set in one transaction; every id must be
+// an active member (422, nothing changed, otherwise).
+func (s *Service) SetGroupMembers(ctx context.Context, groupID string, userIDs []string) ([]contract.Member, error) {
+	return s.st.ReplaceGroupMembers(ctx, s.org, groupID, userIDs)
+}
+
 // RemoveGroupMember takes a user out of a group.
 func (s *Service) RemoveGroupMember(ctx context.Context, groupID, userID string) error {
 	return s.st.RemoveGroupMember(ctx, s.org, groupID, userID)
@@ -171,11 +154,10 @@ func ValidateGrants(grants []contract.Grant, allowAllWorkspaces bool) error {
 		case scope == ScopeWorkspace && g.WorkspaceID == nil && !allowAllWorkspaces:
 			problems = append(problems, at+": "+g.ResourceType+" is workspace-scoped; workspaceId is required")
 		}
-		key := g.ResourceType + "\x00" + g.Action + "\x00" + deref(g.WorkspaceID)
-		if seen[key] {
+		if seen[g.Key()] {
 			problems = append(problems, at+": duplicate grant")
 		}
-		seen[key] = true
+		seen[g.Key()] = true
 	}
 	if len(problems) == 0 {
 		return nil

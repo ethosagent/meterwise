@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -90,22 +91,30 @@ func cmdHelp(e *env, args []string) int {
 	return exitOK
 }
 
-// parseFlags splits a subcommand's arguments into the -json flag (accepted
-// anywhere, so `config check -json` and `config -json check` both work) and
-// positionals. Any other flag is a usage error.
-func parseFlags(e *env, name string, args []string) (asJSON bool, rest []string, code int) {
-	for _, a := range args {
-		switch {
-		case a == "-json" || a == "--json":
-			asJSON = true
-		case strings.HasPrefix(a, "-"):
-			wantJSON := slices.Contains(args, "-json") || slices.Contains(args, "--json")
-			return false, nil, fail(e, wantJSON, contract.NewError(contract.CodeInvalidRequest, name+": unknown flag "+a), exitUsage)
-		default:
-			rest = append(rest, a)
-		}
+// parseFlags parses a subcommand's arguments with the standard flag package. -json is always
+// registered; register adds the command's own flags. Flags may follow positionals (`config
+// check -json` and `config -json check` both work); whatever is not a flag is returned in rest.
+// A parse error is a usage error, answered as a JSON error when -json was asked, whichever
+// command it came from.
+func parseFlags(e *env, name string, args []string, register func(*flag.FlagSet)) (asJSON bool, rest []string, code int) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonFlag := fs.Bool("json", false, "machine-readable output")
+	if register != nil {
+		register(fs)
 	}
-	return asJSON, rest, exitOK
+	for todo := args; ; {
+		if err := fs.Parse(todo); err != nil {
+			wantJSON := slices.Contains(args, "-json") || slices.Contains(args, "--json")
+			return false, nil, fail(e, wantJSON, contract.NewError(contract.CodeInvalidRequest, name+": "+err.Error()), exitUsage)
+		}
+		todo = fs.Args()
+		if len(todo) == 0 {
+			break
+		}
+		rest, todo = append(rest, todo[0]), todo[1:]
+	}
+	return *jsonFlag, rest, exitOK
 }
 
 type envelope struct {

@@ -5,11 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net/mail"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -18,9 +15,7 @@ import (
 )
 
 const (
-	maxNameRunes   = 80
-	maxEmailLength = 254
-	maxIDAttempts  = 5
+	maxIDAttempts = 5
 	// DefaultWorkspaceName names the workspace created at first boot.
 	DefaultWorkspaceName = "Default"
 )
@@ -56,48 +51,19 @@ func New(st *store.Store, idp contract.IdentityProvider, cfg Config) *Service {
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Service{st: st, idp: idp, dir: NewDirectory(st, cfg.Now), cfg: cfg, org: store.OrgID()}
+	return &Service{st: st, idp: idp, dir: NewDirectory(st, cfg.Now, cfg.Rand), cfg: cfg, org: store.OrgID()}
 }
 
 // Directory returns the cached workspace directory.
 func (s *Service) Directory() *Directory { return s.dir }
 
-func invalid(field, msg string) error {
-	return contract.NewError(contract.CodeValidationFailed, "request validation failed", field+": "+msg)
-}
-
-func notInvited() error {
-	return contract.NewError(contract.CodeNotInvited, "this account has not been invited to the organization")
-}
-
-// NormalizeEmail trims and lower-cases an email and checks it is a bare address.
-// Non-ASCII addresses are refused before any case folding: Unicode folding maps
-// some characters to ASCII (U+212A KELVIN SIGN to "k", U+0130 to "i"), which would let a
-// different address claim an invitation written for another. Internationalized addresses
-// need a proper IDN and Unicode comparison policy before they can be admitted.
-func NormalizeEmail(raw string) (string, error) {
-	// The raw value is judged: TrimSpace would strip Unicode whitespace (U+00A0, U+3000, ...)
-	// and let a different string claim an address written without it.
-	if strings.IndexFunc(raw, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
-		return "", invalid("email", "must be a plain ASCII email address")
+// inviteEmail normalises an address typed by a person: surrounding ASCII whitespace is dropped (the
+// one place anything is trimmed), then contract.NormalizeEmail judges the rest.
+func inviteEmail(raw string) (string, error) {
+	if e, ok := contract.NormalizeEmail(strings.Trim(raw, " \t\r\n")); ok {
+		return e, nil
 	}
-	e := strings.ToLower(strings.TrimSpace(raw))
-	addr, err := mail.ParseAddress(e)
-	if e == "" || len(e) > maxEmailLength || err != nil || addr.Address != e || addr.Name != "" {
-		return "", invalid("email", "must be a plain email address")
-	}
-	return e, nil
-}
-
-func validName(raw string) (string, error) {
-	n := strings.TrimSpace(raw)
-	switch {
-	case n == "" || utf8.RuneCountInString(n) > maxNameRunes:
-		return "", invalid("name", "must be 1-80 characters")
-	case strings.IndexFunc(n, unicode.IsControl) >= 0:
-		return "", invalid("name", "must not contain control characters")
-	}
-	return n, nil
+	return "", contract.Invalid("email", "must be a plain ASCII email address")
 }
 
 // Resolve mirrors the identity into users (the lazy upsert: it works with zero
@@ -134,11 +100,11 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 		return sess, nil
 	}
 	if !sess.Identity.EmailVerified {
-		return contract.Session{}, notInvited()
+		return contract.Session{}, contract.NotInvited()
 	}
-	email, err := NormalizeEmail(sess.Identity.Email)
-	if err != nil {
-		return contract.Session{}, notInvited()
+	email, ok := contract.NormalizeEmail(sess.Identity.Email)
+	if !ok {
+		return contract.Session{}, contract.NotInvited()
 	}
 	role, ok, err := s.st.AcceptOpenInvitation(ctx, s.org, sess.User.ID, email, s.cfg.Now())
 	if err != nil {
@@ -155,7 +121,7 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 		return contract.Session{}, err
 	}
 	if !active {
-		return contract.Session{}, notInvited()
+		return contract.Session{}, contract.NotInvited()
 	}
 	return s.asMember(sess, r), nil
 }
@@ -168,7 +134,11 @@ func (s *Service) EnsureMember(ctx context.Context, userID string, role contract
 
 // ApplyWebhookUser upserts a user from a Clerk webhook.
 func (s *Service) ApplyWebhookUser(ctx context.Context, u identity.WebhookUser) error {
-	_, err := s.st.UpsertUser(ctx, s.org, contract.Identity{Subject: u.ClerkUserID, Email: u.Email, EmailVerified: u.EmailVerified, Name: u.Name, AvatarURL: u.AvatarURL})
+	email, verified := u.Email, u.EmailVerified
+	if _, ok := contract.NormalizeEmail(email); !ok {
+		email, verified = "", false // never trimmed or folded into a match, as for token claims
+	}
+	_, err := s.st.UpsertUser(ctx, s.org, contract.Identity{Subject: u.ClerkUserID, Email: email, EmailVerified: verified, Name: u.Name, AvatarURL: u.AvatarURL})
 	return err
 }
 
@@ -183,23 +153,19 @@ func (s *Service) Profile(ctx context.Context, userID string) (contract.Profile,
 	return s.st.Profile(ctx, s.org, userID)
 }
 
-// ActiveWorkspace picks the caller's active workspace: the stored one when it still
-// exists and readable allows it, otherwise the first readable workspace of the
-// list (which arrives default first). "" means the caller can read none.
-func ActiveWorkspace(stored string, list []contract.Workspace, readable func(id string) bool) string {
-	first := ""
+// ActiveWorkspace picks the caller's active workspace: the stored one when list (the workspaces
+// the caller can read, default first) still holds it, otherwise the first of list. "" means the
+// caller can read none.
+func ActiveWorkspace(stored string, list []contract.Workspace) string {
 	for _, w := range list {
-		if !readable(w.ID) {
-			continue
-		}
 		if w.ID == stored {
 			return stored
 		}
-		if first == "" {
-			first = w.ID
-		}
 	}
-	return first
+	if len(list) == 0 {
+		return ""
+	}
+	return list[0].ID
 }
 
 // UpdatePreferences applies the fields present in patch.
@@ -237,7 +203,7 @@ func (s *Service) withPublicID(try func(publicID string) error) error {
 
 // CreateWorkspace creates a workspace with a fresh CSPRNG public id, honouring MAX_WORKSPACES.
 func (s *Service) CreateWorkspace(ctx context.Context, p contract.Principal, name string) (ws contract.Workspace, err error) {
-	n, err := validName(name)
+	n, err := contract.ValidName(name)
 	if err != nil {
 		return contract.Workspace{}, err
 	}
@@ -261,7 +227,7 @@ func (s *Service) EnsureDefaults(ctx context.Context) error {
 func (s *Service) UpdateWorkspace(ctx context.Context, p contract.Principal, id string, req contract.UpdateWorkspaceRequest) (contract.Workspace, error) {
 	var name *string
 	if req.Name != nil {
-		n, err := validName(*req.Name)
+		n, err := contract.ValidName(*req.Name)
 		if err != nil {
 			return contract.Workspace{}, err
 		}
@@ -311,12 +277,12 @@ func (s *Service) providerInvite(ctx context.Context, email string) (string, err
 }
 
 func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role contract.Role) (contract.Invitation, error) {
-	email, err := NormalizeEmail(rawEmail)
+	email, err := inviteEmail(rawEmail)
 	if err != nil {
 		return contract.Invitation{}, err
 	}
 	if !role.Valid() {
-		return contract.Invitation{}, invalid("role", "must be admin or member")
+		return contract.Invitation{}, contract.Invalid("role", "must be admin or member")
 	}
 	if member, err := s.st.ActiveMemberWithEmail(ctx, s.org, email); err != nil {
 		return contract.Invitation{}, err
@@ -355,7 +321,7 @@ func (s *Service) CreateInvitation(ctx context.Context, p contract.Principal, em
 // or the last admin was deleted at the provider). While any admin is active it refuses with a
 // conflict. It is idempotent: an open admin invitation for the email is returned with created=false.
 func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contract.Invitation, created bool, err error) {
-	e, err := NormalizeEmail(email)
+	e, err := inviteEmail(email)
 	if err != nil {
 		return contract.Invitation{}, false, err
 	}

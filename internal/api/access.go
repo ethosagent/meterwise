@@ -21,33 +21,22 @@ type Access interface {
 	GroupMembers(ctx context.Context, groupID string) ([]contract.Member, error)
 	AddGroupMember(ctx context.Context, groupID, userID string) ([]contract.Member, error)
 	RemoveGroupMember(ctx context.Context, groupID, userID string) error
+	SetGroupMembers(ctx context.Context, groupID string, userIDs []string) ([]contract.Member, error)
 	OrgDefaults(ctx context.Context) ([]contract.Grant, error)
 	SetOrgDefaults(ctx context.Context, grants []contract.Grant) ([]contract.Grant, error)
 }
 
-func (s *server) listMembers(c Call, _ none) (contract.MemberList, error) {
-	list, err := s.Tenancy.ListMembers(c.Ctx, c.Principal)
-	return members(list), err
-}
-
-func (s *server) updateMember(c Call, req contract.UpdateMemberRequest) (contract.Member, error) {
-	return s.Tenancy.SetMemberRole(c.Ctx, c.Principal, c.Path("userId"), req.Role)
-}
-
-func (s *server) removeMember(c Call, _ none) (none, error) {
-	return none{}, s.Tenancy.RemoveMember(c.Ctx, c.Principal, c.Path("userId"))
-}
-
 func (s *server) listGroups(c Call, _ none) (contract.GroupList, error) {
 	list, err := s.Access.ListGroups(c.Ctx)
-	if list == nil {
-		list = []contract.Group{}
-	}
 	return contract.GroupList{Items: list}, err
 }
 
 func (s *server) createGroup(c Call, req contract.GroupRequest) (contract.Group, error) {
-	return s.Access.CreateGroup(c.Ctx, req.Name)
+	g, err := s.Access.CreateGroup(c.Ctx, req.Name)
+	if err == nil {
+		s.audit(c, contract.AuditGroupCreate, "group", g.ID, "", nil)
+	}
+	return g, err
 }
 
 func (s *server) getGroup(c Call, _ none) (contract.Group, error) {
@@ -55,51 +44,88 @@ func (s *server) getGroup(c Call, _ none) (contract.Group, error) {
 }
 
 func (s *server) renameGroup(c Call, req contract.GroupRequest) (contract.Group, error) {
-	return s.Access.RenameGroup(c.Ctx, c.Path("id"), req.Name)
+	g, err := s.Access.RenameGroup(c.Ctx, c.Path("id"), req.Name)
+	if err == nil {
+		s.audit(c, contract.AuditGroupUpdate, "group", g.ID, "", map[string]any{"fields": []string{"name"}})
+	}
+	return g, err
 }
 
 func (s *server) deleteGroup(c Call, _ none) (none, error) {
-	return none{}, s.Access.DeleteGroup(c.Ctx, c.Path("id"))
+	if err := s.Access.DeleteGroup(c.Ctx, c.Path("id")); err != nil {
+		return none{}, err
+	}
+	s.audit(c, contract.AuditGroupDelete, "group", c.Path("id"), "", nil)
+	return none{}, nil
 }
 
 func (s *server) groupGrants(c Call, _ none) (contract.GrantList, error) {
 	list, err := s.Access.GroupGrants(c.Ctx, c.Path("id"))
-	return grants(list), err
+	return contract.GrantList{Grants: list}, err
 }
 
 func (s *server) setGroupGrants(c Call, req contract.GrantList) (contract.GrantList, error) {
 	list, err := s.Access.SetGroupGrants(c.Ctx, c.Path("id"), req.Grants)
-	return grants(list), err
+	if err == nil {
+		s.audit(c, contract.AuditGroupPermissionsUpdate, "group", c.Path("id"), "", map[string]any{"count": len(list)})
+	}
+	return contract.GrantList{Grants: list}, err
 }
 
 func (s *server) attachWorkspace(c Call, req contract.AttachWorkspaceRequest) (contract.Group, error) {
-	return s.Access.AttachWorkspace(c.Ctx, c.Path("id"), req.WorkspaceID)
+	g, err := s.Access.AttachWorkspace(c.Ctx, c.Path("id"), req.WorkspaceID)
+	if err == nil {
+		s.audit(c, contract.AuditGroupWorkspaceAttach, "group", c.Path("id"), req.WorkspaceID, nil)
+	}
+	return g, err
 }
 
 func (s *server) detachWorkspace(c Call, _ none) (none, error) {
-	return none{}, s.Access.DetachWorkspace(c.Ctx, c.Path("id"), c.Path("wsId"))
+	if err := s.Access.DetachWorkspace(c.Ctx, c.Path("id"), c.Path("wsId")); err != nil {
+		return none{}, err
+	}
+	s.audit(c, contract.AuditGroupWorkspaceDetach, "group", c.Path("id"), c.Path("wsId"), nil)
+	return none{}, nil
 }
 
 func (s *server) groupMembers(c Call, _ none) (contract.MemberList, error) {
 	list, err := s.Access.GroupMembers(c.Ctx, c.Path("id"))
-	return members(list), err
+	return contract.MemberList{Items: list}, err
 }
 
 func (s *server) addGroupMember(c Call, req contract.AddGroupMemberRequest) (contract.MemberList, error) {
 	list, err := s.Access.AddGroupMember(c.Ctx, c.Path("id"), req.UserID)
-	return members(list), err
+	if err == nil {
+		s.audit(c, contract.AuditGroupMemberAdd, "group", c.Path("id"), "", map[string]any{"userId": req.UserID})
+	}
+	return contract.MemberList{Items: list}, err
+}
+
+func (s *server) setGroupMembers(c Call, req contract.ReplaceGroupMembersRequest) (contract.MemberList, error) {
+	list, err := s.Access.SetGroupMembers(c.Ctx, c.Path("id"), req.UserIDs)
+	if err == nil {
+		s.audit(c, contract.AuditGroupMembersUpdate, "group", c.Path("id"), "", map[string]any{"count": len(list)})
+	}
+	return contract.MemberList{Items: list}, err
 }
 
 func (s *server) removeGroupMember(c Call, _ none) (none, error) {
-	return none{}, s.Access.RemoveGroupMember(c.Ctx, c.Path("id"), c.Path("userId"))
+	if err := s.Access.RemoveGroupMember(c.Ctx, c.Path("id"), c.Path("userId")); err != nil {
+		return none{}, err
+	}
+	s.audit(c, contract.AuditGroupMemberRemove, "group", c.Path("id"), "", map[string]any{"userId": c.Path("userId")})
+	return none{}, nil
 }
 
 func (s *server) orgDefaults(c Call, _ none) (contract.GrantList, error) {
 	list, err := s.Access.OrgDefaults(c.Ctx)
-	return grants(list), err
+	return contract.GrantList{Grants: list}, err
 }
 
 func (s *server) setOrgDefaults(c Call, req contract.GrantList) (contract.GrantList, error) {
 	list, err := s.Access.SetOrgDefaults(c.Ctx, req.Grants)
-	return grants(list), err
+	if err == nil {
+		s.audit(c, contract.AuditOrgPermissionsUpdate, "organization", c.Principal.OrgID, "", map[string]any{"count": len(list)})
+	}
+	return contract.GrantList{Grants: list}, err
 }

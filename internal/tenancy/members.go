@@ -15,7 +15,7 @@ func (s *Service) ListMembers(ctx context.Context, p contract.Principal) ([]cont
 // (contract.CodeLastAdmin); the check runs inside the transaction that writes the role.
 func (s *Service) SetMemberRole(ctx context.Context, p contract.Principal, userID string, role contract.Role) (contract.Member, error) {
 	if !role.Valid() {
-		return contract.Member{}, invalid("role", "must be admin or member")
+		return contract.Member{}, contract.Invalid("role", "must be admin or member")
 	}
 	return s.st.SetMemberRole(ctx, p.OrgID, userID, role)
 }

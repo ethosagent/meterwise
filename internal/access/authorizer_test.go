@@ -20,11 +20,13 @@ func (f *fakeRepo) Grants(context.Context, string, string) ([]access.Grant, erro
 	return f.grants, f.err
 }
 
-type fakeWS map[string]bool
+// fakeWS maps a workspace id to its org; it serves the data-plane directory's ByID, which is not
+// scoped to an org (the Authorizer checks the org itself).
+type fakeWS map[string]string
 
-func (f fakeWS) Workspace(_ context.Context, _, id string) (contract.Workspace, error) {
-	if f[id] {
-		return contract.Workspace{ID: id}, nil
+func (f fakeWS) ByID(_ context.Context, id string) (contract.Workspace, error) {
+	if org, ok := f[id]; ok {
+		return contract.Workspace{ID: id, OrgID: org}, nil
 	}
 	return contract.Workspace{}, contract.NewError(contract.CodeNotFound, "not found")
 }
@@ -36,7 +38,7 @@ func principal(role contract.Role) contract.Principal {
 func TestAuthorizerLoadsGrantsOnlyWhenTheyMatter(t *testing.T) {
 	ctx := context.Background()
 	repo := &fakeRepo{grants: []access.Grant{{GroupID: "g1", WorkspaceID: wsA, ResourceType: "workspace", Action: "write"}}}
-	a := &access.Authorizer{Repo: repo, Workspaces: fakeWS{wsA: true, wsB: true}}
+	a := &access.Authorizer{Repo: repo, Workspaces: fakeWS{wsA: "o", wsB: "o"}}
 
 	for _, tc := range []struct {
 		name  string
@@ -73,7 +75,7 @@ func TestAuthorizerAnswersNotFoundForAForeignWorkspaceBeforeAnyGrant(t *testing.
 
 func TestAuthorizerSurfacesAStoreFailureAsAnErrorNeverADenial(t *testing.T) {
 	boom := errors.New("db down")
-	a := &access.Authorizer{Repo: &fakeRepo{err: boom}, Workspaces: fakeWS{wsA: true}}
+	a := &access.Authorizer{Repo: &fakeRepo{err: boom}, Workspaces: fakeWS{wsA: "o"}}
 	res, err := a.Authorize(context.Background(), principal("member"), contract.PermWorkspaceRead, wsA)
 	if !errors.Is(err, boom) || res.Allowed {
 		t.Fatalf("%+v %v", res, err)
@@ -110,5 +112,16 @@ func TestSnapshotReadsGrantsOnlyForAMember(t *testing.T) {
 	snap, _ = a.Snapshot(context.Background(), principal("member"))
 	if snap.Admin || len(snap.Grants) != 1 || repo.calls != 1 {
 		t.Fatalf("%+v %d", snap, repo.calls)
+	}
+}
+
+// A workspace of another org is not_found, exactly like an unknown one: the directory lookup is
+// not org-scoped, so the Authorizer compares the org itself.
+func TestAuthorizerTreatsAForeignOrgWorkspaceAsNotFound(t *testing.T) {
+	a := &access.Authorizer{Repo: &fakeRepo{}, Workspaces: fakeWS{wsA: "other-org"}}
+	for _, role := range []contract.Role{"admin", "member"} {
+		if _, err := a.Authorize(context.Background(), principal(role), contract.PermWorkspaceRead, wsA); contract.AsError(err).Code != contract.CodeNotFound {
+			t.Errorf("%s: %v", role, err)
+		}
 	}
 }

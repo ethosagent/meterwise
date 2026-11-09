@@ -53,6 +53,10 @@ func (m *memTenancy) ListWorkspaces(context.Context, contract.Principal) ([]cont
 	return nil, nil
 }
 
+func (m *memTenancy) Setup(context.Context, contract.Principal, string, string) (contract.Setup, error) {
+	return contract.Setup{}, nil
+}
+
 func (m *memTenancy) ListMembers(context.Context, contract.Principal) ([]contract.Member, error) {
 	return nil, nil
 }
@@ -106,3 +110,24 @@ func (noAccess) GroupMembers(context.Context, string) ([]contract.Member, error)
 	return nil, nil
 }
 func (noAccess) OrgDefaults(context.Context) ([]contract.Grant, error) { return nil, nil }
+
+// memAudit is an AuditLog that remembers what was appended.
+type memAudit struct {
+	mu     sync.Mutex
+	events []contract.AuditEvent
+	err    error
+}
+
+func (m *memAudit) Append(_ context.Context, e contract.AuditEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.events = append(m.events, e)
+	return nil
+}
+
+func (m *memAudit) List(context.Context, contract.AuditQuery) (contract.AuditPage, error) {
+	return contract.AuditPage{}, nil
+}

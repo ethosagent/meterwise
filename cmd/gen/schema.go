@@ -158,7 +158,12 @@ func parseMigration(file, sql string) migration {
 	}
 	for _, re := range touchRes {
 		for _, t := range re.FindAllStringSubmatch(up, -1) {
-			touched[t[1]] = true
+			// `TRUNCATE ON <table>` (a trigger event or a REVOKE) is not a TRUNCATE of a table
+			// called "on": ON is reserved, so it is never a table name, and the statement's real
+			// target is caught by the ON patterns.
+			if !strings.EqualFold(t[1], "on") {
+				touched[t[1]] = true
+			}
 		}
 	}
 	for n := range touched {

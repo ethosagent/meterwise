@@ -27,7 +27,24 @@ func (s *Store) UpsertUser(ctx context.Context, orgID string, id contract.Identi
 	if err != nil {
 		return contract.User{}, queryErr(err)
 	}
-	return contract.User{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}, nil
+	return userRow{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}.user(), nil
+}
+
+// userRow is the column set the user queries share.
+type userRow struct {
+	ID, ClerkUserID, Email, Name, AvatarURL string
+	Deleted                                 bool
+}
+
+func (r userRow) user() contract.User {
+	return contract.User{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarURL, Deleted: r.Deleted}
+}
+
+// claimsMatch reports whether the identity's claims add nothing to the stored row: empty or
+// unverified claims never differ, and a verified email is compared case-insensitively.
+func claimsMatch(id contract.Identity, r userRow) bool {
+	return (id.Email == "" || !id.EmailVerified || strings.EqualFold(id.Email, r.Email)) &&
+		(id.Name == "" || id.Name == r.Name) && (id.AvatarURL == "" || id.AvatarURL == r.AvatarURL)
 }
 
 // ResolveUser is the per-request read: the mirrored user and the membership in one
@@ -36,10 +53,9 @@ func (s *Store) UpsertUser(ctx context.Context, orgID string, id contract.Identi
 // a second read of the membership.
 func (s *Store) ResolveUser(ctx context.Context, orgID string, id contract.Identity) (u contract.User, role contract.Role, active bool, err error) {
 	if r, rerr := s.q.ResolveUser(ctx, sqlc.ResolveUserParams{OrgID: orgID, ClerkUserID: id.Subject}); rerr == nil {
-		same := (id.Email == "" || !id.EmailVerified || strings.EqualFold(id.Email, r.Email)) && (id.Name == "" || id.Name == r.Name) && (id.AvatarURL == "" || id.AvatarURL == r.AvatarUrl)
-		if same {
-			u = contract.User{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}
-			return u, contract.Role(r.Role), r.Status == "active", nil
+		row := userRow{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}
+		if claimsMatch(id, row) {
+			return row.user(), contract.Role(r.Role), r.Status == "active", nil
 		}
 	}
 	u, err = s.UpsertUser(ctx, orgID, id)
@@ -55,6 +71,11 @@ func (s *Store) ResolveUser(ctx context.Context, orgID string, id contract.Ident
 // for a user that never signed in here).
 func (s *Store) SoftDeleteUser(ctx context.Context, orgID, clerkUserID string) error {
 	return queryErr(s.inTx(ctx, func(q *sqlc.Queries) error {
+		// The webhook still removes even the last admin (recovery is bootstrap-admin); it takes the
+		// admin lock so it cannot interleave with a guarded demotion or removal.
+		if _, err := lockAdmins(ctx, q, orgID); err != nil {
+			return err
+		}
 		if _, err := q.SoftDeleteUser(ctx, sqlc.SoftDeleteUserParams{OrgID: orgID, ClerkUserID: clerkUserID}); err != nil && !isNotFound(err) {
 			return err
 		}

@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
 )
 
-var readSeed = []store.GrantSpec{
+var readSeed = []contract.GrantSpec{
 	{ResourceType: "workspace", Action: "read"}, {ResourceType: "workspace_url", Action: "read"},
 	{ResourceType: "session", Action: "read"}, {ResourceType: "monitor_config", Action: "read"},
 	{ResourceType: "savings", Action: "read"},
@@ -101,5 +102,90 @@ WHERE gp.group_id = $1 AND NOT EXISTS (SELECT 1 FROM group_workspaces gw WHERE g
 	}
 	if orphans > 0 {
 		t.Fatalf("%d of 40 rounds left grants on a detached workspace", orphans)
+	}
+}
+
+// Delete racing attach: every call ends as success or not_found (never a driver error from a
+// foreign-key race), and no link, grant or membership row outlives the group.
+func TestDeleteRacingAttachLeavesNoOrphanAndNoDriverError(t *testing.T) {
+	ctx, org := context.Background(), store.OrgID()
+	s, dsn, _, ws := groupRig(t)
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(ctx) })
+	for round := 0; round < 40; round++ {
+		g, err := s.CreateGroup(ctx, org, "Race"+string(rune('A'+round%26))+string(rune('a'+round/26)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		errs := make([]error, 3)
+		wg.Add(3)
+		go func() { defer wg.Done(); _, errs[0] = s.AttachGroupWorkspace(ctx, org, g.ID, ws.ID, readSeed) }()
+		go func() { defer wg.Done(); errs[1] = s.DeleteGroup(ctx, org, g.ID) }()
+		go func() { defer wg.Done(); _, errs[2] = s.RenameGroup(ctx, org, g.ID, "Renamed"+g.ID[:8]) }()
+		wg.Wait()
+		for i, e := range errs {
+			if e != nil && contract.AsError(e).Code != contract.CodeNotFound {
+				t.Fatalf("round %d call %d: %v", round, i, e)
+			}
+		}
+		var n int
+		if err := conn.QueryRow(ctx, `SELECT (SELECT count(*) FROM group_workspaces WHERE group_id = $1)
+ + (SELECT count(*) FROM group_permissions WHERE group_id = $1) + (SELECT count(*) FROM group_users WHERE group_id = $1)
+ WHERE NOT EXISTS (SELECT 1 FROM groups WHERE id = $1)`, g.ID).Scan(&n); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			t.Fatalf("round %d: %d rows outlived the deleted group", round, n)
+		}
+	}
+}
+
+// The folded reads: a group with nothing is an empty list, an unknown group is not_found, and the
+// batch writes take duplicates and org-wide grants in one statement.
+func TestFoldedGroupReadsAndBatchWrites(t *testing.T) {
+	ctx, org := context.Background(), store.OrgID()
+	s, _, g, ws := groupRig(t)
+	if got, err := s.GroupGrants(ctx, org, g.ID); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("empty group grants: %#v %v", got, err)
+	}
+	if got, err := s.GroupMembers(ctx, org, g.ID); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("empty group members: %#v %v", got, err)
+	}
+	for _, id := range []string{missingID, "not-a-uuid"} {
+		if _, err := s.GroupGrants(ctx, org, id); code(err) != contract.CodeNotFound {
+			t.Fatalf("GroupGrants(%s): %v", id, err)
+		}
+		if _, err := s.GroupMembers(ctx, org, id); code(err) != contract.CodeNotFound {
+			t.Fatalf("GroupMembers(%s): %v", id, err)
+		}
+	}
+	if _, err := s.AttachGroupWorkspace(ctx, org, g.ID, ws.ID, readSeed); err != nil {
+		t.Fatal(err)
+	}
+	dup := []contract.Grant{
+		{WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"},
+		{WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"},
+		{ResourceType: "member", Action: "read"},
+	}
+	got, err := s.ReplaceGroupGrants(ctx, org, g.ID, dup)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("replace with a duplicate: %+v %v", got, err)
+	}
+	if got, err = s.ReplaceGroupGrants(ctx, org, g.ID, nil); err != nil || len(got) != 0 {
+		t.Fatalf("replace with nothing: %+v %v", got, err)
+	}
+	other := missingID
+	if _, err := s.ReplaceOrgDefaults(ctx, org, []contract.Grant{{WorkspaceID: &other, ResourceType: "session", Action: "read"}}); code(err) != contract.CodeValidationFailed {
+		t.Fatalf("unknown workspace in org defaults: %v", err)
+	}
+	defs, err := s.ReplaceOrgDefaults(ctx, org, []contract.Grant{
+		{WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"}, {WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"}, {ResourceType: "member", Action: "read"},
+	})
+	if err != nil || len(defs) != 2 {
+		t.Fatalf("org defaults: %+v %v", defs, err)
 	}
 }

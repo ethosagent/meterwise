@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/api"
+	"github.com/ethosagent/meterwise/internal/audit"
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
@@ -44,7 +45,7 @@ type instance struct {
 }
 
 func cmdServe(ctx context.Context, e *env, args []string) int {
-	asJSON, _, code := parseFlags(e, "serve", args)
+	asJSON, _, code := parseFlags(e, "serve", args, nil)
 	if code != exitOK {
 		return code
 	}
@@ -133,7 +134,7 @@ func (rt *instance) apiHandler(id identitySetup, tp trace.TracerProvider) (http.
 		principals = api.ClerkPrincipalResolver{Provider: id.provider, Sessions: rt.svc}
 	}
 	return api.New(api.Deps{
-		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Authz: access.NewAuthorizer(rt.db, rt.db), Access: access.NewService(rt.db, store.OrgID()), Webhooks: id.webhooks,
+		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Authz: access.NewAuthorizer(rt.db, rt.svc.Directory()), Access: access.NewService(rt.db, store.OrgID()), Audit: audit.New(rt.db, nil), Webhooks: id.webhooks,
 		Web: webFS(rt.cfg.WebDir, rt.log), Tracer: tp,
 		AppName: rt.cfg.AppName, ProxyPublicHost: rt.cfg.ProxyPublicHost, Version: contract.Version{Version: version, Commit: commit},
 	})
@@ -192,6 +193,9 @@ func (rt *instance) serve(ctx context.Context) error {
 	if err := rt.proxy.Start(ctx); err != nil {
 		return err
 	}
+	sweepCtx, stopSweep := context.WithCancel(ctx)
+	defer stopSweep()
+	go rt.sweepDirectory(sweepCtx, sweepEvery)
 	errc := make(chan error, len(rt.servers))
 	for name, srv := range rt.servers {
 		go func() { errc <- srv.Serve(rt.lns[name]) }()

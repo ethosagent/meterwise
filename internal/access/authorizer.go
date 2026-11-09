@@ -12,9 +12,11 @@ type GrantRepository interface {
 	Grants(ctx context.Context, orgID, userID string) ([]Grant, error)
 }
 
-// WorkspaceLookup finds a workspace of an org; any other id is contract.CodeNotFound.
+// WorkspaceLookup finds a workspace by id whatever its org; an unknown id is contract.CodeNotFound.
+// The cached contract.WorkspaceDirectory implements it (it is busted on update and delete), so the
+// gateway does not read the database for the workspace on every request.
 type WorkspaceLookup interface {
-	Workspace(ctx context.Context, orgID, id string) (contract.Workspace, error)
+	ByID(ctx context.Context, id string) (contract.Workspace, error)
 }
 
 // Authorizer is what the API gateway calls: it ties the pure evaluator to the grant repository and
@@ -25,10 +27,19 @@ type Authorizer struct {
 	Eval       PermissionEvaluator
 }
 
-// NewAuthorizer builds the Authorizer over a grant repository and a workspace lookup (the store
-// implements both; access imports no I/O package, so the generators can use the taxonomy).
+// NewAuthorizer builds the Authorizer over a grant repository and a workspace lookup (the store and the
+// tenancy directory; access imports no I/O package, so the generators can use the taxonomy).
 func NewAuthorizer(repo GrantRepository, ws WorkspaceLookup) *Authorizer {
 	return &Authorizer{Repo: repo, Workspaces: ws}
+}
+
+// grantsFor reads the principal's grants when need is true and nothing otherwise: the one place
+// the repository is called, so a request that cannot depend on grants never pays for them.
+func (a *Authorizer) grantsFor(ctx context.Context, p contract.Principal, need bool) ([]Grant, error) {
+	if !need {
+		return nil, nil
+	}
+	return a.Repo.Grants(ctx, p.OrgID, p.UserID)
 }
 
 func subjectOf(p contract.Principal) Subject { return Subject{UserID: p.UserID, Role: p.Role} }
@@ -39,17 +50,18 @@ func subjectOf(p contract.Principal) Subject { return Subject{UserID: p.UserID, 
 // error is a failure of ours (the database) and must not be read as a denial.
 func (a *Authorizer) Authorize(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceID string) (Result, error) {
 	if workspaceID != "" {
-		if _, err := a.Workspaces.Workspace(ctx, p.OrgID, workspaceID); err != nil {
+		ws, err := a.Workspaces.ByID(ctx, workspaceID)
+		if err != nil {
 			return Result{}, err
+		}
+		if ws.OrgID != p.OrgID {
+			return Result{}, contract.NewError(contract.CodeNotFound, "not found")
 		}
 	}
 	req := Request{Subject: subjectOf(p), Permission: perm, WorkspaceID: workspaceID}
-	var grants []Grant
-	if a.Eval.NeedsGrants(req) {
-		var err error
-		if grants, err = a.Repo.Grants(ctx, p.OrgID, p.UserID); err != nil {
-			return Result{}, err
-		}
+	grants, err := a.grantsFor(ctx, p, a.Eval.NeedsGrants(req))
+	if err != nil {
+		return Result{}, err
 	}
 	return a.Eval.Evaluate(req, grants), nil
 }
@@ -57,13 +69,10 @@ func (a *Authorizer) Authorize(ctx context.Context, p contract.Principal, perm c
 // Filter returns the ids among workspaceIDs on which the principal holds perm, in order, with one
 // grant read at most.
 func (a *Authorizer) Filter(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceIDs []string) ([]string, error) {
-	var grants []Grant
 	probe := Request{Subject: subjectOf(p), Permission: perm, WorkspaceID: "probe"}
-	if a.Eval.NeedsGrants(probe) {
-		var err error
-		if grants, err = a.Repo.Grants(ctx, p.OrgID, p.UserID); err != nil {
-			return nil, err
-		}
+	grants, err := a.grantsFor(ctx, p, a.Eval.NeedsGrants(probe))
+	if err != nil {
+		return nil, err
 	}
 	out := make([]string, 0, len(workspaceIDs))
 	for _, id := range workspaceIDs {
@@ -76,12 +85,9 @@ func (a *Authorizer) Filter(ctx context.Context, p contract.Principal, perm cont
 
 // Snapshot returns the caller's permission snapshot (GET /api/me/permissions).
 func (a *Authorizer) Snapshot(ctx context.Context, p contract.Principal) (contract.PermissionSnapshot, error) {
-	var grants []Grant
-	if !IsAdmin(p.Role) {
-		var err error
-		if grants, err = a.Repo.Grants(ctx, p.OrgID, p.UserID); err != nil {
-			return contract.PermissionSnapshot{}, err
-		}
+	grants, err := a.grantsFor(ctx, p, !IsAdmin(p.Role))
+	if err != nil {
+		return contract.PermissionSnapshot{}, err
 	}
 	return a.Eval.Snapshot(subjectOf(p), grants), nil
 }

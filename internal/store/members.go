@@ -16,7 +16,7 @@ func toMember(userID, email, name, avatar, role string, joined pgtype.Timestampt
 	}
 	return contract.Member{
 		UserID: userID, Email: email, Name: name, AvatarURL: avatar, Role: contract.Role(role),
-		GroupIDs: groups, JoinedAt: ts(joined).Format(time.RFC3339),
+		GroupIDs: groups, JoinedAt: rfc3339(joined),
 	}
 }
 
@@ -75,6 +75,23 @@ func lockAdmins(ctx context.Context, q *sqlc.Queries, orgID string) (int, error)
 	return int(n), err
 }
 
+// activeMembershipLocked is the first step of every change that can end an admin membership: it
+// takes the admin lock (held to commit), then reads the user's membership. A user who is not an
+// active member is CodeNotFound. It returns the membership's role and the active admin count.
+func activeMembershipLocked(ctx context.Context, q *sqlc.Queries, orgID, userID string) (role string, admins int, err error) {
+	if admins, err = lockAdmins(ctx, q, orgID); err != nil {
+		return "", 0, err
+	}
+	cur, err := q.GetMembership(ctx, sqlc.GetMembershipParams{OrgID: orgID, UserID: userID})
+	if err != nil {
+		return "", 0, err
+	}
+	if cur.Status != "active" {
+		return "", 0, errNotFound
+	}
+	return cur.Role, admins, nil
+}
+
 func lastAdmin() error {
 	return contract.NewError(contract.CodeLastAdmin, "the organization must keep at least one active admin")
 }
@@ -87,18 +104,11 @@ func (s *Store) SetMemberRole(ctx context.Context, orgID, userID string, role co
 	}
 	var out contract.Member
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
-		admins, err := lockAdmins(ctx, q, orgID)
+		cur, admins, err := activeMembershipLocked(ctx, q, orgID, userID)
 		if err != nil {
 			return err
 		}
-		cur, err := q.GetMembership(ctx, sqlc.GetMembershipParams{OrgID: orgID, UserID: userID})
-		if err != nil {
-			return err
-		}
-		if cur.Status != "active" {
-			return errNotFound
-		}
-		if contract.Role(cur.Role) != role && cur.Role == string(contract.RoleAdmin) && admins <= 1 {
+		if contract.Role(cur) != role && cur == string(contract.RoleAdmin) && admins <= 1 {
 			return lastAdmin()
 		}
 		if _, err := q.SetActiveMemberRole(ctx, sqlc.SetActiveMemberRoleParams{Role: string(role), OrgID: orgID, UserID: userID}); err != nil {
@@ -119,18 +129,11 @@ func (s *Store) RemoveMember(ctx context.Context, orgID, userID string, now time
 		return nil, errNotFound
 	}
 	err = s.inTx(ctx, func(q *sqlc.Queries) error {
-		admins, err := lockAdmins(ctx, q, orgID)
+		cur, admins, err := activeMembershipLocked(ctx, q, orgID, userID)
 		if err != nil {
 			return err
 		}
-		cur, err := q.GetMembership(ctx, sqlc.GetMembershipParams{OrgID: orgID, UserID: userID})
-		if err != nil {
-			return err
-		}
-		if cur.Status != "active" {
-			return errNotFound
-		}
-		if cur.Role == string(contract.RoleAdmin) && admins <= 1 {
+		if cur == string(contract.RoleAdmin) && admins <= 1 {
 			return lastAdmin()
 		}
 		if _, err := q.SetMembershipStatus(ctx, sqlc.SetMembershipStatusParams{Status: "removed", OrgID: orgID, UserID: userID}); err != nil {

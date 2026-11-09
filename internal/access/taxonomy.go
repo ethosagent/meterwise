@@ -78,11 +78,11 @@ func Parse(p contract.Permission) (resourceType, action string, ok bool) {
 
 // WorkspaceReadSeed is what attaching a group to a workspace seeds: the read action of every
 // workspace-scoped resource type, in taxonomy order.
-func WorkspaceReadSeed() []Grant {
-	var out []Grant
+func WorkspaceReadSeed() []contract.GrantSpec {
+	var out []contract.GrantSpec
 	for _, r := range Taxonomy() {
 		if r.Scope == ScopeWorkspace && Valid(r.Type, "read") {
-			out = append(out, Grant{ResourceType: r.Type, Action: "read"})
+			out = append(out, contract.GrantSpec{ResourceType: r.Type, Action: "read"})
 		}
 	}
 	return out

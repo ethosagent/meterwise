@@ -87,15 +87,7 @@ func admin(t *testing.T, svc *tenancy.Service) contract.Principal {
 
 func errCode(err error) contract.Code { return contract.AsError(err).Code }
 
-func TestNormalizeEmailAndNames(t *testing.T) {
-	if got, err := tenancy.NormalizeEmail("  Ada@Example.TEST "); err != nil || got != "ada@example.test" {
-		t.Fatalf("%q %v", got, err)
-	}
-	for _, bad := range []string{"", "nope", "a@b@c", strings.Repeat("a", 260) + "@x.test", "Ada <ada@example.test>"} {
-		if _, err := tenancy.NormalizeEmail(bad); errCode(err) != contract.CodeValidationFailed {
-			t.Errorf("NormalizeEmail(%q) = %v", bad, err)
-		}
-	}
+func TestWorkspaceNames(t *testing.T) {
 	r := newRig(t, 5)
 	p := principal()
 	for _, bad := range []string{"", "   ", strings.Repeat("x", 81), "tab\tname", "ctl\x01"} {
@@ -247,7 +239,6 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 	sess, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_1"})
 	p := sess.Principal
 
-	all := func(string) bool { return true }
 	activeNow := func() string {
 		t.Helper()
 		prof, err := r.svc.Profile(ctx, u.User.ID)
@@ -258,7 +249,7 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list, all)
+		return tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list)
 	}
 	def := activeNow()
 	if def == "" {

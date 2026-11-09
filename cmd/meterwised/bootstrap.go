@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,43 +18,42 @@ import (
 // Clerk invitation when Clerk is configured, a database-only one in dev). It is
 // idempotent: an open invitation for the email is reported, not duplicated.
 func cmdBootstrapAdmin(ctx context.Context, e *env, args []string) int {
-	fs := flag.NewFlagSet("bootstrap-admin", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	email := fs.String("email", "", "address to invite as admin")
-	asJSON := fs.Bool("json", false, "machine-readable output")
-	if err := fs.Parse(args); err != nil {
-		wantJSON := slices.Contains(args, "-json") || slices.Contains(args, "--json")
-		return fail(e, wantJSON, contract.NewError(contract.CodeInvalidRequest, "bootstrap-admin: "+err.Error()), exitUsage)
+	var email string
+	asJSON, _, code := parseFlags(e, "bootstrap-admin", args, func(fs *flag.FlagSet) {
+		fs.StringVar(&email, "email", "", "address to invite as admin")
+	})
+	if code != exitOK {
+		return code
 	}
-	if strings.TrimSpace(*email) == "" {
-		return fail(e, *asJSON, contract.NewError(contract.CodeInvalidRequest, "usage: meterwised bootstrap-admin --email <address> [-json]"), exitUsage)
+	if strings.TrimSpace(email) == "" {
+		return fail(e, asJSON, contract.NewError(contract.CodeInvalidRequest, "usage: meterwised bootstrap-admin --email <address> [-json]"), exitUsage)
 	}
 	cfg, err := config.Load(e.lookup)
 	if err != nil {
-		return fail(e, *asJSON, contract.AsError(err), exitFailed)
+		return fail(e, asJSON, contract.AsError(err), exitFailed)
 	}
 	id, cerr := newBootstrapIdentity(cfg)
 	if cerr != nil {
-		return fail(e, *asJSON, cerr, exitFailed)
+		return fail(e, asJSON, cerr, exitFailed)
 	}
 	db, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return fail(e, *asJSON, contract.NewError(contract.CodeUnavailable, "cannot connect to the database named by "+config.EnvDatabaseURL), exitFailed)
+		return fail(e, asJSON, contract.NewError(contract.CodeUnavailable, "cannot connect to the database named by "+config.EnvDatabaseURL), exitFailed)
 	}
 	defer db.Close()
 	svc := tenancy.New(db, id.provider, tenancy.Config{MaxWorkspaces: cfg.MaxWorkspaces})
 	if err := svc.EnsureDefaults(ctx); err != nil {
-		return fail(e, *asJSON, contract.NewError(contract.CodeUnavailable, "cannot prepare the organization; run `meterwised migrate` first"), exitFailed)
+		return fail(e, asJSON, contract.NewError(contract.CodeUnavailable, "cannot prepare the organization; run `meterwised migrate` first"), exitFailed)
 	}
-	inv, created, err := svc.BootstrapAdmin(ctx, *email)
+	inv, created, err := svc.BootstrapAdmin(ctx, email)
 	if err != nil {
-		return fail(e, *asJSON, contract.AsError(err), exitFailed)
+		return fail(e, asJSON, contract.AsError(err), exitFailed)
 	}
 	provider := "none (Clerk is not configured; sign up in dev, or set the CLERK_* variables)"
 	if inv.ClerkInvitationID != "" {
 		provider = "sent (" + inv.ClerkInvitationID + ")"
 	}
-	return ok(e, *asJSON, map[string]string{
+	return ok(e, asJSON, map[string]string{
 		"invitationId": inv.ID, "email": inv.Email, "role": string(inv.Role), "status": string(inv.StatusAt(time.Now())),
 		"created": strconv.FormatBool(created), "providerInvitation": provider, "expiresAt": inv.ExpiresAt.UTC().Format(time.RFC3339),
 	})

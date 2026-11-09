@@ -45,6 +45,7 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		Tenancy:    newMemTenancy(),
 		Authz:      allowAuthz{},
 		Access:     noAccess{},
+		Audit:      &memAudit{},
 		Web: fstest.MapFS{
 			"index.html":          {Data: []byte("<html>app</html>")},
 			"assets/app-1.js":     {Data: []byte("console.log(1)")},
@@ -238,7 +239,7 @@ func TestAnAbandonedRequestIsNotLoggedAsAServerError(t *testing.T) {
 	f.res.err = &store.Error{Class: store.ClassUnreachable, Message: "store: database unreachable"}
 	h, err := api.New(api.Deps{
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), DB: pinger{}, Principals: f.res, Tenancy: newMemTenancy(),
-		Authz: allowAuthz{}, Access: noAccess{}, Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
+		Authz: allowAuthz{}, Access: noAccess{}, Audit: &memAudit{}, Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
 	})
 	if err != nil {
 		t.Fatal(err)

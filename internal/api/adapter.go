@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -18,11 +19,24 @@ type Call struct {
 	Ctx       context.Context
 	Session   contract.Session
 	Principal contract.Principal
+	IP        string // the TCP peer's address (no X-Forwarded-For: a client could write that), for the audit log
 	r         *http.Request
 }
 
 // Path returns the value of a path parameter of the route pattern.
 func (c Call) Path(name string) string { return c.r.PathValue(name) }
+
+// Query returns the first value of a query parameter ("" when absent).
+func (c Call) Query(name string) string { return c.r.URL.Query().Get(name) }
+
+// peerIP is the host part of the request's remote address.
+func peerIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return ""
+	}
+	return host
+}
 
 // register adds a JSON route: the adapter owns principal extraction, body decoding (422
 // validation_failed when malformed; skipped for Req = none), the one error mapping (apiError), the
@@ -51,7 +65,7 @@ func adapt[Req, Resp any](s *server, status int, fn func(Call, Req) (Resp, error
 			writeError(w, contract.NewError(contract.CodeUnauthenticated, "authentication required"))
 			return
 		}
-		c := Call{Ctx: r.Context(), Session: sess, r: r}
+		c := Call{Ctx: r.Context(), Session: sess, IP: peerIP(r), r: r}
 		if sess.Member {
 			c.Principal = sess.Principal
 		}

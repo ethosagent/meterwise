@@ -17,12 +17,18 @@ type wsRow struct {
 	IsDefault                 bool
 	Settings                  []byte
 	CreatedAt                 pgtype.Timestamptz
+	LastCallAt                pgtype.Timestamptz
+	AllowedClientCidrs        []string
 }
 
 func (r wsRow) workspace() contract.Workspace {
+	cidrs := r.AllowedClientCidrs
+	if cidrs == nil {
+		cidrs = []string{}
+	}
 	return contract.Workspace{
 		ID: r.ID, OrgID: r.OrgID, PublicID: r.PublicID, Name: r.Name, IsDefault: r.IsDefault,
-		Settings: settingsOf(r.Settings), CreatedAt: ts(r.CreatedAt),
+		Settings: settingsOf(r.Settings), CreatedAt: ts(r.CreatedAt), LastCallAt: tsp(r.LastCallAt), AllowedClientCIDRs: cidrs,
 	}
 }
 
@@ -65,15 +71,23 @@ func (s *Store) WorkspaceByID(ctx context.Context, id string) (contract.Workspac
 	return wsRow(r).workspace(), nil
 }
 
-// WorkspaceByPublicID resolves a current or retired public id. A retired id
-// inside its grace window returns Retired=true; past it, or unknown, CodeNotFound.
+// WorkspaceByPublicID resolves a current or retired public id. A retired id inside its grace window
+// returns Retired=true with GraceUntil; past it (or retired with no window) it is CodeWorkspaceURLReset;
+// an id that was never issued is CodeNotFound.
 func (s *Store) WorkspaceByPublicID(ctx context.Context, publicID string, now time.Time) (contract.Workspace, error) {
-	r, err := s.q.GetWorkspaceByPublicID(ctx, sqlc.GetWorkspaceByPublicIDParams{PublicID: publicID, Now: pgts(now)})
+	r, err := s.q.GetWorkspaceByPublicID(ctx, publicID)
 	if err != nil {
 		return contract.Workspace{}, queryErr(err)
 	}
-	w := wsRow{ID: r.ID, OrgID: r.OrgID, PublicID: r.PublicID, Name: r.Name, IsDefault: r.IsDefault, Settings: r.Settings, CreatedAt: r.CreatedAt}.workspace()
-	w.Retired = r.Retired
+	w := wsRow{ID: r.ID, OrgID: r.OrgID, PublicID: r.PublicID, Name: r.Name, IsDefault: r.IsDefault, Settings: r.Settings,
+		CreatedAt: r.CreatedAt, LastCallAt: r.LastCallAt, AllowedClientCidrs: r.AllowedClientCidrs}.workspace()
+	if !r.Retired {
+		return w, nil
+	}
+	if !r.GraceUntil.Valid || !r.GraceUntil.Time.After(now) {
+		return contract.Workspace{}, contract.NewError(contract.CodeWorkspaceURLReset, "this workspace URL was reset")
+	}
+	w.Retired, w.GraceUntil = true, tsp(r.GraceUntil)
 	return w, nil
 }
 
@@ -187,4 +201,61 @@ func (s *Store) Org(ctx context.Context) (contract.Org, error) {
 		return contract.Org{}, queryErr(err)
 	}
 	return contract.Org{ID: r.ID, Name: r.Name}, nil
+}
+
+// ResetWorkspaceURL gives the workspace newPublicID and keeps its current id answering until
+// now+grace, in one transaction (the workspace row is locked, so two resets cannot interleave). It
+// returns the workspace with the new id and the end of the previous id's window. A collision on
+// newPublicID is ErrPublicIDTaken so the caller can draw another.
+func (s *Store) ResetWorkspaceURL(ctx context.Context, orgID, id, newPublicID string, grace time.Duration, now time.Time) (contract.Workspace, time.Time, error) {
+	if !validID(id) {
+		return contract.Workspace{}, time.Time{}, errNotFound
+	}
+	until := now.Add(grace)
+	err := s.inTx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockWorkspace(ctx, sqlc.LockWorkspaceParams{OrgID: orgID, ID: id}); err != nil {
+			return err
+		}
+		if _, err := q.RetireCurrentPublicID(ctx, sqlc.RetireCurrentPublicIDParams{Now: pgts(now), GraceUntil: pgts(until), OrgID: orgID, WorkspaceID: id}); err != nil {
+			return err
+		}
+		if err := q.InsertPublicID(ctx, sqlc.InsertPublicIDParams{PublicID: newPublicID, OrgID: orgID, WorkspaceID: id}); err != nil {
+			return err
+		}
+		return q.SetWorkspacePublicID(ctx, sqlc.SetWorkspacePublicIDParams{PublicID: newPublicID, OrgID: orgID, ID: id})
+	})
+	if isUnique(err) {
+		return contract.Workspace{}, time.Time{}, ErrPublicIDTaken
+	}
+	if err != nil {
+		return contract.Workspace{}, time.Time{}, queryErr(err)
+	}
+	ws, err := s.Workspace(ctx, orgID, id)
+	return ws, until, err
+}
+
+// EndPreviousURLGrace ends the grace window of every retired public id of the workspace that is
+// still inside it, and reports how many ids that was. A workspace of another org is CodeNotFound.
+func (s *Store) EndPreviousURLGrace(ctx context.Context, orgID, id string, now time.Time) (int, error) {
+	if _, err := s.Workspace(ctx, orgID, id); err != nil {
+		return 0, err
+	}
+	n, err := s.q.EndPreviousGrace(ctx, sqlc.EndPreviousGraceParams{Now: pgts(now), OrgID: orgID, WorkspaceID: id})
+	return int(n), queryErr(err)
+}
+
+// SetAllowedClientCIDRs replaces the workspace's allowed source networks (already normalised by the
+// caller; an empty list means any) and returns what is stored.
+func (s *Store) SetAllowedClientCIDRs(ctx context.Context, orgID, id string, cidrs []string) ([]string, error) {
+	if !validID(id) {
+		return nil, errNotFound
+	}
+	if cidrs == nil {
+		cidrs = []string{}
+	}
+	out, err := s.q.SetAllowedClientCIDRs(ctx, sqlc.SetAllowedClientCIDRsParams{Cidrs: cidrs, OrgID: orgID, ID: id})
+	if out == nil {
+		out = []string{}
+	}
+	return out, queryErr(err)
 }

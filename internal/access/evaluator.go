@@ -2,7 +2,6 @@ package access
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
@@ -53,7 +52,7 @@ type PermissionEvaluator struct{}
 // NeedsGrants reports whether Evaluate for req can depend on grants, so the caller loads them
 // only when they matter (an admin, PermSelf, PermMember and PermAdmin never need them).
 func (PermissionEvaluator) NeedsGrants(req Request) bool {
-	if req.Subject.Role == contract.RoleAdmin {
+	if IsAdmin(req.Subject.Role) {
 		return false
 	}
 	switch req.Permission {
@@ -72,7 +71,7 @@ func (PermissionEvaluator) Evaluate(req Request, grants []Grant) Result {
 		return Result{true, ReasonSelf}
 	case !role.Valid():
 		return Result{false, ReasonNoGrant}
-	case role == contract.RoleAdmin:
+	case IsAdmin(role):
 		return Result{true, ReasonAdmin}
 	case req.Permission == contract.PermMember:
 		return Result{true, ReasonMember}
@@ -122,23 +121,18 @@ func covers(scope Scope, grantWS, want string) bool {
 // Snapshot flattens a member's grants for GET /api/me/permissions: an admin is {admin: true} with
 // no grants; anyone else gets the sorted, de-duplicated union of group grants and org defaults.
 func (PermissionEvaluator) Snapshot(subject Subject, grants []Grant) contract.PermissionSnapshot {
-	if subject.Role == contract.RoleAdmin {
+	if IsAdmin(subject.Role) {
 		return contract.PermissionSnapshot{Admin: true, Grants: []contract.Grant{}}
 	}
 	seen := map[string]bool{}
 	out := []contract.Grant{}
-	for _, g := range grants {
-		key := g.ResourceType + "\x00" + g.Action + "\x00" + g.WorkspaceID
-		if seen[key] || !Valid(g.ResourceType, g.Action) {
+	for _, row := range grants {
+		g := row.ToGrant()
+		if seen[g.Key()] || !Valid(g.ResourceType, g.Action) {
 			continue
 		}
-		seen[key] = true
-		c := contract.Grant{ResourceType: g.ResourceType, Action: g.Action}
-		if g.WorkspaceID != "" {
-			ws := g.WorkspaceID
-			c.WorkspaceID = &ws
-		}
-		out = append(out, c)
+		seen[g.Key()] = true
+		out = append(out, g)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
@@ -148,14 +142,7 @@ func (PermissionEvaluator) Snapshot(subject Subject, grants []Grant) contract.Pe
 		if a.Action != b.Action {
 			return a.Action < b.Action
 		}
-		return strings.Compare(deref(a.WorkspaceID), deref(b.WorkspaceID)) < 0
+		return a.WorkspaceOrEmpty() < b.WorkspaceOrEmpty()
 	})
 	return contract.PermissionSnapshot{Grants: out}
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

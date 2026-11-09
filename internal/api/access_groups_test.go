@@ -184,3 +184,36 @@ func TestDeletingAGroupRevokesWhatItGranted(t *testing.T) {
 		t.Fatal("rows of a deleted group are still there")
 	}
 }
+
+// PUT /api/groups/{id}/members replaces the member set in one transaction (Plan 03 carry B12).
+func TestPutGroupMembersReplacesTheSetAtomically(t *testing.T) {
+	s := newStack(t)
+	admin := s.admin(t, "user_admin")
+	m1 := s.invited(t, admin.tok, "user_m1", contract.RoleMember)
+	m2 := s.invited(t, admin.tok, "user_m2", contract.RoleMember)
+	grp := s.newGroup(t, admin.tok, "G")
+	put := func(tok, body string, want int) []byte {
+		return s.must(t, tok, "PUT", "/api/groups/"+grp+"/members", body, want)
+	}
+	items := func(b []byte) []contract.Member { return decodeAs[contract.MemberList](t, b).Items }
+	if got := items(put(admin.tok, `{"userIds":["`+m1.id+`","`+m2.id+`"]}`, 200)); len(got) != 2 {
+		t.Fatalf("%+v", got)
+	}
+	if got := items(put(admin.tok, `{"userIds":["`+m2.id+`"]}`, 200)); len(got) != 1 || got[0].UserID != m2.id {
+		t.Fatalf("%+v", got)
+	}
+	code, b := s.call(t, "PUT", "/api/groups/"+grp+"/members", admin.tok, `{"userIds":["`+m1.id+`","00000000-0000-0000-0000-000000000042"]}`)
+	wantErr(t, code, b, 422, contract.CodeValidationFailed)
+	if got := items(s.must(t, admin.tok, "GET", "/api/groups/"+grp+"/members", "", 200)); len(got) != 1 || got[0].UserID != m2.id {
+		t.Fatalf("a refused PUT changed the set: %+v", got)
+	}
+	code, b = s.call(t, "PUT", "/api/groups/00000000-0000-0000-0000-000000000042/members", admin.tok, `{"userIds":[]}`)
+	wantErr(t, code, b, 404, contract.CodeNotFound)
+	code, b = s.call(t, "PUT", "/api/groups/"+grp+"/members", m1.tok, `{"userIds":[]}`)
+	forbidden(t, code, b, "admin required")
+	if got := items(put(admin.tok, `{"userIds":[]}`, 200)); got == nil || len(got) != 0 {
+		t.Fatalf("clear: %#v", got)
+	}
+	code, b = s.call(t, "PUT", "/api/groups/"+grp+"/members", admin.tok, `{"userIds":"x"}`)
+	wantErr(t, code, b, 422, contract.CodeValidationFailed)
+}

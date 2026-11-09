@@ -7,38 +7,18 @@ import (
 	"testing"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/identity"
 	"github.com/ethosagent/meterwise/internal/store"
-	"github.com/ethosagent/meterwise/internal/tenancy"
 )
 
-// Non-ASCII characters that Unicode case folding maps onto ASCII.
+// Non-ASCII characters that Unicode case folding maps onto ASCII, and Unicode whitespace around an address.
 var foldingImpostors = map[string]string{
-	"kelvin sign (U+212A) for k":        "\u212aate@corp.test",
-	"dotted capital I (U+0130) for i":   "m\u0130ke@corp.test",
-	"kelvin sign in the domain":         "ceo@\u212apmg.test",
-	"dotted capital I in the domain":    "ceo@\u0130bm.test",
-	"long s (U+017F) for s":             "\u017fam@corp.test",
-	"non-ASCII with surrounding spaces": "  \u212aate@corp.test ",
-	// Unicode whitespace is not trimmed away before the ASCII check: the raw value is judged.
-	"no-break space before the address":  "\u00a0kate@corp.test",
-	"no-break space after the address":   "kate@corp.test\u00a0",
-	"ideographic space around":           "\u3000kate@corp.test\u3000",
-	"em space before the address":        "\u2003kate@corp.test",
-	"zero width no-break space (U+FEFF)": "\ufeffkate@corp.test",
-}
-
-func TestNormalizeEmailRefusesNonASCIIBeforeFolding(t *testing.T) {
-	for name, raw := range foldingImpostors {
-		t.Run(name, func(t *testing.T) {
-			if got, err := tenancy.NormalizeEmail(raw); errCode(err) != contract.CodeValidationFailed {
-				t.Fatalf("NormalizeEmail(%q) = %q, %v", raw, got, err)
-			}
-		})
-	}
-	// the ToLower line itself still folds ASCII
-	if got, err := tenancy.NormalizeEmail("KATE@Corp.TEST"); err != nil || got != "kate@corp.test" {
-		t.Fatalf("%q %v", got, err)
-	}
+	"kelvin sign (U+212A) for k":      "\u212aate@corp.test",
+	"dotted capital I (U+0130) for i": "m\u0130ke@corp.test",
+	"kelvin sign in the domain":       "ceo@\u212apmg.test",
+	"long s (U+017F) for s":           "\u017fam@corp.test",
+	"no-break space before":           "\u00a0kate@corp.test",
+	"ideographic space around":        "\u3000kate@corp.test\u3000",
 }
 
 func TestAFoldingImpostorCannotInviteOrClaimAnInvitation(t *testing.T) {
@@ -282,5 +262,22 @@ func TestBootstrapAdminDoesNotReactivateARemovedMember(t *testing.T) {
 	}
 	if got, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_dev"}); got.Member {
 		t.Fatal("a removed member became active through bootstrap-admin")
+	}
+}
+
+func TestWebhookUserWithAnImpostorEmailIsStoredWithoutOne(t *testing.T) {
+	r, ctx := newRig(t, 5), context.Background()
+	for i, raw := range []string{"Kate@corp.test", " kate@corp.test", "kate@corp.test "} {
+		sub := "user_hook_" + string(rune('a'+i))
+		if err := r.svc.ApplyWebhookUser(ctx, identity.WebhookUser{ClerkUserID: sub, Email: raw, EmailVerified: true}); err != nil {
+			t.Fatal(err)
+		}
+		sess, err := r.svc.Resolve(ctx, contract.Identity{Subject: sub})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sess.User.Email != "" {
+			t.Errorf("%q was stored as %q", raw, sess.User.Email)
+		}
 	}
 }
