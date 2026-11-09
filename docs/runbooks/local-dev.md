@@ -40,7 +40,7 @@ request to a stub admin until Plan 02.
 | `DATABASE_URL` | required | `postgres://` URL |
 | `LISTEN_PROXY` / `LISTEN_API` / `LISTEN_ADMIN` | `:8080` / `:8081` / `127.0.0.1:9090` | must be distinct ports |
 | `PROXY_PUBLIC_HOST` / `APP_NAME` | `localhost:8080` / `Meterwise` | returned by `GET /api/config` |
-| `PRIVACY_MODE` | `true` | tollgate privacy mode (decision D12) |
+| `PRIVACY_MODE` | `true` | accepted (`true`/`false`) but has no effect: tollgate v0.1.0 has no switch for it, so `false` only logs a boot warning (decision D12 stays unimplemented until tollgate adds one) |
 | `MAX_WORKSPACES` / `MAX_CONCURRENT_PER_WORKSPACE` | `20` / `8` | operational limits (D13) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | base URL of an OTLP/HTTP collector; unset turns tracing off |
 | `CLERK_ISSUER` / `CLERK_JWKS_URL` / `CLERK_PUBLISHABLE_KEY` | unset | consumed by Plan 02 |
