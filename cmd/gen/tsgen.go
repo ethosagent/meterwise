@@ -18,8 +18,14 @@ func tsType(t reflect.Type) (string, error) {
 		return "ErrorCode", nil
 	case reflect.TypeFor[contract.MicroUSD]():
 		return "string", nil // decimal string (ruling R12)
+	case reflect.TypeFor[contract.Theme]():
+		return "Theme", nil
+	case reflect.TypeFor[map[string]any]():
+		return "Record<string, unknown>", nil
 	}
 	switch t.Kind() {
+	case reflect.Pointer:
+		return tsType(t.Elem())
 	case reflect.String:
 		return "string", nil
 	case reflect.Bool:
@@ -83,6 +89,14 @@ func genContractTS() ([]byte, error) {
 		fmt.Fprintf(&b, "  %q,\n", s.Code)
 	}
 	b.WriteString("] as const;\n\nexport type ErrorCode = (typeof ERROR_CODES)[number];\n\n")
+	b.WriteString("export const THEMES = [")
+	for i, th := range contract.Themes() {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%q", th)
+	}
+	b.WriteString("] as const;\n\nexport type Theme = (typeof THEMES)[number];\n\n")
 	b.WriteString("export const ERROR_STATUS: Record<ErrorCode, number> = {\n")
 	for _, s := range specs {
 		fmt.Fprintf(&b, "  %s: %d,\n", s.Code, s.Status)

@@ -11,9 +11,14 @@ export const ERROR_CODES = [
   "not_found",
   "rate_limited",
   "unauthorized",
+  "unavailable",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export const THEMES = ["light", "dark", "system"] as const;
+
+export type Theme = (typeof THEMES)[number];
 
 export const ERROR_STATUS: Record<ErrorCode, number> = {
   config_invalid: 500,
@@ -26,6 +31,7 @@ export const ERROR_STATUS: Record<ErrorCode, number> = {
   not_found: 404,
   rate_limited: 429,
   unauthorized: 401,
+  unavailable: 503,
 };
 
 export interface Health {
@@ -40,7 +46,22 @@ export interface Version {
 export interface ErrorBody {
   code: ErrorCode;
   message: string;
-  details?: string[];
+  details: Record<string, unknown>;
+}
+
+export interface AppConfig {
+  appName: string;
+  proxyPublicHost: string;
+}
+
+export interface Preferences {
+  theme: Theme;
+  reducedMotion: boolean;
+}
+
+export interface PreferencesPatch {
+  theme?: Theme;
+  reducedMotion?: boolean;
 }
 
 export interface RouteSpec {
@@ -51,6 +72,9 @@ export interface RouteSpec {
 }
 
 export const ROUTES: readonly RouteSpec[] = [
+  { method: "GET", pattern: "/api/config", permission: "", public: true },
+  { method: "GET", pattern: "/api/me/preferences", permission: "self", public: false },
+  { method: "PATCH", pattern: "/api/me/preferences", permission: "self", public: false },
   { method: "GET", pattern: "/api/v1/version", permission: "", public: true },
   { method: "GET", pattern: "/healthz", permission: "", public: true },
 ];

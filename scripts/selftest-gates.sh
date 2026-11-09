@@ -28,11 +28,21 @@ printf '#!/bin/sh\nexit 1\n' >"$STUBS/docker"; cp "$STUBS/docker" "$STUBS/pg_isr
 pass=0 bad=0
 want_gate() { [ "${#ONLY[@]}" -eq 0 ] && return 0; local g; for g in "${ONLY[@]}"; do [ "$g" = "$1" ] && return 0; done; return 1; }
 
+# strip_store_inputs removes the Plan 01 store inputs and amends the scratch base commit to match.
+strip_store_inputs() {
+  rm -rf internal/store/migrations internal/store/queries internal/store/sqlc sqlc.yaml
+  go run ./cmd/gen schema >/dev/null 2>&1
+  git add -A && git -c user.name=selftest -c user.email=selftest@example.test commit -q --amend --no-edit
+}
+
 # run_case KIND GATE NAME EXPECT MUTATION [ENV...]   KIND: red|control
 run_case() {
   local kind="$1" gate="$2" name="$3" expect="$4" mut="$5"; shift 5
   want_gate "$gate" || return 0
   rm -rf "$W"; cp -Rp "$BASE" "$W"
+  # sqlc and migrate scenarios are written for a tree with no store inputs (the pre-Plan-01 state):
+  # strip them from the base commit, so the scenarios stay meaningful. NOSTRIP=1 keeps the real inputs.
+  case "$gate" in sqlc | migrate) [ -n "${NOSTRIP:-}" ] || (cd "$W" && strip_store_inputs) ;; esac
   (cd "$W" && "$mut") || { echo "✗ SETUP FAILED  [$gate] $name"; bad=$((bad + 1)); return; }
   local out rc
   out="$(cd "$W" && env "$@" scripts/run-checks.sh $gate 2>&1)"; rc=$?
@@ -299,6 +309,9 @@ red migrate "applied migration edited, only origin/main exists" "applied migrati
 m_mig_lastcommit() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m edit; }
 red migrate "applied migration edited in the last commit on main itself" "applied migrations were modified" m_mig_lastcommit
 red migrate "no main or origin/main under CI=true" "cannot prove applied migrations are unchanged" m_mig_nobase CI=true
+m_mig_baseref() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; git branch trunk; git branch -m main feature; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; }
+red migrate "METERWISE_BASE_REF names the base: edited applied migration" "applied migrations were modified" m_mig_baseref METERWISE_BASE_REF=trunk
+red migrate "METERWISE_BASE_REF that does not resolve fails closed" "does not resolve" m_mig_baseref METERWISE_BASE_REF=no-such-branch
 red migrate "TEST_DATABASE_URL on a remote host is refused" "not loopback" m_mig_ok TEST_DATABASE_URL=postgres://u:p@db.example.com:5432/x
 red migrate "TEST_DATABASE_URL without a database name is refused" "no database name" m_mig_ok TEST_DATABASE_URL=postgres://u:p@127.0.0.1:54329
 red migrate "migrations but no Postgres: fails closed" "cannot create a throwaway database" m_mig_ok TEST_DATABASE_URL=postgres://x:x@127.0.0.1:1/x
@@ -338,6 +351,12 @@ red generated "taxonomy source under another name is not a SKIP" "unknown target
 red generated "openapi.json deleted" "is missing" m_gendel
 red generated "migration added, docs/schema.md not regenerated" "docs/schema.md is stale" m_genschema
 green generated "clean tree" "all gates passed" nop
+
+# ---- Plan 01 inputs exist: the sqlc and migrate gates are live on the real tree (never a silent SKIP)
+NOSTRIP=1 green sqlc "real tree: sqlc.yaml, queries and generated output are checked" "all gates passed" nop
+NOSTRIP=1 green migrate "real tree: 0001_store applies, reverses and re-applies" "all gates passed" nop
+m_sqlc_real_stale() { echo '// stale' >>internal/store/sqlc/store.sql.go; }
+NOSTRIP=1 red sqlc "real tree: hand-edited sqlc output" "stale or hand-edited" m_sqlc_real_stale
 
 echo "--- selftest: $pass as expected, $bad not"
 [ "$bad" -eq 0 ]

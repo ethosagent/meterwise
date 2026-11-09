@@ -21,6 +21,8 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/meterwised /app/meterwised
 COPY --from=web /web/dist /app/web
-EXPOSE 8080
+ENV WEB_DIR=/app/web
+# 8080 proxy, 8081 control plane and web app; the admin listener (9090) stays private.
+EXPOSE 8080 8081
 ENTRYPOINT ["/app/meterwised"]
 CMD ["serve"]

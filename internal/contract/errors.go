@@ -23,6 +23,7 @@ const (
 	CodeRateLimited    Code = "rate_limited"
 	CodeConfigInvalid  Code = "config_invalid"
 	CodeNotAvailable   Code = "not_available"
+	CodeUnavailable    Code = "unavailable"
 	CodeInternal       Code = "internal"
 )
 
@@ -43,6 +44,7 @@ var errorSpecs = []ErrorSpec{
 	{CodeRateLimited, http.StatusTooManyRequests, "A configured operational limit was hit."},
 	{CodeConfigInvalid, http.StatusInternalServerError, "The process configuration is invalid; details lists every problem."},
 	{CodeNotAvailable, http.StatusNotImplemented, "The capability is not wired in this build."},
+	{CodeUnavailable, http.StatusServiceUnavailable, "A dependency (for example the database) is not reachable right now; retry."},
 	{CodeInternal, http.StatusInternalServerError, "An unexpected failure; the message carries no internals."},
 }
 
@@ -101,4 +103,14 @@ func AsError(err error) *Error {
 		return e
 	}
 	return NewError(CodeInternal, "internal error")
+}
+
+// Body is the API error body for e. Detail strings (a config check lists every
+// problem) travel as details.problems; no detail means an empty object.
+func (e *Error) Body() ErrorBody {
+	d := map[string]any{}
+	if len(e.Details) > 0 {
+		d["problems"] = append([]string(nil), e.Details...)
+	}
+	return ErrorBody{Code: e.Code, Message: e.Message, Details: d}
 }

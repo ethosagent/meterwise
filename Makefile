@@ -2,7 +2,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 
-.PHONY: build test check fast fmt lint hooks run gen db-up db-down worktree demo-traffic clean
+.PHONY: build test check fast fmt lint hooks run migrate sqlc gen web db-up db-down worktree demo-traffic clean
 
 build:
 	go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/meterwised ./cmd/meterwised
@@ -27,6 +27,15 @@ hooks:
 
 run:
 	go run ./cmd/meterwised serve
+
+migrate:
+	go run ./cmd/meterwised migrate
+
+sqlc:
+	bash -c '. scripts/lib.sh && gotool sqlc generate'
+
+web:
+	cd web && npm ci --no-audit --no-fund && npm run build
 
 gen:
 	go run ./cmd/gen

@@ -2,5 +2,3 @@
 # Database schema
 
 One section per table, in creation order. Owner = the feature whose migration created it.
-
-No migrations yet.

@@ -5,7 +5,7 @@
 #   2. cmd/gen migrations: file name, `-- feature:` header, non-generic feature, a Down
 #      section, and every table touched or created belongs to the file's one feature.
 #   3. An applied migration is never edited: against the merge-base with main (or
-#      origin/main when there is no local main) only new files (status A) may appear.
+#      origin/main when there is no local main; METERWISE_BASE_REF overrides, ruling R18) only new files (status A) may appear.
 #      On main itself the last commit is compared. No base to compare with fails under
 #      CI=true and prints a SKIP locally.
 #      New migration numbers must exceed the newest one on the base branch.
@@ -38,15 +38,16 @@ fi
 
 go run ./cmd/gen migrations
 
-base_ref=""
-for r in main origin/main; do
-  if git rev-parse --verify -q "$r^{commit}" >/dev/null; then base_ref="$r"; break; fi
-done
-if [ -n "$base_ref" ] && mb="$(git merge-base HEAD "$base_ref" 2>/dev/null)" && [ -n "$mb" ]; then
+if [ -n "${METERWISE_BASE_REF:-}" ] && [ -z "$(base_ref)" ]; then
+  echo "✗ METERWISE_BASE_REF=$METERWISE_BASE_REF does not resolve to a commit"
+  exit 1
+fi
+if compare_ref; then
+  mb="$CMP_MB"
   # net change since the merge-base, including the working tree
   diffs="$(git diff --name-status "$mb" -- "$dir")"
   # on the base branch itself HEAD == merge-base: also compare the last commit
-  if [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then
+  if [ "$CMP_LAST" -eq 1 ]; then
     diffs="$diffs
 $(git diff --name-status HEAD~1 HEAD -- "$dir")"
   fi
@@ -55,9 +56,7 @@ $(git diff --name-status HEAD~1 HEAD -- "$dir")"
   diffs="$diffs
 $(git ls-files --others --exclude-standard -- "$dir" | sed 's/^/A\t/')"
   # numbers must increase: a new migration numbered below the newest applied one is out of order
-  ord_ref="$mb"
-  if [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then ord_ref="HEAD~1"; fi
-  base_max="$(git ls-tree --name-only "$ord_ref" -- "$dir/" | sed 's#.*/##' | grep -oE '^[0-9]{4}' | sort | tail -n 1 || true)"
+  base_max="$(git ls-tree --name-only "$CMP_ORD" -- "$dir/" | sed 's#.*/##' | grep -oE '^[0-9]{4}' | sort | tail -n 1 || true)"
   if [ -n "$base_max" ]; then
     while IFS=$'\t' read -r st f; do
       [ "$st" = A ] || continue
@@ -74,10 +73,10 @@ $(git ls-files --others --exclude-standard -- "$dir" | sed 's/^/A\t/')"
     exit 1
   fi
 elif [ "${CI:-}" = "true" ]; then
-  echo "✗ no main or origin/main to compare with (shallow clone?): cannot prove applied migrations are unchanged. Use fetch-depth: 0."
+  echo "✗ no base branch (METERWISE_BASE_REF, main or origin/main) to compare with (shallow clone?): cannot prove applied migrations are unchanged. Use fetch-depth: 0."
   exit 1
 else
-  skip migrate-immutability "no 'main' or 'origin/main' to compare against"
+  skip migrate-immutability "no base branch (METERWISE_BASE_REF, 'main' or 'origin/main') to compare against"
 fi
 
 command -v psql >/dev/null 2>&1 || { echo "✗ psql not found; install the PostgreSQL client"; exit 1; }

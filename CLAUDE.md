@@ -21,7 +21,10 @@ scripts/run-checks.sh --fast             # inner loop: fmt vet arch docs size sq
 scripts/quiet.sh go test -race ./internal/config   # any command, failures-only output
 make db-up                               # Postgres 16 on 127.0.0.1:54329 for database tests and the migrate gate
 go run ./cmd/gen                         # regenerate TS twin, openapi.json, docs/schema.md
-go run ./cmd/meterwised config check -json
+go run ./cmd/meterwised config check -json   # every env problem at once
+go run ./cmd/meterwised migrate              # goose baseline against DATABASE_URL
+go run ./cmd/meterwised serve                # proxy :8080, API + web :8081, admin 127.0.0.1:9090
+METERWISE_BASE_REF=build/all-plans scripts/run-checks.sh   # base branch for the migrate gate (default main)
 ```
 
 Gates: `fmt vet mod arch lint test vuln docs size sqlc migrate web generated`. The gate prints only
@@ -31,11 +34,14 @@ failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when 
 
 | Path | Role |
 |---|---|
-| `cmd/meterwised` | Binary and subcommands (`serve`, `config check`, `bootstrap-admin`, `migrate`, `version`; all take `-json`) |
+| `cmd/meterwised` | Binary and subcommands (`serve`, `config check`, `migrate [up\|status]`, `bootstrap-admin` (Plan 02), `version`; all take `-json`); OTel SDK wiring in `telemetry.go` |
 | `cmd/gen` | Generators and the migration lint behind the `generated` and `migrate` gates |
 | `internal/contract/` | Kernel: error registry, ports, route-to-permission table, DTOs, `MicroUSD` (imports stdlib only) |
-| `internal/{api,dataplane,ledger,history,monitors,savings,identity,tenancy,access,wsauth,audit}` | Feature packages, added by plans 01-07 along the layers in `ARCHITECTURE.md` §3 |
-| `internal/{config,store}` | Env to `Config`; sqlc, pgx, migrations, `pgtest` |
+| `internal/api` | Control plane: mux from the route table, middleware chain (request id, log, recover, OTel, `PrincipalResolver`), typed errors, static web |
+| `internal/dataplane` | `New(cfg, Deps)` builds the embedded tollgate; plans 04-06 replace `Deps` fields (auth, resolver, admission, hooks, sink) |
+| `internal/{ledger,history,monitors,savings,identity,tenancy,access,wsauth,audit}` | Feature packages, added by plans 02-07 along the layers in `ARCHITECTURE.md` §3 |
+| `internal/config` | Env to `Config` (`DATABASE_URL`, `LISTEN_*`, `APP_NAME`, `OTEL_*`, ...); lists every problem at once |
+| `internal/store` | pgx pool, goose (`Migrate`, embedded `migrations/`), sqlc (`queries/` to `sqlc/`), `OrgID()`, `pgtest` |
 | `internal/nonet` | Test guard: no external network |
 | `internal/archtest/` | The dependency-law gate (protected) |
 | `web/src/features/<name>/` | One folder per UI feature; `web/src/contract/generated.ts` is generated |

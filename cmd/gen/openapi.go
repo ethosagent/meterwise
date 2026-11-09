@@ -13,6 +13,14 @@ func schemaFor(t reflect.Type) (map[string]any, error) {
 	switch t {
 	case reflect.TypeFor[contract.MicroUSD]():
 		return map[string]any{"type": "string", "pattern": `^-?\d+\.\d{6}$`, "description": "decimal USD, six places"}, nil
+	case reflect.TypeFor[contract.Theme]():
+		themes := []string{}
+		for _, th := range contract.Themes() {
+			themes = append(themes, string(th))
+		}
+		return map[string]any{"type": "string", "enum": themes}, nil
+	case reflect.TypeFor[map[string]any]():
+		return map[string]any{"type": "object", "additionalProperties": true}, nil
 	case reflect.TypeFor[contract.Code]():
 		codes := []string{}
 		for _, s := range contract.Errors() {
@@ -21,6 +29,8 @@ func schemaFor(t reflect.Type) (map[string]any, error) {
 		return map[string]any{"type": "string", "enum": codes}, nil
 	}
 	switch t.Kind() {
+	case reflect.Pointer:
+		return schemaFor(t.Elem())
 	case reflect.String:
 		return map[string]any{"type": "string"}, nil
 	case reflect.Bool:
@@ -70,6 +80,9 @@ func operation(r contract.Route) map[string]any {
 			"200":     map[string]any{"description": "OK", "content": jsonContent(r.Response)},
 			"default": map[string]any{"description": "Error", "content": jsonContent("ErrorBody")},
 		},
+	}
+	if r.Request != "" {
+		op["requestBody"] = map[string]any{"required": true, "content": jsonContent(r.Request)}
 	}
 	if r.Public {
 		op["security"] = []any{}
