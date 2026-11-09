@@ -322,8 +322,8 @@ red web "coverage below 70 %" "npm run test failed" m_webcov
 red web "index.ts barrel" "barrels are banned" m_barrel
 red web "index.mts barrel" "barrels are banned" m_barrelmts
 red web "feature folder without README" "has no README.md" m_nofeat
-red web "import outside the allowlist" "H5" m_h5web
-red web "package.json declares an unlisted package" "left-pad" m_pkg
+red arch "web import outside the allowlist (H5 lives in the arch gate)" "H5" m_h5web
+red arch "web package.json declares an unlisted package (H5)" "left-pad" m_pkg
 green web "clean tree" "all gates passed" nop
 
 # ---- generated
