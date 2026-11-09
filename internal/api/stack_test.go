@@ -123,8 +123,6 @@ func (s *stack) signInAs(t *testing.T, sub, email string, role contract.Role) st
 		if _, _, err := s.svc.BootstrapAdmin(ctx, email); err != nil {
 			t.Fatal(err)
 		}
-	} else if _, _, err := s.svc.BootstrapAdmin(ctx, "inviter-"+sub+"@example.test"); err != nil {
-		t.Fatal(err)
 	}
 	tok := s.token(sub, email)
 	if role != contract.RoleAdmin {

@@ -351,55 +351,38 @@ func (s *Service) CreateInvitation(ctx context.Context, p contract.Principal, em
 	return s.invite(ctx, p.UserID, email, role)
 }
 
-// BootstrapAdmin is the CLI's first-admin invitation. It is idempotent: an open
-// invitation for the email is returned with created=false.
+// BootstrapAdmin is the operator's admin invitation, for when no admin is active (first install,
+// or the last admin was deleted at the provider). While any admin is active it refuses with a
+// conflict. It is idempotent: an open admin invitation for the email is returned with created=false.
 func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contract.Invitation, created bool, err error) {
 	e, err := NormalizeEmail(email)
 	if err != nil {
 		return contract.Invitation{}, false, err
+	}
+	// The operator command is the way in when nobody can invite: it works only while no admin is
+	// active, and it only ever issues an invitation. Nobody is re-activated by an email match.
+	n, err := s.st.ActiveAdminCount(ctx, s.org)
+	if err != nil {
+		return contract.Invitation{}, false, err
+	}
+	if n > 0 {
+		return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
+			"an admin is already active; invite admins from Settings > Organization")
 	}
 	all, err := s.st.ListInvitations(ctx, s.org)
 	if err != nil {
 		return contract.Invitation{}, false, err
 	}
 	now := s.cfg.Now()
-	var accepted *contract.Invitation
 	for _, i := range all {
-		if i.Email != e {
+		if i.Email != e || i.StatusAt(now) != contract.InvitationPending {
 			continue
 		}
-		switch i.StatusAt(now) {
-		case contract.InvitationPending:
-			if !access.IsAdmin(i.Role) {
-				return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
-					"an open invitation for that email has role "+string(i.Role)+"; revoke it in Settings, then run bootstrap-admin again")
-			}
-			return i, false, nil
-		case contract.InvitationAccepted:
-			accepted = &i
-		}
-	}
-	if accepted != nil {
-		// A removed admin may be the only way back in: re-activate that admin.
-		back, rerr := s.st.ReactivateRemovedAdmin(ctx, s.org, e)
-		if rerr != nil {
-			return contract.Invitation{}, false, rerr
-		}
-		if back {
-			return *accepted, false, nil
-		}
-		// The provider deleted the last admin (user.deleted webhook): no admin is left to invite
-		// anyone from Settings, so the operator gets a fresh invitation for the same email. It is
-		// claimed by whoever signs up with it, which is a new provider user. With an active admin
-		// the ordinary conflict stands.
-		n, cerr := s.st.ActiveAdminCount(ctx, s.org)
-		if cerr != nil {
-			return contract.Invitation{}, false, cerr
-		}
-		if n > 0 {
+		if !access.IsAdmin(i.Role) {
 			return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
-				"that email already accepted an invitation; invite admins from Settings > Organization")
+				"an open invitation for that email has role "+string(i.Role)+"; revoke it in Settings, then run bootstrap-admin again")
 		}
+		return i, false, nil
 	}
 	inv, err = s.invite(ctx, "", e, contract.RoleAdmin)
 	return inv, err == nil, err

@@ -122,35 +122,36 @@ func TestTheSameUserFinishingFirstLoginTwiceAtOnceIsNeverRefused(t *testing.T) {
 	}
 }
 
+// While an admin is active bootstrap-admin refuses, whatever the email, and creates nothing.
+func TestBootstrapAdminRefusesWhileAnAdminIsActive(t *testing.T) {
+	r, ctx := newRig(t, 5), context.Background()
+	adm := admin(t, r.svc)
+	before, _ := r.svc.ListInvitations(ctx, adm)
+	for _, email := range []string{"new@example.test", "admin@example.test", "ADMIN@example.test"} {
+		_, created, err := r.svc.BootstrapAdmin(ctx, email)
+		if errCode(err) != contract.CodeConflict || created || !strings.Contains(err.Error(), "already active") {
+			t.Fatalf("%s: created=%v err=%v", email, created, err)
+		}
+	}
+	if after, _ := r.svc.ListInvitations(ctx, adm); len(after) != len(before) {
+		t.Fatalf("a refused bootstrap still created %d invitation(s)", len(after)-len(before))
+	}
+}
+
+// With no admin active: an open member invitation is not silently reported as an admin one, and the
+// admin case is idempotent.
 func TestBootstrapAdminMisuse(t *testing.T) {
 	r, ctx := newRig(t, 5), context.Background()
 	adm := admin(t, r.svc)
-
-	// an open member invitation is not silently reported as an admin one
 	if _, err := r.svc.CreateInvitation(ctx, adm, "dev@example.test", contract.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.SetMembershipStatus(ctx, store.OrgID(), adm.UserID, "removed"); err != nil {
 		t.Fatal(err)
 	}
 	if inv, created, err := r.svc.BootstrapAdmin(ctx, "dev@example.test"); errCode(err) != contract.CodeConflict || created || inv.ID != "" {
 		t.Fatalf("member invitation: %+v %v %v", inv, created, err)
 	}
-
-	// an email that already accepted an invitation does not get a second, open admin invitation
-	if _, _, err := r.svc.BootstrapAdmin(ctx, "boss@example.test"); err != nil {
-		t.Fatal(err)
-	}
-	sess, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_boss", Email: "boss@example.test", EmailVerified: true})
-	if _, err := r.svc.CompleteSignup(ctx, sess); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := r.svc.ListInvitations(ctx, adm)
-	if _, created, err := r.svc.BootstrapAdmin(ctx, "BOSS@example.test"); errCode(err) != contract.CodeConflict || created {
-		t.Fatalf("accepted admin: %v %v", created, err)
-	}
-	if after, _ := r.svc.ListInvitations(ctx, adm); len(after) != len(before) {
-		t.Fatalf("a refused bootstrap still created %d invitation(s)", len(after)-len(before))
-	}
-
-	// the idempotent case is unchanged
 	first, created, err := r.svc.BootstrapAdmin(ctx, "new@example.test")
 	again, createdAgain, err2 := r.svc.BootstrapAdmin(ctx, "New@Example.test")
 	if err != nil || err2 != nil || !created || createdAgain || first.ID != again.ID {
@@ -228,8 +229,9 @@ func TestCompleteSignupSurfacesAFailedMembershipReread(t *testing.T) {
 	}
 }
 
-// A removed admin may be the only way back in: bootstrap-admin re-activates that admin.
-func TestBootstrapAdminReactivatesARemovedAdmin(t *testing.T) {
+// bootstrap-admin never re-activates anyone by email: for a removed admin it issues an invitation,
+// and the person is an admin again only after signing in with a verified address and claiming it.
+func TestBootstrapAdminIssuesAnInvitationInsteadOfReactivatingARemovedAdmin(t *testing.T) {
 	r, ctx := newRig(t, 5), context.Background()
 	id := contract.Identity{Subject: "user_boss", Email: "boss@example.test", EmailVerified: true}
 	if _, _, err := r.svc.BootstrapAdmin(ctx, "boss@example.test"); err != nil {
@@ -245,15 +247,19 @@ func TestBootstrapAdminReactivatesARemovedAdmin(t *testing.T) {
 	if err := r.db.SetMembershipStatus(ctx, store.OrgID(), sess.User.ID, "removed"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := r.svc.Resolve(ctx, id); got.Member {
-		t.Fatal("setup: the admin is still a member")
-	}
 	inv, created, err := r.svc.BootstrapAdmin(ctx, "Boss@Example.test")
-	if err != nil || created || inv.Email != "boss@example.test" {
-		t.Fatalf("re-activation: %+v created=%v err=%v", inv, created, err)
+	if err != nil || !created || inv.Email != "boss@example.test" || inv.Role != contract.RoleAdmin {
+		t.Fatalf("invitation: %+v created=%v err=%v", inv, created, err)
+	}
+	if got, _ := r.svc.Resolve(ctx, id); got.Member {
+		t.Fatal("bootstrap-admin re-activated the removed admin without a sign-in")
+	}
+	sess, _ = r.svc.Resolve(ctx, id)
+	if _, err := r.svc.CompleteSignup(ctx, sess); err != nil {
+		t.Fatal(err)
 	}
 	if got, _ := r.svc.Resolve(ctx, id); !got.Member || got.Principal.Role != contract.RoleAdmin {
-		t.Fatalf("not an active admin again: %+v", got)
+		t.Fatalf("not an admin after claiming the invitation: %+v", got)
 	}
 }
 

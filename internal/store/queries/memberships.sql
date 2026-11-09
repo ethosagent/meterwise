@@ -17,16 +17,6 @@ UPDATE memberships SET status = 'removed', updated_at = now()
 WHERE org_id = sqlc.arg(org_id)::text::uuid
   AND user_id IN (SELECT id FROM users WHERE org_id = sqlc.arg(org_id)::text::uuid AND clerk_user_id = sqlc.arg(clerk_user_id));
 
--- name: GetRemovedAdminByEmail :one
--- The user behind a removed admin membership, found by the mirrored email. Only the
--- operator-run bootstrap-admin command uses it; no request is ever authorised on it.
-SELECT u.id::text AS id
-FROM memberships m JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id
-WHERE m.org_id = sqlc.arg(org_id)::text::uuid AND u.email = sqlc.arg(email)
-  AND m.role = 'admin' AND m.status = 'removed' AND u.deleted_at IS NULL
-ORDER BY m.updated_at DESC
-LIMIT 1;
-
 -- name: ListMembers :many
 SELECT u.id::text AS user_id, u.email, u.name, u.avatar_url, m.role, m.created_at AS joined_at,
        COALESCE((SELECT array_agg(gu.group_id::text ORDER BY gu.group_id) FROM group_users gu WHERE gu.user_id = u.id AND gu.org_id = m.org_id), '{}')::text[] AS group_ids

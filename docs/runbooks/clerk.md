@@ -44,10 +44,12 @@ follows the email, signs in, and the web app calls `POST /api/auth/complete-sign
 into an active membership. Without Clerk configured (dev) only the database row is created.
 
 Recovery: the Clerk `user.deleted` webhook removes the memberships of the deleted user, including the last admin
-(the API refuses that, Clerk's own deletion cannot be refused). While no admin is active, run `bootstrap-admin` for the
-address again: it issues a fresh admin invitation, and whoever signs up with that address (a new Clerk user) becomes an
-active admin with no groups. With an active admin it keeps answering conflict. A removed admin whose Clerk user still
-exists is re-activated instead.
+(the API refuses that, Clerk's own deletion cannot be refused). `bootstrap-admin` refuses (conflict) while any admin is
+active: invite admins from Settings > Organization instead. While none is active it only issues (or returns the pending)
+admin invitation for the address; it never re-activates anyone by email, because an email claim is not proof of identity
+until Clerk marks it verified. Whoever signs in with a verified claim for that address becomes the admin, with no groups.
+Check that the address belongs to the person you mean before running it. The mirrored `users.email` is written only from a
+verified claim or the Svix-verified webhook.
 
 ## Webhooks without a tunnel
 

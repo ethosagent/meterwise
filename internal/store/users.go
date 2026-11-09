@@ -12,9 +12,17 @@ import (
 // UpsertUser is the lazy mirror of an identity: it creates the user row on first
 // sight and refreshes non-empty profile fields afterwards. A soft-deleted user
 // stays deleted (User.Deleted is true).
+//
+// users.email is written only from a verified address: an unverified claim must not be able to
+// take over a mirrored address (nothing authorizes on it, but operator tools and the invitation
+// conflict check read it).
 func (s *Store) UpsertUser(ctx context.Context, orgID string, id contract.Identity) (contract.User, error) {
+	email := id.Email
+	if !id.EmailVerified {
+		email = ""
+	}
 	r, err := s.q.UpsertUser(ctx, sqlc.UpsertUserParams{
-		OrgID: orgID, ClerkUserID: id.Subject, Email: id.Email, Name: id.Name, AvatarUrl: id.AvatarURL,
+		OrgID: orgID, ClerkUserID: id.Subject, Email: email, Name: id.Name, AvatarUrl: id.AvatarURL,
 	})
 	if err != nil {
 		return contract.User{}, queryErr(err)
@@ -28,7 +36,7 @@ func (s *Store) UpsertUser(ctx context.Context, orgID string, id contract.Identi
 // a second read of the membership.
 func (s *Store) ResolveUser(ctx context.Context, orgID string, id contract.Identity) (u contract.User, role contract.Role, active bool, err error) {
 	if r, rerr := s.q.ResolveUser(ctx, sqlc.ResolveUserParams{OrgID: orgID, ClerkUserID: id.Subject}); rerr == nil {
-		same := (id.Email == "" || strings.EqualFold(id.Email, r.Email)) && (id.Name == "" || id.Name == r.Name) && (id.AvatarURL == "" || id.AvatarURL == r.AvatarUrl)
+		same := (id.Email == "" || !id.EmailVerified || strings.EqualFold(id.Email, r.Email)) && (id.Name == "" || id.Name == r.Name) && (id.AvatarURL == "" || id.AvatarURL == r.AvatarUrl)
 		if same {
 			u = contract.User{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}
 			return u, contract.Role(r.Role), r.Status == "active", nil

@@ -31,7 +31,7 @@ const missingID = "00000000-0000-0000-0000-000000000042"
 
 func TestUsersMirrorLazilyAndNeverClobberWithEmptyClaims(t *testing.T) {
 	s, ctx, org := openMigrated(t), context.Background(), store.OrgID()
-	u, err := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_1", Email: " Ada@Example.test ", Name: "Ada", AvatarURL: "a.png"})
+	u, err := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_1", Email: " Ada@Example.test ", EmailVerified: true, Name: "Ada", AvatarURL: "a.png"})
 	if err != nil || u.ID == "" || u.Email != "ada@example.test" || u.Deleted {
 		t.Fatalf("create: %+v %v", u, err)
 	}
@@ -52,6 +52,21 @@ func TestUsersMirrorLazilyAndNeverClobberWithEmptyClaims(t *testing.T) {
 	after, _ := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_1", Email: "ada@example.test"})
 	if !after.Deleted {
 		t.Fatal("an upsert resurrected a soft-deleted user")
+	}
+}
+
+// An unverified claim never writes users.email, on first sight or later.
+func TestUnverifiedClaimsNeverWriteTheMirroredEmail(t *testing.T) {
+	s, ctx, org := openMigrated(t), context.Background(), store.OrgID()
+	first, err := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_u", Email: "x@example.test", Name: "U"})
+	if err != nil || first.Email != "" {
+		t.Fatalf("first sight, unverified: %+v %v", first, err)
+	}
+	if v, _ := s.UpsertUser(ctx, org, contract.Identity{Subject: "user_u", Email: "ada@example.test", EmailVerified: true}); v.Email != "ada@example.test" {
+		t.Fatalf("verified claim not mirrored: %+v", v)
+	}
+	if v, _, _, _ := s.ResolveUser(ctx, org, contract.Identity{Subject: "user_u", Email: "root@example.test"}); v.Email != "ada@example.test" {
+		t.Fatalf("an unverified claim took over the address: %+v", v)
 	}
 }
 
@@ -276,7 +291,7 @@ func TestDriverFailuresSurfaceAsScrubbedStoreErrors(t *testing.T) {
 
 func TestResolveUserIsOneReadAndFallsBackToTheUpsert(t *testing.T) {
 	s, ctx, org := openMigrated(t), context.Background(), store.OrgID()
-	id := contract.Identity{Subject: "user_r", Email: "R@Example.test", Name: "R"}
+	id := contract.Identity{Subject: "user_r", Email: "R@Example.test", EmailVerified: true, Name: "R"}
 	// missing row: the lazy upsert creates it (works with zero webhooks), no membership yet
 	u, role, active, err := s.ResolveUser(ctx, org, id)
 	if err != nil || u.ID == "" || u.Email != "r@example.test" || active || role != "" {

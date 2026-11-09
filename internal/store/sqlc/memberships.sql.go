@@ -103,29 +103,6 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 	return i, err
 }
 
-const getRemovedAdminByEmail = `-- name: GetRemovedAdminByEmail :one
-SELECT u.id::text AS id
-FROM memberships m JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id
-WHERE m.org_id = $1::text::uuid AND u.email = $2
-  AND m.role = 'admin' AND m.status = 'removed' AND u.deleted_at IS NULL
-ORDER BY m.updated_at DESC
-LIMIT 1
-`
-
-type GetRemovedAdminByEmailParams struct {
-	OrgID string
-	Email string
-}
-
-// The user behind a removed admin membership, found by the mirrored email. Only the
-// operator-run bootstrap-admin command uses it; no request is ever authorised on it.
-func (q *Queries) GetRemovedAdminByEmail(ctx context.Context, arg GetRemovedAdminByEmailParams) (string, error) {
-	row := q.db.QueryRow(ctx, getRemovedAdminByEmail, arg.OrgID, arg.Email)
-	var id string
-	err := row.Scan(&id)
-	return id, err
-}
-
 const getUserEmail = `-- name: GetUserEmail :one
 SELECT email FROM users WHERE org_id = $1::text::uuid AND id = $2::text::uuid
 `

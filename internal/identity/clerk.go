@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -132,10 +131,27 @@ func (c *Clerk) Verify(ctx context.Context, bearer string) (contract.Identity, e
 	if err != nil || claims.Issuer != c.cfg.Issuer || claims.Subject == "" || claims.Expiry == nil {
 		return contract.Identity{}, unauthenticated()
 	}
+	email, verified := custom.Email, custom.EmailVerified
+	if !plainEmail(email) {
+		// Never trimmed into a match: an address with whitespace or non-ASCII anywhere is not an
+		// address this product can invite, so the identity carries none (and is not verified).
+		email, verified = "", false
+	}
 	return contract.Identity{
-		Subject: claims.Subject, Email: strings.TrimSpace(custom.Email), EmailVerified: custom.EmailVerified && custom.Email != "",
+		Subject: claims.Subject, Email: email, EmailVerified: verified && email != "",
 		Name: custom.Name, AvatarURL: custom.ImageURL,
 	}, nil
+}
+
+// plainEmail reports whether s holds only printable ASCII with no space: no whitespace of any
+// kind (Unicode included) and nothing above U+007E anywhere.
+func plainEmail(s string) bool {
+	for _, r := range s {
+		if r <= ' ' || r > '~' {
+			return false
+		}
+	}
+	return true
 }
 
 // authorizedParty is the azp check: with parties configured, the token must name
