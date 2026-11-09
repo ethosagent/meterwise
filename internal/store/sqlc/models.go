@@ -5,8 +5,23 @@
 package sqlc
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type AuditLog struct {
+	ID           int64
+	OrgID        pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	ActorUserID  pgtype.UUID
+	Action       string
+	ResourceType string
+	ResourceID   pgtype.Text
+	Ip           *netip.Addr
+	Metadata     []byte
+	CreatedAt    pgtype.Timestamptz
+}
 
 type Group struct {
 	ID        pgtype.UUID
@@ -96,13 +111,15 @@ type User struct {
 }
 
 type Workspace struct {
-	ID        pgtype.UUID
-	OrgID     pgtype.UUID
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
+	ID                 pgtype.UUID
+	OrgID              pgtype.UUID
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []netip.Prefix
 }
 
 type WorkspacePublicID struct {

@@ -119,7 +119,7 @@ func TestEndToEndInviteFirstLoginMembershipWorkspaceSwitchDelete(t *testing.T) {
 	st, b = e.do("POST", "/api/workspaces", member, `{"name":"Search team"}`)
 	e.want(201, st, b, "create workspace")
 	ws := decodeInto[contract.WorkspaceView](t, b)
-	if len(ws.PublicID) != 22 || ws.ProxyURL != "https://proxy.example.com/w/"+ws.PublicID {
+	if ws.PublicID == nil || ws.ProxyURL == nil || len(*ws.PublicID) != 22 || *ws.ProxyURL != "https://proxy.example.com/w/"+*ws.PublicID {
 		t.Fatalf("workspace = %+v", ws)
 	}
 	st, b = e.do("POST", "/api/workspaces/"+ws.ID+"/switch", member, "")

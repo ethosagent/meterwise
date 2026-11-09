@@ -123,9 +123,9 @@ func TestRetiredPublicIDResolvesWithRetiredInsideItsGraceWindow(t *testing.T) {
 	ws, _ := svc.CreateWorkspace(ctx, principal(), "Alpha")
 	// what Plan 04's reset writes: a retired row for the old id, a new current id
 	for _, stmt := range []string{
+		`UPDATE workspace_public_ids SET retired_at = now(), grace_until = now() + interval '1 hour' WHERE workspace_id = $1`,
 		`UPDATE workspaces SET public_id = 'NEWnewNEWnewNEWnewNEWn' WHERE id = $1`,
 		`INSERT INTO workspace_public_ids (public_id, org_id, workspace_id) VALUES ('NEWnewNEWnewNEWnewNEWn', '` + store.OrgID() + `', $1)`,
-		`UPDATE workspace_public_ids SET retired_at = now(), grace_until = now() + interval '1 hour' WHERE workspace_id = $1 AND public_id <> 'NEWnewNEWnewNEWnewNEWn'`,
 	} {
 		if _, err := db.Pool().Exec(ctx, stmt, ws.ID); err != nil {
 			t.Fatal(err)
@@ -139,9 +139,9 @@ func TestRetiredPublicIDResolvesWithRetiredInsideItsGraceWindow(t *testing.T) {
 	if err != nil || cur.Retired || cur.ID != ws.ID {
 		t.Fatalf("current id = %+v, %v", cur, err)
 	}
-	// past the grace window the old id no longer resolves
+	// past the grace window the old id is a reset URL (410), not an unknown one
 	clk.t = clk.t.Add(3 * time.Hour)
-	if _, err := dir.ByPublicID(ctx, ws.PublicID); contract.AsError(err).Code != contract.CodeNotFound {
+	if _, err := dir.ByPublicID(ctx, ws.PublicID); contract.AsError(err).Code != contract.CodeWorkspaceURLReset {
 		t.Fatalf("after the grace window: %v", err)
 	}
 }

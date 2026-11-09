@@ -40,8 +40,30 @@ func (q *Queries) DeleteWorkspace(ctx context.Context, arg DeleteWorkspaceParams
 	return result.RowsAffected(), nil
 }
 
+const endPreviousGrace = `-- name: EndPreviousGrace :execrows
+UPDATE workspace_public_ids SET grace_until = $1::timestamptz
+WHERE org_id = $2::text::uuid AND workspace_id = $3::text::uuid
+  AND retired_at IS NOT NULL AND grace_until > $1::timestamptz
+`
+
+type EndPreviousGraceParams struct {
+	Now         pgtype.Timestamptz
+	OrgID       string
+	WorkspaceID string
+}
+
+// Ends the grace of every retired id of the workspace that is still inside it.
+func (q *Queries) EndPreviousGrace(ctx context.Context, arg EndPreviousGraceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endPreviousGrace, arg.Now, arg.OrgID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at
+SELECT id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
+       last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
 FROM workspaces WHERE org_id = $1::text::uuid AND id = $2::text::uuid
 `
 
@@ -51,13 +73,15 @@ type GetWorkspaceParams struct {
 }
 
 type GetWorkspaceRow struct {
-	ID        string
-	OrgID     string
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []string
 }
 
 func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) (GetWorkspaceRow, error) {
@@ -71,23 +95,28 @@ func (q *Queries) GetWorkspace(ctx context.Context, arg GetWorkspaceParams) (Get
 		&i.IsDefault,
 		&i.Settings,
 		&i.CreatedAt,
+		&i.LastCallAt,
+		&i.AllowedClientCidrs,
 	)
 	return i, err
 }
 
 const getWorkspaceByID = `-- name: GetWorkspaceByID :one
-SELECT id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at
+SELECT id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
+       last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
 FROM workspaces WHERE id = $1::text::uuid
 `
 
 type GetWorkspaceByIDRow struct {
-	ID        string
-	OrgID     string
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []string
 }
 
 // The data-plane lookup: the row carries its org so the caller can check it.
@@ -102,38 +131,38 @@ func (q *Queries) GetWorkspaceByID(ctx context.Context, id string) (GetWorkspace
 		&i.IsDefault,
 		&i.Settings,
 		&i.CreatedAt,
+		&i.LastCallAt,
+		&i.AllowedClientCidrs,
 	)
 	return i, err
 }
 
 const getWorkspaceByPublicID = `-- name: GetWorkspaceByPublicID :one
 SELECT w.id::text AS id, w.org_id::text AS org_id, p.public_id, w.name, w.is_default, w.settings, w.created_at,
-       (p.retired_at IS NOT NULL)::boolean AS retired
+       w.last_call_at, w.allowed_client_cidrs::text[] AS allowed_client_cidrs,
+       (p.retired_at IS NOT NULL)::boolean AS retired, p.grace_until
 FROM workspace_public_ids p JOIN workspaces w ON w.id = p.workspace_id
 WHERE p.public_id = $1
-  AND (p.retired_at IS NULL OR p.grace_until IS NULL OR p.grace_until > $2::timestamptz)
 `
 
-type GetWorkspaceByPublicIDParams struct {
-	PublicID string
-	Now      pgtype.Timestamptz
-}
-
 type GetWorkspaceByPublicIDRow struct {
-	ID        string
-	OrgID     string
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
-	Retired   bool
+	ID                 string
+	OrgID              string
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []string
+	Retired            bool
+	GraceUntil         pgtype.Timestamptz
 }
 
-// Current and retired ids both resolve; retired is true for an id a reset replaced.
-// A retired id past its grace window resolves to nothing.
-func (q *Queries) GetWorkspaceByPublicID(ctx context.Context, arg GetWorkspaceByPublicIDParams) (GetWorkspaceByPublicIDRow, error) {
-	row := q.db.QueryRow(ctx, getWorkspaceByPublicID, arg.PublicID, arg.Now)
+// Current and retired ids both resolve; retired and grace_until tell the caller which state the id
+// is in (a retired id past its grace window is a reset URL, which is not "unknown").
+func (q *Queries) GetWorkspaceByPublicID(ctx context.Context, publicID string) (GetWorkspaceByPublicIDRow, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceByPublicID, publicID)
 	var i GetWorkspaceByPublicIDRow
 	err := row.Scan(
 		&i.ID,
@@ -143,7 +172,10 @@ func (q *Queries) GetWorkspaceByPublicID(ctx context.Context, arg GetWorkspaceBy
 		&i.IsDefault,
 		&i.Settings,
 		&i.CreatedAt,
+		&i.LastCallAt,
+		&i.AllowedClientCidrs,
 		&i.Retired,
+		&i.GraceUntil,
 	)
 	return i, err
 }
@@ -187,7 +219,8 @@ func (q *Queries) InsertPublicID(ctx context.Context, arg InsertPublicIDParams) 
 const insertWorkspace = `-- name: InsertWorkspace :one
 INSERT INTO workspaces (org_id, public_id, name, is_default)
 VALUES ($1::text::uuid, $2, $3, $4)
-RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at
+RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
+          last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
 `
 
 type InsertWorkspaceParams struct {
@@ -198,13 +231,15 @@ type InsertWorkspaceParams struct {
 }
 
 type InsertWorkspaceRow struct {
-	ID        string
-	OrgID     string
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []string
 }
 
 func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams) (InsertWorkspaceRow, error) {
@@ -223,24 +258,29 @@ func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams
 		&i.IsDefault,
 		&i.Settings,
 		&i.CreatedAt,
+		&i.LastCallAt,
+		&i.AllowedClientCidrs,
 	)
 	return i, err
 }
 
 const listWorkspaces = `-- name: ListWorkspaces :many
-SELECT id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at
+SELECT id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
+       last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
 FROM workspaces WHERE org_id = $1::text::uuid
 ORDER BY is_default DESC, created_at, id
 `
 
 type ListWorkspacesRow struct {
-	ID        string
-	OrgID     string
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []string
 }
 
 func (q *Queries) ListWorkspaces(ctx context.Context, orgID string) ([]ListWorkspacesRow, error) {
@@ -260,6 +300,8 @@ func (q *Queries) ListWorkspaces(ctx context.Context, orgID string) ([]ListWorks
 			&i.IsDefault,
 			&i.Settings,
 			&i.CreatedAt,
+			&i.LastCallAt,
+			&i.AllowedClientCidrs,
 		); err != nil {
 			return nil, err
 		}
@@ -271,6 +313,25 @@ func (q *Queries) ListWorkspaces(ctx context.Context, orgID string) ([]ListWorks
 	return items, nil
 }
 
+const lockWorkspace = `-- name: LockWorkspace :one
+SELECT id::text AS id FROM workspaces
+WHERE org_id = $1::text::uuid AND id = $2::text::uuid
+FOR UPDATE
+`
+
+type LockWorkspaceParams struct {
+	OrgID string
+	ID    string
+}
+
+// Serialises URL resets and CIDR changes of one workspace.
+func (q *Queries) LockWorkspace(ctx context.Context, arg LockWorkspaceParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockWorkspace, arg.OrgID, arg.ID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const lockWorkspaceCreation = `-- name: LockWorkspaceCreation :exec
 SELECT pg_advisory_xact_lock(hashtext('workspaces:' || $1::text))
 `
@@ -280,10 +341,72 @@ func (q *Queries) LockWorkspaceCreation(ctx context.Context, orgID string) error
 	return err
 }
 
+const retireCurrentPublicID = `-- name: RetireCurrentPublicID :one
+UPDATE workspace_public_ids SET retired_at = $1::timestamptz, grace_until = $2::timestamptz
+WHERE org_id = $3::text::uuid AND workspace_id = $4::text::uuid AND retired_at IS NULL
+RETURNING public_id
+`
+
+type RetireCurrentPublicIDParams struct {
+	Now         pgtype.Timestamptz
+	GraceUntil  pgtype.Timestamptz
+	OrgID       string
+	WorkspaceID string
+}
+
+// Moves the workspace's current id to retired, valid until grace_until. Exactly one row is current.
+func (q *Queries) RetireCurrentPublicID(ctx context.Context, arg RetireCurrentPublicIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, retireCurrentPublicID,
+		arg.Now,
+		arg.GraceUntil,
+		arg.OrgID,
+		arg.WorkspaceID,
+	)
+	var public_id string
+	err := row.Scan(&public_id)
+	return public_id, err
+}
+
+const setAllowedClientCIDRs = `-- name: SetAllowedClientCIDRs :one
+UPDATE workspaces SET allowed_client_cidrs = $1::text[]::cidr[]
+WHERE org_id = $2::text::uuid AND id = $3::text::uuid
+RETURNING allowed_client_cidrs::text[] AS allowed_client_cidrs
+`
+
+type SetAllowedClientCIDRsParams struct {
+	Cidrs []string
+	OrgID string
+	ID    string
+}
+
+func (q *Queries) SetAllowedClientCIDRs(ctx context.Context, arg SetAllowedClientCIDRsParams) ([]string, error) {
+	row := q.db.QueryRow(ctx, setAllowedClientCIDRs, arg.Cidrs, arg.OrgID, arg.ID)
+	var allowed_client_cidrs []string
+	err := row.Scan(&allowed_client_cidrs)
+	return allowed_client_cidrs, err
+}
+
+const setWorkspacePublicID = `-- name: SetWorkspacePublicID :exec
+UPDATE workspaces SET public_id = $1
+WHERE org_id = $2::text::uuid AND id = $3::text::uuid
+`
+
+type SetWorkspacePublicIDParams struct {
+	PublicID string
+	OrgID    string
+	ID       string
+}
+
+func (q *Queries) SetWorkspacePublicID(ctx context.Context, arg SetWorkspacePublicIDParams) error {
+	_, err := q.db.Exec(ctx, setWorkspacePublicID, arg.PublicID, arg.OrgID, arg.ID)
+	return err
+}
+
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspaces SET name = COALESCE($1, name), settings = COALESCE($2::jsonb, settings)
 WHERE org_id = $3::text::uuid AND id = $4::text::uuid
-RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at
+RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
+          last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
 `
 
 type UpdateWorkspaceParams struct {
@@ -294,13 +417,15 @@ type UpdateWorkspaceParams struct {
 }
 
 type UpdateWorkspaceRow struct {
-	ID        string
-	OrgID     string
-	PublicID  string
-	Name      string
-	IsDefault bool
-	Settings  []byte
-	CreatedAt pgtype.Timestamptz
+	ID                 string
+	OrgID              string
+	PublicID           string
+	Name               string
+	IsDefault          bool
+	Settings           []byte
+	CreatedAt          pgtype.Timestamptz
+	LastCallAt         pgtype.Timestamptz
+	AllowedClientCidrs []string
 }
 
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (UpdateWorkspaceRow, error) {
@@ -319,6 +444,8 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.IsDefault,
 		&i.Settings,
 		&i.CreatedAt,
+		&i.LastCallAt,
+		&i.AllowedClientCidrs,
 	)
 	return i, err
 }

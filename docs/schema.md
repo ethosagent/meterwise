@@ -42,6 +42,8 @@ Owner: `workspaces` (created in `0004_workspaces.sql`)
 | `is_default` | `boolean NOT NULL DEFAULT false` | 0004_workspaces.sql |
 | `settings` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0004_workspaces.sql |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0004_workspaces.sql |
+| `last_call_at` | `timestamptz` | 0011_workspaces.sql |
+| `allowed_client_cidrs` | `cidr[] NOT NULL DEFAULT '{}'` | 0011_workspaces.sql |
 
 ## workspace_public_ids
 
@@ -156,3 +158,20 @@ Owner: `organization_permissions` (created in `0009_organization_permissions.sql
 | `resource_type` | `text NOT NULL CHECK (resource_type <> '')` | 0009_organization_permissions.sql |
 | `action` | `text NOT NULL CHECK (action <> '')` | 0009_organization_permissions.sql |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0009_organization_permissions.sql |
+
+## audit_log
+
+Owner: `audit_log` (created in `0010_audit_log.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0010_audit_log.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0010_audit_log.sql |
+| `workspace_id` | `uuid` | 0010_audit_log.sql |
+| `actor_user_id` | `uuid` | 0010_audit_log.sql |
+| `action` | `text NOT NULL CHECK (action <> '')` | 0010_audit_log.sql |
+| `resource_type` | `text NOT NULL CHECK (resource_type <> '')` | 0010_audit_log.sql |
+| `resource_id` | `text` | 0010_audit_log.sql |
+| `ip` | `inet` | 0010_audit_log.sql |
+| `metadata` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0010_audit_log.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0010_audit_log.sql |

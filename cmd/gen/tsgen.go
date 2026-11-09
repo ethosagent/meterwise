@@ -24,6 +24,8 @@ func tsType(t reflect.Type) (string, error) {
 		return "Role", nil
 	case reflect.TypeFor[contract.InvitationStatus]():
 		return "InvitationStatus", nil
+	case reflect.TypeFor[contract.AuditAction]():
+		return "AuditAction", nil
 	case reflect.TypeFor[map[string]any]():
 		return "Record<string, unknown>", nil
 	}
@@ -121,6 +123,7 @@ func genContractTS() ([]byte, error) {
 	tsConstTuple(&b, "THEMES", "Theme", contract.Themes())
 	tsConstTuple(&b, "ROLES", "Role", contract.Roles())
 	tsConstTuple(&b, "INVITATION_STATUSES", "InvitationStatus", contract.InvitationStatuses())
+	tsConstTuple(&b, "AUDIT_ACTIONS", "AuditAction", contract.AuditActions())
 	b.WriteString("export const ERROR_STATUS: Record<ErrorCode, number> = {\n")
 	for _, s := range specs {
 		fmt.Fprintf(&b, "  %s: %d,\n", s.Code, s.Status)

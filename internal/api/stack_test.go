@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/api"
+	"github.com/ethosagent/meterwise/internal/audit"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
 	"github.com/ethosagent/meterwise/internal/identity/clerkmock"
@@ -65,7 +66,7 @@ func newStack(t *testing.T) *stack {
 	logs := &bytes.Buffer{}
 	h, err := api.New(api.Deps{
 		Log: slog.New(slog.NewJSONHandler(logs, nil)), DB: db,
-		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Authz: access.NewAuthorizer(db, svc.Directory()), Access: access.NewService(db, store.OrgID()), Webhooks: wh,
+		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Authz: access.NewAuthorizer(db, svc.Directory()), Access: access.NewService(db, store.OrgID()), Audit: audit.New(db, nil), Webhooks: wh,
 		AppName: "Acme", ProxyPublicHost: "proxy.test", Version: contract.Version{Version: "t"},
 	})
 	if err != nil {

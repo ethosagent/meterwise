@@ -51,7 +51,7 @@ func New(st *store.Store, idp contract.IdentityProvider, cfg Config) *Service {
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Service{st: st, idp: idp, dir: NewDirectory(st, cfg.Now), cfg: cfg, org: store.OrgID()}
+	return &Service{st: st, idp: idp, dir: NewDirectory(st, cfg.Now, cfg.Rand), cfg: cfg, org: store.OrgID()}
 }
 
 // Directory returns the cached workspace directory.

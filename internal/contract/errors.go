@@ -34,6 +34,7 @@ const (
 	CodeLastAdmin           Code = "last_admin"
 	CodeAlreadyMember       Code = "already_member"
 	CodeGroupNameTaken      Code = "group_name_taken"
+	CodeWorkspaceURLReset   Code = "workspace_url_reset"
 )
 
 // ErrorSpec is the registry entry for one code.
@@ -63,6 +64,7 @@ var errorSpecs = []ErrorSpec{
 	{CodeLastAdmin, http.StatusConflict, "The change would leave the organization without an active admin."},
 	{CodeAlreadyMember, http.StatusConflict, "The email already belongs to an active member."},
 	{CodeGroupNameTaken, http.StatusConflict, "A group with that name already exists."},
+	{CodeWorkspaceURLReset, http.StatusGone, "The workspace URL was reset and its grace window has ended (data plane only; the control plane never returns it)."},
 }
 
 // Errors returns the registry sorted by code. The slice is a copy.

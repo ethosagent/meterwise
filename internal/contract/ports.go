@@ -101,16 +101,21 @@ type Org struct {
 
 // Workspace is the unit of proxying (decision D5). PublicID is the unguessable
 // URL id (D6). Retired is true when the id answered by a lookup was retired by a
-// URL reset and is still inside its grace window; PublicID is then the retired id.
+// URL reset and is still inside its grace window (PublicID is then the retired id and
+// GraceUntil the end of the window). LastCallAt is touched by the ledger (Plan 05);
+// AllowedClientCIDRs, when not empty, limits the source networks the data plane accepts.
 type Workspace struct {
-	ID        string
-	OrgID     string
-	Name      string
-	PublicID  string
-	IsDefault bool
-	Settings  map[string]any
-	CreatedAt time.Time
-	Retired   bool
+	ID                 string
+	OrgID              string
+	Name               string
+	PublicID           string
+	IsDefault          bool
+	Settings           map[string]any
+	CreatedAt          time.Time
+	LastCallAt         *time.Time
+	AllowedClientCIDRs []string
+	Retired            bool
+	GraceUntil         *time.Time
 }
 
 // InvitationStatus is the derived state of an invitation.
@@ -150,16 +155,6 @@ func (i Invitation) StatusAt(now time.Time) InvitationStatus {
 	return InvitationPending
 }
 
-// AuditEvent is one append-only audit record.
-type AuditEvent struct {
-	At          time.Time
-	OrgID       string
-	WorkspaceID string // empty for org-level events
-	ActorID     string
-	Action      string
-	Target      string
-}
-
 // Price is a per-million-token price in micro-USD for one model.
 type Price struct {
 	Model            string
@@ -189,13 +184,28 @@ type OrgDirectory interface {
 	Org(ctx context.Context) (Org, error)
 }
 
-// WorkspaceDirectory resolves workspaces for the data plane. ByPublicID answers
-// a retired id with Workspace.Retired set and an unknown one with CodeNotFound.
-// Lookups are cached for 30 seconds and busted on update and delete.
+// URLReset is the outcome of a workspace URL reset: the workspace with its new public id, and when
+// the previous id stops answering.
+type URLReset struct {
+	Workspace          Workspace
+	PreviousGraceUntil time.Time
+}
+
+// WorkspaceDirectory resolves workspaces for the data plane. ByPublicID answers a retired id inside
+// its grace window with Workspace.Retired set, an id past its grace with CodeWorkspaceURLReset (a
+// reset URL is not an unknown one) and an unknown id with CodeNotFound. Lookups are cached for 30
+// seconds (a retired id no longer than its grace window) and busted on update, delete and reset.
 type WorkspaceDirectory interface {
 	ByPublicID(ctx context.Context, publicID string) (Workspace, error)
 	ByID(ctx context.Context, id string) (Workspace, error)
 	List(ctx context.Context, p Principal) ([]Workspace, error)
+	// Reset gives the workspace a new public id and keeps the old one answering for grace.
+	Reset(ctx context.Context, p Principal, workspaceID string, grace time.Duration) (URLReset, error)
+	// RetirePrevious ends the grace of every retired id of the workspace at once.
+	RetirePrevious(ctx context.Context, p Principal, workspaceID string) error
+	// SweepRetired drops cache entries that are past their expiry or retired and past their grace,
+	// and reports how many it dropped.
+	SweepRetired(now time.Time) int
 }
 
 // AuditSink appends audit events; implementations never update or delete.

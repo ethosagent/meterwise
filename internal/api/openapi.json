@@ -12,6 +12,20 @@
         ],
         "type": "object"
       },
+      "AllowedCIDRs": {
+        "properties": {
+          "cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cidrs"
+        ],
+        "type": "object"
+      },
       "AppConfig": {
         "properties": {
           "appName": {
@@ -35,6 +49,122 @@
         },
         "required": [
           "workspaceId"
+        ],
+        "type": "object"
+      },
+      "AuditActor": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AuditEntry": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "resourceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actor",
+          "action",
+          "resourceType",
+          "resourceId",
+          "workspaceId",
+          "ip",
+          "metadata"
+        ],
+        "type": "object"
+      },
+      "AuditList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
         ],
         "type": "object"
       },
@@ -90,7 +220,8 @@
               "unauthenticated",
               "unavailable",
               "validation_failed",
-              "workspace_limit"
+              "workspace_limit",
+              "workspace_url_reset"
             ],
             "type": "string"
           },
@@ -460,6 +591,109 @@
         ],
         "type": "object"
       },
+      "ResetURLRequest": {
+        "properties": {
+          "graceMinutes": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "ResetURLResponse": {
+        "properties": {
+          "previousGraceUntil": {
+            "type": "string"
+          },
+          "proxyUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proxyUrl",
+          "previousGraceUntil"
+        ],
+        "type": "object"
+      },
+      "Setup": {
+        "properties": {
+          "proxyUrl": {
+            "type": "string"
+          },
+          "snippets": {
+            "$ref": "#/components/schemas/SetupSnippets"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SetupStatus"
+          }
+        },
+        "required": [
+          "proxyUrl",
+          "snippets",
+          "status"
+        ],
+        "type": "object"
+      },
+      "SetupSnippets": {
+        "properties": {
+          "anthropicEnv": {
+            "type": "string"
+          },
+          "claudeCodeEnv": {
+            "type": "string"
+          },
+          "curl": {
+            "type": "string"
+          },
+          "openaiEnv": {
+            "type": "string"
+          },
+          "opencodeJson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "openaiEnv",
+          "anthropicEnv",
+          "opencodeJson",
+          "claudeCodeEnv",
+          "curl"
+        ],
+        "type": "object"
+      },
+      "SetupStatus": {
+        "properties": {
+          "callsToday": {
+            "type": "integer"
+          },
+          "firstCallAt": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastCallAt": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "firstCallAt",
+          "lastCallAt",
+          "callsToday"
+        ],
+        "type": "object"
+      },
       "SwitchWorkspaceResponse": {
         "properties": {
           "activeWorkspaceId": {
@@ -516,6 +750,19 @@
       },
       "Workspace": {
         "properties": {
+          "allowedClientCidrs": {
+            "oneOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string"
           },
@@ -529,10 +776,24 @@
             "type": "string"
           },
           "proxyUrl": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "publicId": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "settings": {
             "additionalProperties": true,
@@ -545,6 +806,7 @@
           "name",
           "isDefault",
           "proxyUrl",
+          "allowedClientCidrs",
           "settings",
           "createdAt"
         ],
@@ -579,6 +841,40 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/audit-log": {
+      "get": {
+        "operationId": "getApiAudit-log",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The audit log, newest first; filter by action and workspaceId, page with the opaque cursor; 422 for an unknown action",
+        "x-permission": "audit_log:read"
+      }
+    },
     "/api/auth/complete-signup": {
       "post": {
         "operationId": "postApiAuthComplete-signup",
@@ -1769,6 +2065,41 @@
         "x-workspace-param": "id"
       }
     },
+    "/api/workspaces/{id}/setup": {
+      "get": {
+        "operationId": "getApiWorkspacesIdSetup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Setup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The proxy URL, ready-made client snippets and the connection status of a workspace",
+        "x-permission": "workspace_url:read",
+        "x-workspace-param": "id"
+      }
+    },
     "/api/workspaces/{id}/switch": {
       "post": {
         "operationId": "postApiWorkspacesIdSwitch",
@@ -1801,6 +2132,124 @@
         ],
         "summary": "Make a workspace the caller's active one",
         "x-permission": "workspace:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/url/allowed-cidrs": {
+      "put": {
+        "operationId": "putApiWorkspacesIdUrlAllowed-cidrs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowedCIDRs"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllowedCIDRs"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set the source networks the proxy accepts for the workspace ([] means any); 422 for a bad CIDR",
+        "x-permission": "workspace_url:manage",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/url/reset": {
+      "post": {
+        "operationId": "postApiWorkspacesIdUrlReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetURLRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetURLResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Give the workspace a new proxy URL; the old one keeps working for graceMinutes (0-1440, default 10)",
+        "x-permission": "workspace_url:manage",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/url/retire-previous": {
+      "post": {
+        "operationId": "postApiWorkspacesIdUrlRetire-previous",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "End the grace window of every previous proxy URL now",
+        "x-permission": "workspace_url:manage",
         "x-workspace-param": "id"
       }
     },

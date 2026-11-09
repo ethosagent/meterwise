@@ -36,6 +36,7 @@ type Deps struct {
 	Tenancy         Tenancy
 	Authz           Authz           // the gateway's authorization (access.Authorizer)
 	Access          Access          // groups, group members and org defaults (access.Service)
+	Audit           AuditLog        // the audit log (audit.Sink)
 	Webhooks        WebhookVerifier // nil answers the Clerk webhook with not_available
 	Web             fs.FS           // built web app; nil serves a typed 404 at "/"
 	Tracer          trace.TracerProvider
@@ -55,8 +56,8 @@ type server struct {
 // recover, OTel; the principal middleware wraps each non-public route. It
 // fails when the handlers and contract.Routes disagree in either direction.
 func New(d Deps) (http.Handler, error) {
-	if d.Log == nil || d.DB == nil || d.Principals == nil || d.Tenancy == nil || d.Authz == nil || d.Access == nil {
-		return nil, errors.New("api: Log, DB, Principals, Tenancy, Authz and Access are required")
+	if d.Log == nil || d.DB == nil || d.Principals == nil || d.Tenancy == nil || d.Authz == nil || d.Access == nil || d.Audit == nil {
+		return nil, errors.New("api: Log, DB, Principals, Tenancy, Authz, Access and Audit are required")
 	}
 	if d.Tracer == nil {
 		d.Tracer = otel.GetTracerProvider()
@@ -68,6 +69,7 @@ func New(d Deps) (http.Handler, error) {
 	s.handle("POST", "/api/webhooks/clerk", s.clerkWebhook)
 	s.registerTenancy()
 	s.registerAccess()
+	s.registerWorkspaceURL()
 	for _, r := range contract.Routes() {
 		if !s.registered[r.Method+" "+r.Pattern] {
 			s.problems = append(s.problems, fmt.Errorf("api: route %s %s is in the contract table but has no handler", r.Method, r.Pattern))

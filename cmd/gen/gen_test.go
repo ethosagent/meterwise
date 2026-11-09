@@ -329,3 +329,30 @@ func TestTaxonomyTwinIsGeneratedFormattedAndChecked(t *testing.T) {
 		t.Fatalf("a hand edit of the taxonomy twin passed -check: %d %q", code, errs)
 	}
 }
+
+// `TRUNCATE ON <table>` (a trigger event, a REVOKE) must not read as a TRUNCATE of a table named
+// "on": a feature may guard its own table, and the same words on another feature's table are still
+// caught through the ON patterns and the plain TRUNCATE.
+func TestTruncateOnIsATriggerEventNotATable(t *testing.T) {
+	own := "-- feature: audit_log\n-- +goose Up\nCREATE TABLE audit_log (id int);\n" +
+		"CREATE TRIGGER audit_log_append_only BEFORE UPDATE OR DELETE OR TRUNCATE ON audit_log FOR EACH STATEMENT EXECUTE FUNCTION f();\n" +
+		"REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM PUBLIC;\n-- +goose Down\nDROP TABLE audit_log;\n"
+	root := t.TempDir()
+	writeMigration(t, root, "0001_audit_log.sql", own)
+	if code, _, errs := gen(t, root, "migrations"); code != 0 {
+		t.Fatalf("a feature guarding its own table was rejected: %s", errs)
+	}
+	for _, stmt := range []string{
+		"CREATE TRIGGER t BEFORE TRUNCATE ON orgs FOR EACH STATEMENT EXECUTE FUNCTION f();",
+		"REVOKE TRUNCATE ON orgs FROM PUBLIC;",
+		"TRUNCATE orgs;",
+		"TRUNCATE TABLE ONLY orgs;",
+	} {
+		root := t.TempDir()
+		writeMigration(t, root, "0001_orgs.sql", goodMigration("orgs"))
+		writeMigration(t, root, "0002_workspaces.sql", wsWith(stmt))
+		if code, _, errs := gen(t, root, "migrations"); code != 1 || !strings.Contains(errs, "touches table orgs") {
+			t.Errorf("%s not flagged: %d %q", stmt, code, errs)
+		}
+	}
+}

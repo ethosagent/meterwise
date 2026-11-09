@@ -79,16 +79,18 @@ type Me struct {
 	Preferences       Preferences `json:"preferences"`
 }
 
-// WorkspaceView is the Workspace API type: ProxyURL is
-// https://{proxyPublicHost}/w/{publicId}.
+// WorkspaceView is the Workspace API type. PublicID, ProxyURL (https://{proxyPublicHost}/w/{publicId})
+// and AllowedClientCidrs are the workspace's credential and its guard: all three are null when the
+// caller lacks workspace_url:read on the workspace, in every response that carries a Workspace.
 type WorkspaceView struct {
-	ID        string         `json:"id"`
-	PublicID  string         `json:"publicId"`
-	Name      string         `json:"name"`
-	IsDefault bool           `json:"isDefault"`
-	ProxyURL  string         `json:"proxyUrl"`
-	Settings  map[string]any `json:"settings"`
-	CreatedAt string         `json:"createdAt"`
+	ID                 string         `json:"id"`
+	PublicID           *string        `json:"publicId"`
+	Name               string         `json:"name"`
+	IsDefault          bool           `json:"isDefault"`
+	ProxyURL           *string        `json:"proxyUrl"`
+	AllowedClientCidrs *[]string      `json:"allowedClientCidrs"`
+	Settings           map[string]any `json:"settings"`
+	CreatedAt          string         `json:"createdAt"`
 }
 
 // WorkspaceList is the GET /api/workspaces response.
@@ -223,6 +225,75 @@ type ReplaceGroupMembersRequest struct {
 	UserIDs []string `json:"userIds"`
 }
 
+// SetupSnippets are the ready-to-paste client configurations, rendered on the server with the
+// workspace URL filled in. OpencodeJSON is valid JSON (an opencode provider block).
+type SetupSnippets struct {
+	OpenaiEnv     string `json:"openaiEnv"`
+	AnthropicEnv  string `json:"anthropicEnv"`
+	OpencodeJSON  string `json:"opencodeJson"`
+	ClaudeCodeEnv string `json:"claudeCodeEnv"`
+	Curl          string `json:"curl"`
+}
+
+// SetupStatus tells whether traffic has arrived. FirstCallAt is null and CallsToday 0 until the
+// ledger (Plan 05) records calls; LastCallAt reads workspaces.last_call_at.
+type SetupStatus struct {
+	FirstCallAt *string `json:"firstCallAt"`
+	LastCallAt  *string `json:"lastCallAt"`
+	CallsToday  int     `json:"callsToday"`
+}
+
+// Setup is the GET /api/workspaces/{id}/setup response.
+type Setup struct {
+	ProxyURL string        `json:"proxyUrl"`
+	Snippets SetupSnippets `json:"snippets"`
+	Status   SetupStatus   `json:"status"`
+}
+
+// ResetURLRequest is the POST /api/workspaces/{id}/url/reset body: how long the old URL keeps
+// working, in minutes (0 to 1440; default 10).
+type ResetURLRequest struct {
+	GraceMinutes *int `json:"graceMinutes,omitempty"`
+}
+
+// ResetURLResponse is the reset result: the new URL and when the previous one stops answering.
+type ResetURLResponse struct {
+	ProxyURL           string `json:"proxyUrl"`
+	PreviousGraceUntil string `json:"previousGraceUntil"`
+}
+
+// AllowedCIDRs is the PUT /api/workspaces/{id}/url/allowed-cidrs body and response: the source
+// networks the data plane accepts for the workspace ([] means any).
+type AllowedCIDRs struct {
+	CIDRs []string `json:"cidrs"`
+}
+
+// AuditActor is who did it, when the actor is a known user.
+type AuditActor struct {
+	UserID string `json:"userId"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+}
+
+// AuditEntry is one audit-log row as the API shows it.
+type AuditEntry struct {
+	ID           string         `json:"id"`
+	At           string         `json:"at"`
+	Actor        *AuditActor    `json:"actor"`
+	Action       AuditAction    `json:"action"`
+	ResourceType string         `json:"resourceType"`
+	ResourceID   *string        `json:"resourceId"`
+	WorkspaceID  *string        `json:"workspaceId"`
+	IP           *string        `json:"ip"`
+	Metadata     map[string]any `json:"metadata"`
+}
+
+// AuditList is the GET /api/audit-log response: newest first, NextCursor null on the last page.
+type AuditList struct {
+	Items      []AuditEntry `json:"items"`
+	NextCursor *string      `json:"nextCursor"`
+}
+
 // DTO is a named API type; the generators walk its fields by reflection.
 type DTO struct {
 	Name string
@@ -261,5 +332,14 @@ func DTOs() []DTO {
 		{"AttachWorkspaceRequest", reflect.TypeFor[AttachWorkspaceRequest]()},
 		{"AddGroupMemberRequest", reflect.TypeFor[AddGroupMemberRequest]()},
 		{"ReplaceGroupMembersRequest", reflect.TypeFor[ReplaceGroupMembersRequest]()},
+		{"SetupSnippets", reflect.TypeFor[SetupSnippets]()},
+		{"SetupStatus", reflect.TypeFor[SetupStatus]()},
+		{"Setup", reflect.TypeFor[Setup]()},
+		{"ResetURLRequest", reflect.TypeFor[ResetURLRequest]()},
+		{"ResetURLResponse", reflect.TypeFor[ResetURLResponse]()},
+		{"AllowedCIDRs", reflect.TypeFor[AllowedCIDRs]()},
+		{"AuditActor", reflect.TypeFor[AuditActor]()},
+		{"AuditEntry", reflect.TypeFor[AuditEntry]()},
+		{"AuditList", reflect.TypeFor[AuditList]()},
 	}
 }
