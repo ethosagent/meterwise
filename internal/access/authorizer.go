@@ -12,9 +12,11 @@ type GrantRepository interface {
 	Grants(ctx context.Context, orgID, userID string) ([]Grant, error)
 }
 
-// WorkspaceLookup finds a workspace of an org; any other id is contract.CodeNotFound.
+// WorkspaceLookup finds a workspace by id whatever its org; an unknown id is contract.CodeNotFound.
+// The cached contract.WorkspaceDirectory implements it (it is busted on update and delete), so the
+// gateway does not read the database for the workspace on every request.
 type WorkspaceLookup interface {
-	Workspace(ctx context.Context, orgID, id string) (contract.Workspace, error)
+	ByID(ctx context.Context, id string) (contract.Workspace, error)
 }
 
 // Authorizer is what the API gateway calls: it ties the pure evaluator to the grant repository and
@@ -25,8 +27,8 @@ type Authorizer struct {
 	Eval       PermissionEvaluator
 }
 
-// NewAuthorizer builds the Authorizer over a grant repository and a workspace lookup (the store
-// implements both; access imports no I/O package, so the generators can use the taxonomy).
+// NewAuthorizer builds the Authorizer over a grant repository and a workspace lookup (the store and the
+// tenancy directory; access imports no I/O package, so the generators can use the taxonomy).
 func NewAuthorizer(repo GrantRepository, ws WorkspaceLookup) *Authorizer {
 	return &Authorizer{Repo: repo, Workspaces: ws}
 }
@@ -48,8 +50,12 @@ func subjectOf(p contract.Principal) Subject { return Subject{UserID: p.UserID, 
 // error is a failure of ours (the database) and must not be read as a denial.
 func (a *Authorizer) Authorize(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceID string) (Result, error) {
 	if workspaceID != "" {
-		if _, err := a.Workspaces.Workspace(ctx, p.OrgID, workspaceID); err != nil {
+		ws, err := a.Workspaces.ByID(ctx, workspaceID)
+		if err != nil {
 			return Result{}, err
+		}
+		if ws.OrgID != p.OrgID {
+			return Result{}, contract.NewError(contract.CodeNotFound, "not found")
 		}
 	}
 	req := Request{Subject: subjectOf(p), Permission: perm, WorkspaceID: workspaceID}
