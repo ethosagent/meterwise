@@ -35,7 +35,7 @@ sqlc:
 	bash -c '. scripts/lib.sh && gotool sqlc generate'
 
 web:
-	cd web && npm ci --no-audit --no-fund && npm run build
+	cd web && npm ci --no-audit --no-fund && npm run build:release
 
 gen:
 	go run ./cmd/gen

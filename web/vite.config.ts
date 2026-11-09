@@ -7,7 +7,27 @@ const backend = process.env.METERWISE_API_URL ?? "http://127.0.0.1:8081";
 export default defineConfig({
   plugins: [react()],
   server: { proxy: { "/api": { target: backend, changeOrigin: true } } },
-  build: { outDir: "dist", sourcemap: true },
+  build: {
+    outDir: "dist",
+    // Hidden: maps are emitted for error reporting but not linked from the bundles.
+    sourcemap: "hidden",
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (
+            /node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(id)
+          ) {
+            return "vendor-react";
+          }
+          if (/node_modules\/(@tanstack|zustand)\//.test(id)) return "vendor-query";
+          if (/node_modules\/(antd|@ant-design|@rc-component|rc-[^/]+)\//.test(id))
+            return "vendor-antd";
+          return undefined;
+        },
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["src/test/setup.ts"],

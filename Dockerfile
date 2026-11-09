@@ -5,8 +5,10 @@ FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
+# The publishable key is public (it ships in the bundle) but required: build:release fails without it.
+ARG VITE_CLERK_PUBLISHABLE_KEY
 COPY web/ ./
-RUN npm run build
+RUN npm run build:release
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 ARG TARGETOS TARGETARCH VERSION=dev COMMIT=unknown
