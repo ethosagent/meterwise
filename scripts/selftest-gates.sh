@@ -364,8 +364,10 @@ m_gendel() { rm internal/api/openapi.json; }
 m_genschema() { mig 0001_orgs.sql "$GOOD"; }
 red generated "hand-edited TS twin" "stale or was edited by hand" m_genedit
 red generated "route added, twins not regenerated" "stale or was edited by hand" m_genroute
-m_gentax() { gofile internal/contract/rbac_taxonomy.go <<<'package contract'; }
-red generated "taxonomy source under another name is not a SKIP" "unknown target" m_gentax
+m_gentax() { echo 'export const sneaky = 1;' >>web/src/access/taxonomy.ts; }
+red generated "hand-edited taxonomy twin is stale" "stale" m_gentax
+m_gentaxdel() { rm internal/access/taxonomy.go; }
+red generated "deleted taxonomy source fails closed" "undefined:" m_gentaxdel
 red generated "openapi.json deleted" "is missing" m_gendel
 red generated "migration added, docs/schema.md not regenerated" "docs/schema.md is stale" m_genschema
 green generated "clean tree" "all gates passed" nop
