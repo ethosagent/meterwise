@@ -111,7 +111,7 @@ export function WorkspacePage() {
       <PageHead page={pageByKey("workspace")} />
       {active.state === "ready" ? (
         <>
-          <General key={active.workspace.id} ws={active.workspace} canManage={canRename} />
+          <General ws={active.workspace} canManage={canRename} />
           {canDelete ? <DangerZone ws={active.workspace} /> : null}
         </>
       ) : active.state === "missing" ? (

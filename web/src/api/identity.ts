@@ -15,6 +15,7 @@ export const IDENTITY_ERRORS = {
 
 export const meKey = ["me"] as const;
 export const workspacesKey = ["workspaces"] as const;
+const WORKSPACES_STALE_MS = 10_000;
 export const invitationsKey = ["invitations"] as const;
 
 /** Every query whose data depends on the active workspace is keyed under this root, so a switch can invalidate them all. */
@@ -56,6 +57,8 @@ export function useWorkspaces() {
   return useQuery({
     queryKey: workspacesKey,
     queryFn: async () => (await apiFetch<{ items: Workspace[] }>("/api/workspaces")).items,
+    // The shell remounts the routed page on a workspace switch; that remount is not a reason to refetch the list.
+    staleTime: WORKSPACES_STALE_MS,
   });
 }
 
