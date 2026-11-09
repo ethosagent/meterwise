@@ -1,5 +1,5 @@
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Segmented } from "antd";
+import { App, Segmented } from "antd";
 import { useSavePreferences } from "../api/preferences";
 import type { Theme } from "../contract/generated";
 import { useTheme } from "./useTheme";
@@ -15,6 +15,7 @@ export function ThemeToggle() {
   const mode = useTheme((s) => s.mode);
   const setMode = useTheme((s) => s.setMode);
   const save = useSavePreferences();
+  const { message } = App.useApp();
 
   return (
     <Segmented<Theme>
@@ -31,7 +32,13 @@ export function ThemeToggle() {
       }))}
       onChange={(next) => {
         setMode(next);
-        save.mutate({ theme: next });
+        save.mutate(
+          { theme: next },
+          {
+            onError: () =>
+              message.error("Could not save your theme. It applies on this device only."),
+          },
+        );
       }}
     />
   );
