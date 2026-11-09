@@ -1,5 +1,5 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { App, Button, Card, Popconfirm, Table, Tag } from "antd";
+import { App, Button, Card, Flex, Popconfirm, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
 import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
 import type { Invitation } from "../../api/identity-types";
@@ -14,6 +14,7 @@ const STATUS_COLOR: Record<Invitation["status"], string> = {
 
 /** Admin-only table of invitations with Resend and Revoke. The page only mounts it for admins. */
 export function InvitationsTable() {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const list = useInvitations(true);
   const resend = useResendInvitation();
@@ -21,14 +22,22 @@ export function InvitationsTable() {
   const [inviting, setInviting] = useState(false);
 
   return (
-    <Card
-      title="Invitations"
-      extra={
+    <Card>
+      {/* Not Card's title/extra: they truncate the title instead of wrapping on a narrow screen. */}
+      <Flex
+        wrap
+        justify="space-between"
+        align="center"
+        gap={token.marginSM}
+        style={{ marginBottom: token.marginMD }}
+      >
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          Invitations
+        </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setInviting(true)}>
           Invite member
         </Button>
-      }
-    >
+      </Flex>
       <InviteModal open={inviting} onClose={() => setInviting(false)} />
       <Table<Invitation>
         rowKey="id"

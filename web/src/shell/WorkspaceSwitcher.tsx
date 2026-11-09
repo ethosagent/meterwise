@@ -1,9 +1,9 @@
 import { AppstoreOutlined, DownOutlined } from "@ant-design/icons";
-import { App, Dropdown, Tooltip, Typography, theme } from "antd";
+import { App, Menu, Popover, Tooltip, Typography, theme } from "antd";
 import { useState } from "react";
 import { useActiveWorkspace, useMe, useSwitchWorkspace, useWorkspaces } from "../api/identity";
 import { hasPermission } from "../auth/permissions";
-import { CreateWorkspaceDialog } from "../features/workspace/CreateWorkspaceDialog";
+import { useUi } from "../state/ui";
 import { SIDER_WIDTH } from "../theme/theme";
 
 const CREATE_KEY = "__create";
@@ -16,7 +16,8 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const workspaces = useWorkspaces().data ?? [];
   const active = useActiveWorkspace();
   const switchTo = useSwitchWorkspace();
-  const [creating, setCreating] = useState(false);
+  const openCreate = useUi((s) => s.setCreateWorkspaceOpen);
+  const [open, setOpen] = useState(false);
   const name = active?.name ?? "";
   const canCreate = hasPermission(me, "workspaces.manage");
 
@@ -62,28 +63,42 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div style={{ padding: `0 ${token.paddingSM}px ${token.paddingSM}px` }}>
-      <CreateWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
-      <Dropdown
-        trigger={["click"]}
-        // The popup is as wide as its trigger; on the collapsed rail that is a few pixels and clips the names.
-        styles={{ root: { minWidth: SIDER_WIDTH - 2 * token.paddingSM } }}
-        menu={{
-          selectable: true,
-          // The Sider tells every menu below it that it is collapsed, which would reduce these items to initials.
-          inlineCollapsed: false,
-          selectedKeys: active ? [active.id] : [],
-          items: [
-            ...workspaces.map((w) => ({ key: w.id, label: w.name })),
-            ...(canCreate
-              ? [{ type: "divider" as const }, { key: CREATE_KEY, label: "＋ New workspace" }]
-              : []),
-          ],
-          onClick: ({ key }) => {
-            if (key === CREATE_KEY) return setCreating(true);
-            if (key === active?.id) return;
-            switchTo.mutate(key, { onError: () => message.error("Could not switch workspace.") });
-          },
+      {/* A Popover, not a Dropdown: Dropdown forces every Menu inside it to vertical, and a vertical Menu
+          in the Sider reduces its items to initials (the Sider's collapsed context). A Popover lets an inline
+          Menu opt out with inlineCollapsed=false. antd has no public way to reset the Sider context. */}
+      <Popover
+        trigger="click"
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottomLeft"
+        arrow={false}
+        styles={{
+          root: { minWidth: SIDER_WIDTH - 2 * token.paddingSM },
+          container: { padding: token.paddingXXS },
         }}
+        content={
+          <Menu
+            mode="inline"
+            inlineCollapsed={false}
+            selectable
+            selectedKeys={active ? [active.id] : []}
+            items={[
+              ...workspaces.map((w) => ({ key: w.id, label: w.name })),
+              ...(canCreate
+                ? [{ type: "divider" as const }, { key: CREATE_KEY, label: "＋ New workspace" }]
+                : []),
+            ]}
+            onClick={({ key }) => {
+              setOpen(false);
+              if (key === CREATE_KEY) return openCreate(true);
+              if (key === active?.id) return;
+              switchTo.mutate(key, {
+                onError: () => message.error("Could not switch workspace."),
+              });
+            }}
+            style={{ background: "transparent", borderInlineEnd: 0 }}
+          />
+        }
       >
         {collapsed ? (
           <Tooltip title={name} placement="right">
@@ -92,7 +107,7 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
         ) : (
           trigger
         )}
-      </Dropdown>
+      </Popover>
     </div>
   );
 }

@@ -31,6 +31,7 @@ function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
   return (
     <Card title="General">
       <Form
+        name="workspaceGeneral"
         form={form}
         layout="vertical"
         requiredMark={false}

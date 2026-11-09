@@ -60,6 +60,7 @@ export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClos
         </>
       ) : (
         <Form
+          name="createWorkspace"
           form={form}
           layout="vertical"
           requiredMark={false}
@@ -69,7 +70,7 @@ export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClos
             <Alert
               type="error"
               showIcon
-              message={createErrorText(create.error)}
+              title={createErrorText(create.error)}
               style={{ marginBottom: token.marginMD }}
             />
           ) : null}

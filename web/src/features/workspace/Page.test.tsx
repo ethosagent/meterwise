@@ -93,6 +93,17 @@ describe("CreateWorkspaceDialog (from the switcher)", () => {
     expect(api.callsTo("POST", "/api/workspaces")[0]?.body).toEqual({ name: "Prod" });
   });
 
+  it("gives the dialog its own Name field even while the settings page has one", async () => {
+    mockApi();
+    const { AppRoutes } = await import("../../routes");
+    renderAt(<AppRoutes />, "/settings/workspace");
+    await screen.findByLabelText("Proxy URL");
+    const dialog = await openDialog();
+    const dialogName = dialog.getByLabelText("Name");
+    expect(dialogName).toHaveValue("");
+    expect(screen.getAllByLabelText("Name")).toHaveLength(2);
+  });
+
   it("shows the limit error and creates nothing when the workspace limit is hit", async () => {
     mockApi({ maxWorkspaces: TEST_WORKSPACES.length });
     const { Shell } = await import("../../shell/Shell");

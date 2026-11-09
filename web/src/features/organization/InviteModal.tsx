@@ -43,6 +43,7 @@ export function InviteModal({ open, onClose }: { open: boolean; onClose: () => v
       }
     >
       <Form
+        name="invite"
         form={form}
         layout="vertical"
         requiredMark={false}
@@ -52,7 +53,7 @@ export function InviteModal({ open, onClose }: { open: boolean; onClose: () => v
         }
       >
         {invite.isError ? (
-          <Alert type="error" showIcon message={inviteErrorText(invite.error)} />
+          <Alert type="error" showIcon title={inviteErrorText(invite.error)} />
         ) : null}
         <Form.Item
           label="Email"
