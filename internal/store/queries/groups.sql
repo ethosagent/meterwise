@@ -40,7 +40,15 @@ WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid;
 -- name: DeleteGroup :execrows
 DELETE FROM groups WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid;
 
--- name: AttachGroupWorkspace :exec
+-- name: LockGroup :one
+-- Serialises attach, detach and replace-grants on one group, so a grant can never be written
+-- for a workspace that a concurrent detach has just removed.
+SELECT id::text AS id FROM groups
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
+FOR UPDATE;
+
+-- name: AttachGroupWorkspace :execrows
+-- Rows affected is 1 only when the link is new: an attached group is not seeded again.
 INSERT INTO group_workspaces (group_id, workspace_id, org_id)
 VALUES (sqlc.arg(group_id)::text::uuid, sqlc.arg(workspace_id)::text::uuid, sqlc.arg(org_id)::text::uuid)
 ON CONFLICT DO NOTHING;

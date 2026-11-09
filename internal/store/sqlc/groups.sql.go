@@ -28,7 +28,7 @@ func (q *Queries) AddGroupUser(ctx context.Context, arg AddGroupUserParams) erro
 	return err
 }
 
-const attachGroupWorkspace = `-- name: AttachGroupWorkspace :exec
+const attachGroupWorkspace = `-- name: AttachGroupWorkspace :execrows
 INSERT INTO group_workspaces (group_id, workspace_id, org_id)
 VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid)
 ON CONFLICT DO NOTHING
@@ -40,9 +40,13 @@ type AttachGroupWorkspaceParams struct {
 	OrgID       string
 }
 
-func (q *Queries) AttachGroupWorkspace(ctx context.Context, arg AttachGroupWorkspaceParams) error {
-	_, err := q.db.Exec(ctx, attachGroupWorkspace, arg.GroupID, arg.WorkspaceID, arg.OrgID)
-	return err
+// Rows affected is 1 only when the link is new: an attached group is not seeded again.
+func (q *Queries) AttachGroupWorkspace(ctx context.Context, arg AttachGroupWorkspaceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, attachGroupWorkspace, arg.GroupID, arg.WorkspaceID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteGroup = `-- name: DeleteGroup :execrows
@@ -415,6 +419,26 @@ func (q *Queries) ListGroups(ctx context.Context, orgID string) ([]ListGroupsRow
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockGroup = `-- name: LockGroup :one
+SELECT id::text AS id FROM groups
+WHERE org_id = $1::text::uuid AND id = $2::text::uuid
+FOR UPDATE
+`
+
+type LockGroupParams struct {
+	OrgID string
+	ID    string
+}
+
+// Serialises attach, detach and replace-grants on one group, so a grant can never be written
+// for a workspace that a concurrent detach has just removed.
+func (q *Queries) LockGroup(ctx context.Context, arg LockGroupParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockGroup, arg.OrgID, arg.ID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const removeGroupUser = `-- name: RemoveGroupUser :execrows

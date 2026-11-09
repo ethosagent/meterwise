@@ -104,21 +104,24 @@ func (s *Store) AttachGroupWorkspace(ctx context.Context, orgID, groupID, worksp
 	}
 	var out contract.Group
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
-		if _, err := group(ctx, q, orgID, groupID); err != nil {
+		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: groupID}); err != nil {
 			return err
 		}
 		if _, err := q.GetWorkspace(ctx, sqlc.GetWorkspaceParams{OrgID: orgID, ID: workspaceID}); err != nil {
 			return err
 		}
-		if err := q.AttachGroupWorkspace(ctx, sqlc.AttachGroupWorkspaceParams{GroupID: groupID, WorkspaceID: workspaceID, OrgID: orgID}); err != nil {
+		linked, err := q.AttachGroupWorkspace(ctx, sqlc.AttachGroupWorkspaceParams{GroupID: groupID, WorkspaceID: workspaceID, OrgID: orgID})
+		if err != nil {
 			return err
+		}
+		if linked == 0 {
+			seed = nil // already attached: nothing changes, whatever an admin removed stays removed
 		}
 		for _, g := range seed {
 			if err := q.GrantToGroup(ctx, sqlc.GrantToGroupParams{GroupID: groupID, OrgID: orgID, WorkspaceID: workspaceID, ResourceType: g.ResourceType, Action: g.Action}); err != nil {
 				return err
 			}
 		}
-		var err error
 		out, err = group(ctx, q, orgID, groupID)
 		return err
 	})
@@ -132,6 +135,9 @@ func (s *Store) DetachGroupWorkspace(ctx context.Context, orgID, groupID, worksp
 		return errNotFound
 	}
 	return queryErr(s.inTx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: groupID}); err != nil {
+			return err
+		}
 		n, err := q.DetachGroupWorkspace(ctx, sqlc.DetachGroupWorkspaceParams{OrgID: orgID, GroupID: groupID, WorkspaceID: workspaceID})
 		if err != nil {
 			return err
@@ -171,6 +177,9 @@ func (s *Store) GroupGrants(ctx context.Context, orgID, groupID string) ([]contr
 // the group is not attached to is a validation error (422); the taxonomy was checked by the caller.
 func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, grants []contract.Grant) ([]contract.Grant, error) {
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
+		if _, err := q.LockGroup(ctx, sqlc.LockGroupParams{OrgID: orgID, ID: groupID}); err != nil {
+			return err
+		}
 		g, err := group(ctx, q, orgID, groupID)
 		if err != nil {
 			return err
