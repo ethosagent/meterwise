@@ -14,12 +14,21 @@ func TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }
 
 func TestCheckLoopback(t *testing.T) {
 	tests := map[string]bool{
-		"postgres://u:p@127.0.0.1:54329/db": true,
-		"postgres://u:p@localhost:5432/db":  true,
-		"postgres://u:p@[::1]:5432/db":      true,
-		"postgres://u:p@db.example.com/db":  false,
-		"postgres://u:p@10.1.2.3:5432/db":   false,
-		"not a url":                         false,
+		"postgres://u:p@127.0.0.1:54329/db":                       true,
+		"postgres://u:p@localhost:5432/db":                        true,
+		"postgres://u:p@[::1]:5432/db":                            true,
+		"postgres://u:p@db.example.com/db":                        false,
+		"postgres://u:p@10.1.2.3:5432/db":                         false,
+		"not a url":                                               false,
+		"postgres://u:p@127.0.0.1/db?sslmode=disable":             true,
+		"postgres://u:p@127.0.0.1/db?host=db.example.com":         false,
+		"postgres://u:p@127.0.0.1/db?HOSTADDR=93.184.216.34":      false,
+		"postgres://u:p@127.0.0.1/db?h%6Fst=db.example.com":       false,
+		"postgres://u:p@127.0.0.1/db?dbname=real":                 false,
+		"postgres://u:p@127.0.0.1/db?service=prod":                false,
+		"postgres://u:p@127.0.0.1/db?sslmode=disable&host=remote": false,
+		"postgres://u:p@127.0.0.1/db?%zz=1":                       false,
+		"postgres://127.0.0.1:1,db.example.com:2/db":              false,
 	}
 	for dsn, ok := range tests {
 		if err := pgtest.CheckLoopback(dsn); (err == nil) != ok {

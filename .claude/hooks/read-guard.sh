@@ -24,7 +24,9 @@ reader_ok() {
     *secret* | *credential* | *token* | *passwd* | *password* | *apikey* | *api_key* | *auth*.json) return 1 ;;
   esac
   case "$f" in */.ssh/* | */.aws/* | */.gnupg/* | */.kube/* | */.docker/*) return 1 ;; esac
-  if head -c 200000 "$f" | grep -qaiE 'BEGIN [A-Z ]*PRIVATE KEY|["'"'"']?(api[_-]?key|secret|passw(or)?d|access[_-]?token|auth[_-]?token|client[_-]?secret)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/+_.-]{8,}|sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|xox[abpr]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ'; then return 1; fi
+  # a process substitution, not a pipe: `head | grep -q` under pipefail reports SIGPIPE (141) on large
+  # files and would let a match slip through as "no secret"
+  if grep -qaiE 'BEGIN [A-Z ]*PRIVATE KEY|["'"'"']?(api[_-]?key|secret|passw(or)?d|access[_-]?token|auth[_-]?token|client[_-]?secret)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9/+_.-]{8,}|sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|xox[abpr]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.eyJ' < <(head -c 200000 "$f"); then return 1; fi
   return 0
 }
 

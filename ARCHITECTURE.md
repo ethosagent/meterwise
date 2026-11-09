@@ -52,7 +52,8 @@ internal/archtest             standalone: standard library only, imported by nob
 | H5 | `web/` imports `web/src/**` and the npm allowlist only (any JS/TS extension, template-literal imports included; `node:` only in tests); `package.json` declares nothing else. |
 | H6 | A third-party Go import needs an allowlist entry per layer in `law_test.go` and an ADR (0007). |
 | H7 | No `//go:build`, `// +build` or GOOS/GOARCH file suffix: a constraint can hide code from every gate. Allowlist per file with an ADR. |
-| H8 | Every package with tests has a `TestMain` calling `nonet.Run`: no test reaches the external network. |
+| H8 | Every package with tests has a `TestMain` that really calls `nonet.Run` (checked on the AST, a comment does not count): no test reaches the external network by name. |
+| H9 | One module plus `tools/`: a nested `go.mod` or any `go.work` hides packages from every gate. |
 
 The arch gate runs `go list` with `-mod=readonly`: it never downloads a module or rewrites `go.mod`.
 

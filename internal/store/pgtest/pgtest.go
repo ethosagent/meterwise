@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,20 @@ func CheckLoopback(dsn string) error {
 	u, err := url.Parse(dsn)
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("%s is not a postgres URL with a host", EnvDSN)
+	}
+	if strings.Contains(u.Host, ",") {
+		return fmt.Errorf("%s names several hosts; only one loopback host is allowed", EnvDSN)
+	}
+	// libpq and pgx let the query string override the host, database or service
+	// (also percent-encoded: ?h%6Fst=...), so only sslmode may appear there.
+	q, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return fmt.Errorf("%s has an unparsable query string: %w", EnvDSN, err)
+	}
+	for k := range q {
+		if strings.ToLower(k) != "sslmode" {
+			return fmt.Errorf("%s query parameter %q is not allowed (only sslmode)", EnvDSN, k)
+		}
 	}
 	if !nonet.Allowed(net.JoinHostPort(u.Hostname(), "0")) {
 		return fmt.Errorf("%s host %q is not loopback; tests never touch external databases", EnvDSN, u.Hostname())

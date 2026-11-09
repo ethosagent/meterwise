@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"reflect"
@@ -99,6 +100,30 @@ func TestMoneyRoundTrip(t *testing.T) {
 	for _, bad := range []string{"", "x", "1.1234567", "1e3", ".5", "--1", "1.-2"} {
 		if _, err := contract.ParseMicroUSD(bad); err == nil {
 			t.Errorf("Parse(%q) accepted", bad)
+		}
+	}
+}
+
+func TestMoneyExtremes(t *testing.T) {
+	tests := []struct {
+		m contract.MicroUSD
+		s string
+	}{
+		{contract.MicroUSD(math.MinInt64), "-9223372036854.775808"},
+		{contract.MicroUSD(math.MaxInt64), "9223372036854.775807"},
+		{contract.MicroUSD(math.MinInt64 + 1), "-9223372036854.775807"},
+	}
+	for _, tc := range tests {
+		if got := tc.m.Decimal(); got != tc.s {
+			t.Errorf("Decimal(%d) = %q, want %q", int64(tc.m), got, tc.s)
+		}
+		if back, err := contract.ParseMicroUSD(tc.s); err != nil || back != tc.m {
+			t.Errorf("Parse(%q) = %d, %v", tc.s, int64(back), err)
+		}
+	}
+	for _, bad := range []string{"9223372036854.775808", "-9223372036854.775809", "9223372036855", "99999999999999999999"} {
+		if _, err := contract.ParseMicroUSD(bad); err == nil {
+			t.Errorf("Parse(%q) accepted an out-of-range amount", bad)
 		}
 	}
 }

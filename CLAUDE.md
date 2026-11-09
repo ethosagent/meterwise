@@ -48,7 +48,7 @@ failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when 
 **H1** never `tollgate/internal/**`. **H2** lower never imports higher. **H3** `history`/`monitors`/`savings` are pure.
 **H4** only `ledger`/`audit` write `calls`, `sessions`, `monitor_events`, `audit_log`. **H5** `web/` imports `web/src/**` + npm allowlist.
 **H6** a third-party Go import needs an allowlist entry + ADR. **H7** no build constraints or GOOS/GOARCH file suffixes.
-**H8** every package with tests has a `TestMain` calling `nonet.Run`. Lint bans `http.DefaultClient`, `log.Print*`, `fmt.Print*`, `os.Getenv` outside `cmd/`.
+**H8** every package with tests has a `TestMain` calling `nonet.Run`. **H9** no nested `go.mod` (except `tools/`) or `go.work`. Lint bans `http.DefaultClient`, `log.Print*`, `fmt.Print*`, `os.Getenv` outside `cmd/`.
 
 ## Non-negotiables
 
