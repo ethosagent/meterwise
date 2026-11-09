@@ -15,7 +15,6 @@ import { useEffect } from "react";
 import { useActiveWorkspace, useDeleteWorkspace, useRenameWorkspace } from "../../api/identity";
 import { usePermission } from "../../auth/usePermission";
 import type { Workspace } from "../../contract/generated";
-import { NoWorkspaceAccess } from "../../shell/NoWorkspaceAccess";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { ProxyUrl } from "./ProxyUrl";
@@ -123,8 +122,6 @@ export function WorkspacePage() {
           description="It may have been deleted in another session. Nothing is shown here rather than the wrong workspace."
           action={<Button onClick={active.retry}>Try again</Button>}
         />
-      ) : active.state === "none" ? (
-        <NoWorkspaceAccess />
       ) : (
         <Skeleton active />
       )}
