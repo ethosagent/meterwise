@@ -202,9 +202,10 @@ describe("Organization defaults tab", () => {
     await waitFor(() =>
       expect(api.callsTo("PUT", "/api/organization/permissions")).toHaveLength(1),
     );
-    const grants = (
-      api.callsTo("PUT", "/api/organization/permissions")[0]?.body as { grants: unknown[] }
-    ).grants;
+    const sent = api.callsTo("PUT", "/api/organization/permissions")[0]?.body as
+      | { grants: unknown[] }
+      | undefined;
+    const grants = sent?.grants ?? [];
     expect(grants).toHaveLength(5); // 5 seeded reads, minus session, plus member:read
     expect(grants).toContainEqual({ workspaceId: null, resourceType: "member", action: "read" });
     expect(grants).not.toContainEqual({
