@@ -37,6 +37,8 @@ func (s *Store) AppendAudit(ctx context.Context, e contract.AuditEvent) error {
 	}))
 }
 
+// nonNilMap is the one nil-to-{} normalisation: an audit row's metadata, a workspace's settings and
+// every JSON object read back from the database go through it.
 func nonNilMap(m map[string]any) map[string]any {
 	if m == nil {
 		return map[string]any{}
@@ -61,9 +63,7 @@ func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQue
 	if err != nil {
 		return contract.AuditPage{}, err
 	}
-	rows, err := s.q.ListAudit(ctx, sqlc.ListAuditParams{
-		OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, CursorID: id, CursorAt: pgts(at), MaxRows: int32(limit + 1),
-	})
+	rows, err := s.auditRows(ctx, orgID, q, limit+1, at, id)
 	if err != nil {
 		return contract.AuditPage{}, queryErr(err)
 	}
@@ -81,6 +81,27 @@ func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQue
 		})
 	}
 	return page, nil
+}
+
+// auditRows runs the first-page query, or the keyset query when the caller holds a cursor (id > 0),
+// so the planner never sees a "cursor_id = 0 OR ..." predicate.
+func (s *Store) auditRows(ctx context.Context, orgID string, q contract.AuditQuery, maxRows int, at time.Time, id int64) ([]sqlc.ListAuditAfterRow, error) {
+	if id == 0 {
+		first, err := s.q.ListAuditFirst(ctx, sqlc.ListAuditFirstParams{
+			OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, MaxRows: int32(maxRows),
+		})
+		if err != nil {
+			return nil, err
+		}
+		rows := make([]sqlc.ListAuditAfterRow, len(first))
+		for i, r := range first {
+			rows[i] = sqlc.ListAuditAfterRow(r)
+		}
+		return rows, nil
+	}
+	return s.q.ListAuditAfter(ctx, sqlc.ListAuditAfterParams{
+		OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, CursorID: id, CursorAt: pgts(at), MaxRows: int32(maxRows),
+	})
 }
 
 // The cursor is "<unix micro>.<id>" in URL-safe base64: opaque to clients, exact for Postgres's

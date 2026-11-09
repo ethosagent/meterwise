@@ -37,7 +37,7 @@ func (q *Queries) CallStatus(ctx context.Context, arg CallStatusParams) (CallSta
 
 const getSession = `-- name: GetSession :one
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
-       (cost_usd * 1000000)::bigint AS cost_micro, (saved_usd * 1000000)::bigint AS saved_micro,
+       COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
        (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
 FROM sessions
 WHERE workspace_id = $1::text::uuid AND id = $2::text
@@ -59,6 +59,7 @@ type GetSessionRow struct {
 	InputTokens      int64
 	OutputTokens     int64
 	CostMicro        int64
+	HasCost          bool
 	SavedMicro       int64
 	LikelySavedMicro int64
 	Outcome          string
@@ -79,6 +80,7 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSess
 		&i.InputTokens,
 		&i.OutputTokens,
 		&i.CostMicro,
+		&i.HasCost,
 		&i.SavedMicro,
 		&i.LikelySavedMicro,
 		&i.Outcome,
@@ -89,7 +91,7 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSess
 
 const listSessionCalls = `-- name: ListSessionCalls :many
 SELECT id, call_index, started_at, provider, model, wire, stream, status, finish, input_tokens, output_tokens, cached_tokens,
-       reasoning_tokens, (cost_usd * 1000000)::bigint AS cost_micro, ttfb_ms, duration_ms, tool_calls, blocked, notes_injected
+       reasoning_tokens, COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, ttfb_ms, duration_ms, tool_calls, blocked, notes_injected
 FROM calls
 WHERE workspace_id = $1::text::uuid AND session_id = $2::text
 ORDER BY call_index, started_at, id
@@ -117,6 +119,7 @@ type ListSessionCallsRow struct {
 	CachedTokens    int64
 	ReasoningTokens int64
 	CostMicro       int64
+	HasCost         bool
 	TtfbMs          int32
 	DurationMs      int32
 	ToolCalls       []byte
@@ -148,6 +151,7 @@ func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsPara
 			&i.CachedTokens,
 			&i.ReasoningTokens,
 			&i.CostMicro,
+			&i.HasCost,
 			&i.TtfbMs,
 			&i.DurationMs,
 			&i.ToolCalls,
@@ -166,7 +170,7 @@ func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsPara
 
 const listSessionsAfter = `-- name: ListSessionsAfter :many
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
-       (cost_usd * 1000000)::bigint AS cost_micro, (saved_usd * 1000000)::bigint AS saved_micro,
+       COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
        (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
 FROM sessions
 WHERE workspace_id = $1::text::uuid
@@ -196,6 +200,7 @@ type ListSessionsAfterRow struct {
 	InputTokens      int64
 	OutputTokens     int64
 	CostMicro        int64
+	HasCost          bool
 	SavedMicro       int64
 	LikelySavedMicro int64
 	Outcome          string
@@ -230,6 +235,7 @@ func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterPa
 			&i.InputTokens,
 			&i.OutputTokens,
 			&i.CostMicro,
+			&i.HasCost,
 			&i.SavedMicro,
 			&i.LikelySavedMicro,
 			&i.Outcome,
@@ -247,7 +253,7 @@ func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterPa
 
 const listSessionsFirst = `-- name: ListSessionsFirst :many
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
-       (cost_usd * 1000000)::bigint AS cost_micro, (saved_usd * 1000000)::bigint AS saved_micro,
+       COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
        (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
 FROM sessions
 WHERE workspace_id = $1::text::uuid
@@ -274,6 +280,7 @@ type ListSessionsFirstRow struct {
 	InputTokens      int64
 	OutputTokens     int64
 	CostMicro        int64
+	HasCost          bool
 	SavedMicro       int64
 	LikelySavedMicro int64
 	Outcome          string
@@ -306,6 +313,7 @@ func (q *Queries) ListSessionsFirst(ctx context.Context, arg ListSessionsFirstPa
 			&i.InputTokens,
 			&i.OutputTokens,
 			&i.CostMicro,
+			&i.HasCost,
 			&i.SavedMicro,
 			&i.LikelySavedMicro,
 			&i.Outcome,

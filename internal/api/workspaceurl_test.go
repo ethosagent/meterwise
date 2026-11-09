@@ -164,7 +164,7 @@ func TestAuditLogListsFiltersPagesAndIsAdminOnly(t *testing.T) {
 	if len(p2.Items) != 1 || p2.NextCursor != nil || p2.Items[0].ID == p1.Items[2].ID {
 		t.Fatalf("page 2 = %+v", p2)
 	}
-	for _, q := range []string{"action=workspace.explode", "limit=0", "limit=abc", "limit=201", "cursor=not-a-cursor", "workspaceId=nope"} {
+	for _, q := range []string{"action=workspace.explode", "limit=-1", "limit=abc", "limit=201", "cursor=not-a-cursor", "workspaceId=nope"} {
 		code, b := s.call(t, "GET", "/api/audit-log?"+q, admin.tok, "")
 		wantErr(t, code, b, 422, contract.CodeValidationFailed)
 	}

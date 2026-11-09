@@ -12,18 +12,8 @@ import (
 
 const perMillion = 1_000_000
 
-// PriceRow is one row of the pricing table: micro-USD per million tokens, effective from a time.
-// CachedPerM and ReasoningPerM are nil when the provider has no separate rate: cached tokens then
-// bill at the input rate and reasoning tokens at the output rate.
-type PriceRow struct {
-	Provider      string
-	Model         string
-	InputPerM     contract.MicroUSD
-	OutputPerM    contract.MicroUSD
-	CachedPerM    *contract.MicroUSD
-	ReasoningPerM *contract.MicroUSD
-	EffectiveFrom time.Time
-}
+// PriceRow is one row of the pricing table (see contract.PriceRow).
+type PriceRow = contract.PriceRow
 
 // TablePricer prices usage from an immutable snapshot of the pricing table that Replace swaps
 // atomically, so the hot path never takes a lock. The zero value knows no model.

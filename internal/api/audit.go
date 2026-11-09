@@ -29,7 +29,7 @@ func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 	q := contract.AuditQuery{Action: contract.AuditAction(c.Query("action")), WorkspaceID: c.Query("workspaceId"), Cursor: c.Query("cursor")}
 	if raw := c.Query("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 {
+		if err != nil {
 			return contract.AuditList{}, contract.Invalid("limit", "must be a whole number from 1 to 200")
 		}
 		q.Limit = n
@@ -43,9 +43,6 @@ func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 		e := contract.AuditEntry{
 			ID: strconv.FormatInt(r.ID, 10), At: rfc3339(r.At), Action: r.Action, ResourceType: r.ResourceType,
 			ResourceID: strOrNil(r.ResourceID), WorkspaceID: strOrNil(r.WorkspaceID), IP: strOrNil(r.IP), Metadata: r.Metadata,
-		}
-		if e.Metadata == nil {
-			e.Metadata = map[string]any{}
 		}
 		if r.ActorID != "" {
 			e.Actor = &contract.AuditActor{UserID: r.ActorID, Email: r.ActorEmail, Name: r.ActorName}
