@@ -153,23 +153,19 @@ func (s *Service) Profile(ctx context.Context, userID string) (contract.Profile,
 	return s.st.Profile(ctx, s.org, userID)
 }
 
-// ActiveWorkspace picks the caller's active workspace: the stored one when it still
-// exists and readable allows it, otherwise the first readable workspace of the
-// list (which arrives default first). "" means the caller can read none.
-func ActiveWorkspace(stored string, list []contract.Workspace, readable func(id string) bool) string {
-	first := ""
+// ActiveWorkspace picks the caller's active workspace: the stored one when list (the workspaces
+// the caller can read, default first) still holds it, otherwise the first of list. "" means the
+// caller can read none.
+func ActiveWorkspace(stored string, list []contract.Workspace) string {
 	for _, w := range list {
-		if !readable(w.ID) {
-			continue
-		}
 		if w.ID == stored {
 			return stored
 		}
-		if first == "" {
-			first = w.ID
-		}
 	}
-	return first
+	if len(list) == 0 {
+		return ""
+	}
+	return list[0].ID
 }
 
 // UpdatePreferences applies the fields present in patch.

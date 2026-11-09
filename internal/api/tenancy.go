@@ -99,7 +99,7 @@ func (s *server) me(c Call) (contract.Me, error) {
 		return contract.Me{}, err
 	}
 	var active *string
-	if id := tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list, func(string) bool { return true }); id != "" {
+	if id := tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list); id != "" {
 		active = &id
 	}
 	u := c.Session.User
@@ -123,15 +123,13 @@ func (s *server) readableWorkspaces(c Call) ([]contract.Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	keep := make(map[string]bool, len(ok))
-	for _, id := range ok {
-		keep[id] = true
+	byID := make(map[string]contract.Workspace, len(all))
+	for _, w := range all {
+		byID[w.ID] = w
 	}
 	out := make([]contract.Workspace, 0, len(ok))
-	for _, w := range all {
-		if keep[w.ID] {
-			out = append(out, w)
-		}
+	for _, id := range ok { // Filter keeps the input order, default first
+		out = append(out, byID[id])
 	}
 	return out, nil
 }

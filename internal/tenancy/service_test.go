@@ -239,7 +239,6 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 	sess, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_1"})
 	p := sess.Principal
 
-	all := func(string) bool { return true }
 	activeNow := func() string {
 		t.Helper()
 		prof, err := r.svc.Profile(ctx, u.User.ID)
@@ -250,7 +249,7 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list, all)
+		return tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list)
 	}
 	def := activeNow()
 	if def == "" {
