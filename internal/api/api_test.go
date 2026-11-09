@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -34,12 +35,64 @@ type countingResolver struct {
 	err   error
 }
 
-func (c *countingResolver) Resolve(*http.Request) (contract.Principal, error) {
+func (c *countingResolver) Resolve(*http.Request) (contract.Session, error) {
 	c.calls++
 	if c.err != nil {
-		return contract.Principal{}, c.err
+		return contract.Session{}, c.err
 	}
-	return contract.Principal{UserID: "u-1", OrgID: "o-1", Role: contract.RoleAdmin}, nil
+	p := contract.Principal{UserID: "u-1", OrgID: "o-1", Role: contract.RoleAdmin}
+	return contract.Session{User: contract.User{ID: "u-1"}, Member: true, Principal: p}, nil
+}
+
+// memTenancy is an in-memory Tenancy that only implements preferences; the other
+// methods panic on the nil embedded interface (these tests never reach them).
+type memTenancy struct {
+	api.Tenancy
+	mu            sync.Mutex
+	byID          map[string]contract.Preferences
+	gets, updates []string
+}
+
+func newMemTenancy() *memTenancy { return &memTenancy{byID: map[string]contract.Preferences{}} }
+
+func (m *memTenancy) Preferences(_ context.Context, id string) (contract.Preferences, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gets = append(m.gets, id)
+	if p, ok := m.byID[id]; ok {
+		return p, nil
+	}
+	return api.DefaultPreferences(), nil
+}
+
+func (m *memTenancy) Profile(context.Context, string) (contract.Preferences, string, error) {
+	return api.DefaultPreferences(), "ws-1", nil
+}
+
+func (m *memTenancy) ListWorkspaces(context.Context, contract.Principal) ([]contract.Workspace, error) {
+	return nil, nil
+}
+
+func (m *memTenancy) ListInvitations(context.Context, contract.Principal) ([]contract.Invitation, error) {
+	return nil, nil
+}
+
+func (m *memTenancy) UpdatePreferences(_ context.Context, id string, patch contract.PreferencesPatch) (contract.Preferences, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updates = append(m.updates, id)
+	p, ok := m.byID[id]
+	if !ok {
+		p = api.DefaultPreferences()
+	}
+	if patch.Theme != nil {
+		p.Theme = *patch.Theme
+	}
+	if patch.ReducedMotion != nil {
+		p.ReducedMotion = *patch.ReducedMotion
+	}
+	m.byID[id] = p
+	return p, nil
 }
 
 type fixture struct {
@@ -57,7 +110,7 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		Log:        slog.New(slog.NewJSONHandler(f.logs, nil)),
 		DB:         pinger{},
 		Principals: f.res,
-		Prefs:      api.NewMemoryPreferences(),
+		Tenancy:    newMemTenancy(),
 		Web: fstest.MapFS{
 			"index.html":      {Data: []byte("<html>app</html>")},
 			"assets/app-1.js": {Data: []byte("console.log(1)")},
@@ -197,7 +250,7 @@ func TestUnauthenticatedGets401WithTheRegistryStatus(t *testing.T) {
 	for _, m := range []string{"GET", "PATCH"} {
 		resp, b := f.do(t, m, "/api/me/preferences", `{}`)
 		e := decodeErr(t, b)
-		if resp.StatusCode != 401 || e.Code != contract.CodeUnauthorized {
+		if resp.StatusCode != 401 || e.Code != contract.CodeUnauthenticated {
 			t.Errorf("%s: %d %s", m, resp.StatusCode, b)
 		}
 	}
@@ -318,8 +371,8 @@ func TestPrincipalReachesTheHandlerOnlyThroughTheResolver(t *testing.T) {
 			continue
 		}
 		b, _ := os.ReadFile(n)
-		if strings.Contains(string(b), "principalKey") {
-			t.Errorf("%s touches the principal context key; only principal.go may attach a principal", n)
+		if strings.Contains(string(b), "sessionKey") {
+			t.Errorf("%s touches the principal context key; only principal.go may attach a session", n)
 		}
 	}
 }
@@ -338,27 +391,11 @@ func TestEveryRequestStartsASpan(t *testing.T) {
 	}
 }
 
-// recordingPrefs remembers which user each call was made for.
-type recordingPrefs struct {
-	api.PreferenceStore
-	gets, updates []string
-}
-
-func (r *recordingPrefs) Get(ctx context.Context, id string) (contract.Preferences, error) {
-	r.gets = append(r.gets, id)
-	return r.PreferenceStore.Get(ctx, id)
-}
-
-func (r *recordingPrefs) Update(ctx context.Context, id string, p contract.PreferencesPatch) (contract.Preferences, error) {
-	r.updates = append(r.updates, id)
-	return r.PreferenceStore.Update(ctx, id, p)
-}
-
-// A middleware that forgot to attach the principal would leave UserID empty (or, now, 401): both
+// A middleware that forgot to attach the session would leave the user id empty (or, now, 401): both
 // fail this test, which pins the user the handler acts for to the one the resolver returned.
 func TestHandlersActForThePrincipalTheResolverReturned(t *testing.T) {
-	rec := &recordingPrefs{PreferenceStore: api.NewMemoryPreferences()}
-	f := newFixture(t, func(d *api.Deps) { d.Prefs = rec })
+	rec := newMemTenancy()
+	f := newFixture(t, func(d *api.Deps) { d.Tenancy = rec })
 	if resp, b := f.do(t, "GET", "/api/me/preferences", ""); resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET: %d %s", resp.StatusCode, b)
 	}

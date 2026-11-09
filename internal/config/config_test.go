@@ -12,9 +12,11 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }
 
-func env(kv map[string]string) config.Lookup {
+func rawEnv(kv map[string]string) config.Lookup {
 	return func(k string) (string, bool) { v, ok := kv[k]; return v, ok }
 }
+
+func env(kv map[string]string) config.Lookup { return rawEnv(kv) }
 
 const goodDB = "postgres://mw:secret@127.0.0.1:5432/mw?sslmode=disable"
 
@@ -154,5 +156,56 @@ func TestAppEnvDefaultsToProdWhenUnsetOrEmpty(t *testing.T) {
 	}
 	if _, err := config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvAppEnv: "staging"})); err == nil {
 		t.Error("an unknown APP_ENV must be a config problem")
+	}
+}
+
+func TestProdRequiresClerkSettingsButDevDoesNot(t *testing.T) {
+	cfg, err := config.Load(rawEnv(map[string]string{config.EnvDatabaseURL: goodDB}))
+	if err != nil {
+		t.Fatalf("Load must not need identity settings (migrate uses it): %v", err)
+	}
+	e := contract.AsError(cfg.CheckServe())
+	for _, key := range []string{config.EnvClerkIssuer, config.EnvClerkJWKSURL, config.EnvClerkSecretKey, config.EnvClerkWebhookKey} {
+		if !strings.Contains(strings.Join(e.Details, "|"), key+": required") {
+			t.Errorf("prod without %s was not reported: %v", key, e.Details)
+		}
+	}
+	c, err := config.Load(rawEnv(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvAppEnv: "dev"}))
+	if err != nil || c.Clerk.Configured() || c.CheckServe() != nil {
+		t.Fatalf("dev without Clerk: %+v %v", c.Clerk, err)
+	}
+}
+
+func TestRedactedMasksEveryCredentialShape(t *testing.T) {
+	dsns := []string{
+		"postgres://mw:s3cr3tpw@127.0.0.1:5432/mw?sslmode=disable",
+		"postgres://mw@127.0.0.1:5432/mw?password=s3cr3tpw",
+		"postgres://mw@127.0.0.1:5432/mw?password=s3cr3%74pw&sslmode=disable",
+		"postgres://mw@127.0.0.1:5432/mw?sslpassword=s3cr3tpw",
+		"postgres://mw:p%40ss@127.0.0.1:5432/mw?passfile=s3cr3tpw",
+	}
+	for _, dsn := range dsns {
+		c, err := config.Load(env(map[string]string{config.EnvDatabaseURL: dsn}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		shown := c.Redacted()[config.EnvDatabaseURL]
+		for _, leak := range []string{"s3cr3tpw", "s3cr3%74pw", "p%40ss", "p@ss"} {
+			if strings.Contains(shown, leak) {
+				t.Errorf("%s leaks %q: %s", dsn, leak, shown)
+			}
+		}
+		if !strings.Contains(shown, "sslmode=disable") && strings.Contains(dsn, "sslmode") {
+			t.Errorf("a harmless parameter was dropped: %s", shown)
+		}
+	}
+	c, _ := config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvClerkSecretKey: "sk_test_x", config.EnvClerkWebhookKey: "whsec_ZGVtbw=="}))
+	if c.Redacted()[config.EnvClerkSecretKey] != "<set>" {
+		t.Errorf("a set secret must show as <set>: %v", c.Redacted())
+	}
+	for k, v := range c.Redacted() {
+		if strings.Contains(v, "sk_test_x") || strings.Contains(v, "whsec_") {
+			t.Errorf("%s leaks a Clerk secret: %s", k, v)
+		}
 	}
 }

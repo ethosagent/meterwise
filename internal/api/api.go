@@ -32,8 +32,9 @@ type Deps struct {
 	Log             *slog.Logger
 	DB              Pinger
 	Principals      PrincipalResolver
-	Prefs           PreferenceStore
-	Web             fs.FS // built web app; nil serves a typed 404 at "/"
+	Tenancy         Tenancy
+	Webhooks        WebhookVerifier // nil answers the Clerk webhook with not_available
+	Web             fs.FS           // built web app; nil serves a typed 404 at "/"
 	Tracer          trace.TracerProvider
 	AppName         string
 	ProxyPublicHost string
@@ -51,8 +52,8 @@ type server struct {
 // recover, OTel; the principal middleware wraps each non-public route. It
 // fails when the handlers and contract.Routes disagree in either direction.
 func New(d Deps) (http.Handler, error) {
-	if d.Log == nil || d.DB == nil || d.Principals == nil || d.Prefs == nil {
-		return nil, errors.New("api: Log, DB, Principals and Prefs are required")
+	if d.Log == nil || d.DB == nil || d.Principals == nil || d.Tenancy == nil {
+		return nil, errors.New("api: Log, DB, Principals and Tenancy are required")
 	}
 	if d.Tracer == nil {
 		d.Tracer = otel.GetTracerProvider()
@@ -63,6 +64,18 @@ func New(d Deps) (http.Handler, error) {
 	s.handle("GET", "/api/config", s.appConfig)
 	s.handle("GET", "/api/me/preferences", s.getPreferences)
 	s.handle("PATCH", "/api/me/preferences", s.patchPreferences)
+	s.handle("GET", "/api/me", s.getMe)
+	s.handle("POST", "/api/auth/complete-signup", s.completeSignup)
+	s.handle("GET", "/api/workspaces", s.listWorkspaces)
+	s.handle("POST", "/api/workspaces", s.createWorkspace)
+	s.handle("PATCH", "/api/workspaces/{id}", s.updateWorkspace)
+	s.handle("DELETE", "/api/workspaces/{id}", s.deleteWorkspace)
+	s.handle("POST", "/api/workspaces/{id}/switch", s.switchWorkspace)
+	s.handle("GET", "/api/invitations", s.listInvitations)
+	s.handle("POST", "/api/invitations", s.createInvitation)
+	s.handle("POST", "/api/invitations/{id}/resend", s.resendInvitation)
+	s.handle("DELETE", "/api/invitations/{id}", s.revokeInvitation)
+	s.handle("POST", "/api/webhooks/clerk", s.clerkWebhook)
 	for _, r := range contract.Routes() {
 		if !s.registered[r.Method+" "+r.Pattern] {
 			s.problems = append(s.problems, fmt.Errorf("api: route %s %s is in the contract table but has no handler", r.Method, r.Pattern))
@@ -100,7 +113,7 @@ func (s *server) handle(method, pattern string, h http.HandlerFunc) {
 	}
 	var handler http.Handler = h
 	if !row.Public {
-		handler = withPrincipal(s.Principals, handler)
+		handler = gateway(s.Principals, row.Permission, handler)
 	}
 	s.registered[key] = true
 	s.mux.Handle(key, handler)
@@ -126,12 +139,12 @@ func (s *server) appConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
-	p, ok := PrincipalFrom(r.Context())
+	sess, ok := SessionFrom(r.Context())
 	if !ok {
-		writeError(w, contract.NewError(contract.CodeUnauthorized, "authentication required"))
+		writeError(w, contract.NewError(contract.CodeUnauthenticated, "authentication required"))
 		return
 	}
-	prefs, err := s.Prefs.Get(r.Context(), p.UserID)
+	prefs, err := s.Tenancy.Preferences(r.Context(), sess.User.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -140,9 +153,9 @@ func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
-	p, ok := PrincipalFrom(r.Context())
+	sess, ok := SessionFrom(r.Context())
 	if !ok {
-		writeError(w, contract.NewError(contract.CodeUnauthorized, "authentication required"))
+		writeError(w, contract.NewError(contract.CodeUnauthenticated, "authentication required"))
 		return
 	}
 	var patch contract.PreferencesPatch
@@ -160,7 +173,7 @@ func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
 		writeError(w, contract.NewError(contract.CodeInvalidRequest, "theme is not valid", "theme: must be one of light|dark|system"))
 		return
 	}
-	prefs, err := s.Prefs.Update(r.Context(), p.UserID, patch)
+	prefs, err := s.Tenancy.UpdatePreferences(r.Context(), sess.User.ID, patch)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -168,11 +181,15 @@ func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, prefs)
 }
 
-// fail logs an unexpected error with its request id and answers a typed 500.
+// fail answers the typed error for err. Only a 5xx is logged (with its request id):
+// a 4xx is the caller's mistake and already carries its code.
 func (s *server) fail(w http.ResponseWriter, r *http.Request, err error) {
-	s.Log.LogAttrs(r.Context(), slog.LevelError, "handler error",
-		slog.String("request_id", RequestIDFrom(r.Context())), slog.String("err", err.Error()))
-	writeError(w, contract.AsError(err))
+	e := contract.AsError(err)
+	if e.Status() >= http.StatusInternalServerError {
+		s.Log.LogAttrs(r.Context(), slog.LevelError, "handler error",
+			slog.String("request_id", RequestIDFrom(r.Context())), slog.String("err", err.Error()))
+	}
+	writeError(w, e)
 }
 
 // decodeProblem names what is wrong with a body without echoing its content.

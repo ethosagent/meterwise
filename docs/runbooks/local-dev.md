@@ -32,8 +32,13 @@ curl -s 127.0.0.1:9090/statusz                 # tollgate admin; keep this liste
 ```
 
 Proxy dev mode (`tollgate.NoAuth`, one tenant): point an agent at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`)
-with its own provider key. The per-workspace `/w/{id}/...` URL arrives in Plan 05. The control plane resolves every
-request to a stub admin until Plan 02.
+with its own provider key. The per-workspace `/w/{id}/...` URL arrives in Plan 05.
+
+Identity in dev: with no `CLERK_*` variables and `APP_ENV=dev`, the control plane signs every request in as a seeded
+dev admin (`dev-admin@meterwise.local`, a real user and membership row) so the web app runs without a Clerk account.
+Set `CLERK_ISSUER` and `CLERK_JWKS_URL` and the real adapter takes over. `serve` creates the default workspace at boot
+and needs the schema, so run `meterwised migrate` first. See [`clerk.md`](clerk.md) for the Clerk setup, the
+invitation flow, `bootstrap-admin` and the webhook replay.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -43,9 +48,12 @@ request to a stub admin until Plan 02.
 | `PRIVACY_MODE` | `true` | accepted (`true`/`false`) but has no effect: tollgate v0.1.0 has no switch for it, so `false` only logs a boot warning (decision D12 stays unimplemented until tollgate adds one) |
 | `MAX_WORKSPACES` / `MAX_CONCURRENT_PER_WORKSPACE` | `20` / `8` | operational limits (D13) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | base URL of an OTLP/HTTP collector; unset turns tracing off |
-| `CLERK_ISSUER` / `CLERK_JWKS_URL` / `CLERK_PUBLISHABLE_KEY` | unset | consumed by Plan 02 |
+| `CLERK_ISSUER` / `CLERK_JWKS_URL` | unset | exact token `iss` and the JWKS URL (https); both required with `APP_ENV=prod` |
+| `CLERK_SECRET_KEY` / `CLERK_WEBHOOK_SECRET` | unset | backend API key (invitations) and Svix signing secret (`whsec_...`); required with `APP_ENV=prod`, never printed |
+| `CLERK_API_URL` / `CLERK_PUBLISHABLE_KEY` | `https://api.clerk.com/v1` / unset | backend API base; publishable key (web) |
+| `APP_URL` | unset | public URL of the web app; invitation emails land on `APP_URL/accept-invite` |
 | `WEB_DIR` | `web/dist` | built web app served on `LISTEN_API` |
-| `LOG_LEVEL` / `APP_ENV` | `info` / `prod` | `debug|info|warn|error` / `dev|test|prod`; unset or empty means `prod`, and until Plan 02 ships a real principal and Plan 05 a real authenticator, `serve` refuses to boot in anything but `dev` |
+| `LOG_LEVEL` / `APP_ENV` | `info` / `prod` | `debug|info|warn|error` / `dev|test|prod`; unset or empty means `prod`. Outside `dev`, `serve` needs the Clerk settings and, until the proxy has a real authenticator, still refuses to boot (the data plane admits every caller as one tenant) |
 
 ## Web
 

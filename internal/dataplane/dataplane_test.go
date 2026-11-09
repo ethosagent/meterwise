@@ -41,7 +41,7 @@ func (r fakeResolver) Resolve(_ context.Context, _ tollgate.Tenant, req *http.Re
 }
 
 func TestOptionsDefaultsAndPrivacy(t *testing.T) {
-	o := dataplane.Options(cfg(t, map[string]string{}), dataplane.Deps{})
+	o := dataplane.Options(dataplane.Deps{})
 	if _, ok := o.Auth.(tollgate.NoAuth); !ok {
 		t.Errorf("default auth = %T, want NoAuth (dev only, Plan 05 replaces it)", o.Auth)
 	}
