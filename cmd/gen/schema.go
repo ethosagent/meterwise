@@ -30,19 +30,34 @@ type migration struct {
 	adds          map[string][]column
 }
 
+// id matches a table name that may be quoted and schema-qualified; group 1 is the bare name.
+const id = `(?:"?[a-z_][a-z0-9_]*"?\.)?"?([a-z_][a-z0-9_]*)"?`
+
 var (
 	fileRe    = regexp.MustCompile(`^(\d{4})_([a-z][a-z0-9_]*)\.sql$`)
 	featureRe = regexp.MustCompile(`(?m)^--\s*feature:\s*([a-z][a-z0-9_]*)\s*$`)
-	createRe  = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?([a-z_][a-z0-9_]*)\s*\(`)
-	addColRe  = regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:ONLY\s+)?(?:public\.)?([a-z_][a-z0-9_]*)\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)\s+([^;,]+)`)
+	createRe  = regexp.MustCompile(`(?is)CREATE\s+(?:UNLOGGED\s+|TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` + id)
+	viewRe    = regexp.MustCompile(`(?is)CREATE\s+(?:MATERIALIZED\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + id)
+	addColRe  = regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?` + id + `\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?\s+([^;,]+)`)
 	touchRes  = []*regexp.Regexp{
-		regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:ONLY\s+)?(?:public\.)?([a-z_][a-z0-9_]*)`),
-		regexp.MustCompile(`(?is)DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?([a-z_][a-z0-9_]*)`),
-		regexp.MustCompile(`(?is)CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?\S+\s+ON\s+(?:ONLY\s+)?(?:public\.)?([a-z_][a-z0-9_]*)`),
-		regexp.MustCompile(`(?is)INSERT\s+INTO\s+(?:public\.)?([a-z_][a-z0-9_]*)`),
-		regexp.MustCompile(`(?is)(?:^|[;\s])UPDATE\s+(?:ONLY\s+)?(?:public\.)?([a-z_][a-z0-9_]*)\s+SET`),
-		regexp.MustCompile(`(?is)DELETE\s+FROM\s+(?:ONLY\s+)?(?:public\.)?([a-z_][a-z0-9_]*)`),
-		regexp.MustCompile(`(?is)TRUNCATE\s+(?:TABLE\s+)?(?:ONLY\s+)?(?:public\.)?([a-z_][a-z0-9_]*)`),
+		regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?` + id),
+		regexp.MustCompile(`(?is)DROP\s+(?:MATERIALIZED\s+)?(?:TABLE|VIEW)\s+(?:IF\s+EXISTS\s+)?` + id),
+		regexp.MustCompile(`(?is)CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:\S+\s+)?ON\s+(?:ONLY\s+)?` + id),
+		regexp.MustCompile(`(?is)INSERT\s+INTO\s+` + id),
+		regexp.MustCompile(`(?is)(?:^|[;\s])UPDATE\s+(?:ONLY\s+)?` + id + `\s+SET`),
+		regexp.MustCompile(`(?is)DELETE\s+FROM\s+(?:ONLY\s+)?` + id),
+		regexp.MustCompile(`(?is)MERGE\s+INTO\s+(?:ONLY\s+)?` + id),
+		regexp.MustCompile(`(?is)TRUNCATE\s+(?:TABLE\s+)?(?:ONLY\s+)?` + id),
+		regexp.MustCompile(`(?is)CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+[^;]*?\sON\s+` + id),
+		regexp.MustCompile(`(?is)DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?\S+\s+ON\s+` + id),
+		regexp.MustCompile(`(?is)(?:CREATE|ALTER|DROP)\s+POLICY\s+(?:IF\s+EXISTS\s+)?\S+\s+ON\s+` + id),
+		regexp.MustCompile(`(?is)CREATE\s+(?:OR\s+REPLACE\s+)?RULE\s+[^;]*?\sTO\s+` + id),
+		regexp.MustCompile(`(?is)COMMENT\s+ON\s+(?:TABLE|VIEW|MATERIALIZED\s+VIEW)\s+` + id),
+		regexp.MustCompile(`(?is)COMMENT\s+ON\s+COLUMN\s+(?:[a-z_"][a-z0-9_"]*\.)?"?([a-z_][a-z0-9_]*)"?\."?[a-z_][a-z0-9_]*"?\s+IS`),
+		regexp.MustCompile(`(?is)(?:GRANT|REVOKE)\s+[^;]*?\sON\s+TABLE\s+` + id),
+		regexp.MustCompile(`(?is)(?:GRANT|REVOKE)\s+[^;]*?\sON\s+` + id + `\s+(?:TO|FROM)\b`),
+		regexp.MustCompile(`(?is)PARTITION\s+OF\s+` + id),
+		regexp.MustCompile(`(?is)CREATE\s+OR\s+REPLACE\s+VIEW\s+` + id),
 	}
 	lineComment = regexp.MustCompile(`(?m)--[^\n]*`)
 )
@@ -118,12 +133,19 @@ func parseMigration(file, sql string) migration {
 	up := lineComment.ReplaceAllString(upRaw, "")
 	for _, loc := range createRe.FindAllStringSubmatchIndex(up, -1) {
 		name := up[loc[2]:loc[3]]
-		body, ok := balanced(up, loc[1]-1)
-		if !ok {
-			continue
-		}
 		m.Created = append(m.Created, name)
-		m.tables = append(m.tables, table{Name: name, Feature: m.Feature, Migration: file, Columns: parseColumns(body, file)})
+		t := table{Name: name, Feature: m.Feature, Migration: file}
+		if rest := strings.TrimLeft(up[loc[1]:], " \t\r\n"); strings.HasPrefix(rest, "(") {
+			if body, ok := balanced(up, loc[1]+(len(up[loc[1]:])-len(rest))); ok {
+				t.Columns = parseColumns(body, file)
+			}
+		}
+		m.tables = append(m.tables, t)
+	}
+	for _, loc := range viewRe.FindAllStringSubmatchIndex(up, -1) {
+		name := up[loc[2]:loc[3]]
+		m.Created = append(m.Created, name)
+		m.tables = append(m.tables, table{Name: name, Feature: m.Feature, Migration: file})
 	}
 	for _, a := range addColRe.FindAllStringSubmatch(up, -1) {
 		def := strings.Join(strings.Fields(a[3]), " ")
@@ -146,23 +168,25 @@ func parseMigration(file, sql string) migration {
 }
 
 // loadMigrations reads the migrations in dir (a path relative to fsys); a
-// missing directory means no migrations yet.
-func loadMigrations(fsys fs.FS, dir string) ([]migration, error) {
+// missing directory means no migrations yet. stray lists entries that are not
+// migrations (subdirectories, upper-case .SQL, other files): the gate refuses
+// them rather than silently ignoring SQL that goose would not run either.
+func loadMigrations(fsys fs.FS, dir string) (out []migration, stray []string, err error) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("gen: read %s: %w", dir, err)
+		return nil, nil, fmt.Errorf("gen: read %s: %w", dir, err)
 	}
-	var out []migration
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			stray = append(stray, path.Join(dir, e.Name()))
 			continue
 		}
 		b, err := fs.ReadFile(fsys, path.Join(dir, e.Name()))
 		if err != nil {
-			return nil, fmt.Errorf("gen: read migration: %w", err)
+			return nil, nil, fmt.Errorf("gen: read migration: %w", err)
 		}
 		out = append(out, parseMigration(e.Name(), string(b)))
 		if f := featureRe.FindSubmatch(b); f != nil {
@@ -170,5 +194,27 @@ func loadMigrations(fsys fs.FS, dir string) ([]migration, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].File < out[j].File })
-	return out, nil
+	return out, stray, nil
+}
+
+// loadFamilies reads internal/store/migration-families.txt: lines of
+// `<feature> <table> [<table>...]` naming tables a feature owns although the
+// table name does not start with the feature's stem (for example the ledger
+// feature owning calls and sessions). A protected path.
+func loadFamilies(fsys fs.FS) (map[string][]string, error) {
+	b, err := fs.ReadFile(fsys, familiesFile)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("gen: read %s: %w", familiesFile, err)
+	}
+	fam := map[string][]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(strings.SplitN(line, "#", 2)[0])
+		if len(f) >= 2 {
+			fam[f[0]] = append(fam[f[0]], f[1:]...)
+		}
+	}
+	return fam, nil
 }

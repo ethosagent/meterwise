@@ -14,44 +14,65 @@ var numberRe = regexp.MustCompile(`^(\d{4})_`)
 // numbers, a non-empty Down section, and one feature per file: a migration may
 // create tables and alter only tables owned by its own feature, where a
 // table's owner is the feature of the migration that created it.
-func lintMigrations(ms []migration) []string {
-	var problems []string
-	add := func(format string, a ...any) { problems = append(problems, fmt.Sprintf(format, a...)) }
-	owner := map[string]string{}
-	numbers := map[string]string{}
+func lintMigrations(ms []migration, stray []string, families map[string][]string) []string {
+	l := &linter{owner: map[string]string{}, numbers: map[string]string{}, families: families}
+	for _, st := range stray {
+		l.add("%s: not a migration; the migrations directory holds only flat NNNN_<feature>.sql files", st)
+	}
 	for _, m := range ms {
-		if m.Feature == "" {
-			add("%s: name must be NNNN_<feature>.sql (lowercase feature)", m.File)
-			continue
+		l.one(m)
+	}
+	sort.Strings(l.problems)
+	return l.problems
+}
+
+type linter struct {
+	problems []string
+	owner    map[string]string // table or view -> owning feature
+	numbers  map[string]string // migration number -> file
+	families map[string][]string
+}
+
+func (l *linter) add(format string, a ...any) {
+	l.problems = append(l.problems, fmt.Sprintf(format, a...))
+}
+
+func (l *linter) one(m migration) {
+	if m.Feature == "" {
+		l.add("%s: name must be NNNN_<feature>.sql (lowercase feature)", m.File)
+		return
+	}
+	if genericFeatures[m.Feature] {
+		l.add("%s: feature %q is too generic; name the migration for the one feature whose tables it owns", m.File, m.Feature)
+	}
+	if n := numberRe.FindString(m.File); l.numbers[n] != "" {
+		l.add("%s: number %s already used by %s", m.File, strings.TrimSuffix(n, "_"), l.numbers[n])
+	} else {
+		l.numbers[n] = m.File
+	}
+	if m.headerFeature != m.Feature {
+		l.add("%s: first lines need `-- feature: %s` (found %q)", m.File, m.Feature, m.headerFeature)
+	}
+	if !m.HasDown {
+		l.add("%s: missing a non-empty `-- +goose Down` section (migrations are reversible)", m.File)
+	}
+	for _, t := range m.Created {
+		if o, dup := l.owner[t]; dup {
+			l.add("%s: creates table %s already created by feature %s", m.File, t, o)
 		}
-		if n := numberRe.FindString(m.File); numbers[n] != "" {
-			add("%s: number %s already used by %s", m.File, strings.TrimSuffix(n, "_"), numbers[n])
-		} else {
-			numbers[n] = m.File
-		}
-		if m.headerFeature != m.Feature {
-			add("%s: first lines need `-- feature: %s` (found %q)", m.File, m.Feature, m.headerFeature)
-		}
-		if !m.HasDown {
-			add("%s: missing a non-empty `-- +goose Down` section (migrations are reversible)", m.File)
-		}
-		for _, t := range m.Created {
-			if o, dup := owner[t]; dup {
-				add("%s: creates table %s already created by feature %s", m.File, t, o)
-			}
-			owner[t] = m.Feature
-		}
-		for _, t := range m.Touched {
-			switch o, known := owner[t]; {
-			case !known:
-				add("%s: touches table %s, which no earlier migration creates", m.File, t)
-			case o != m.Feature:
-				add("%s: touches table %s owned by feature %s; a migration changes one feature's tables only (add a migration named for %s)", m.File, t, o, o)
-			}
+		l.owner[t] = m.Feature
+		if !inFamily(t, m.Feature, l.families) {
+			l.add("%s: table %s does not belong to feature %s (its name must be %s or start with %s_, or be listed for %s in %s)", m.File, t, m.Feature, stem(m.Feature), stem(m.Feature), m.Feature, familiesFile)
 		}
 	}
-	sort.Strings(problems)
-	return problems
+	for _, t := range m.Touched {
+		switch o, known := l.owner[t]; {
+		case !known:
+			l.add("%s: touches table %s, which no earlier migration creates", m.File, t)
+		case o != m.Feature:
+			l.add("%s: touches table %s owned by feature %s; a migration changes one feature's tables only (add a migration named for %s)", m.File, t, o, o)
+		}
+	}
 }
 
 // renderSchema renders docs/schema.md from the migrations.
@@ -83,4 +104,38 @@ func renderSchema(ms []migration) []byte {
 		}
 	}
 	return []byte(b.String())
+}
+
+const familiesFile = "internal/store/migration-families.txt"
+
+var genericFeatures = map[string]bool{
+	"misc": true, "common": true, "init": true, "initial": true, "core": true, "base": true, "schema": true,
+	"all": true, "general": true, "setup": true, "tables": true, "other": true, "shared": true, "utils": true,
+	"db": true, "main": true, "bootstrap": true, "baseline": true, "stuff": true, "migration": true, "migrations": true,
+}
+
+// stem is the singular-ish root of a feature name: workspaces -> workspace.
+func stem(feature string) string {
+	switch {
+	case strings.HasSuffix(feature, "ies"):
+		return strings.TrimSuffix(feature, "ies") + "y"
+	case strings.HasSuffix(feature, "s"):
+		return strings.TrimSuffix(feature, "s")
+	}
+	return feature
+}
+
+// inFamily reports whether table belongs to feature: equal to the feature or
+// its stem, prefixed by the stem and an underscore, or listed in the manifest.
+func inFamily(table, feature string, families map[string][]string) bool {
+	st := stem(feature)
+	if table == feature || table == st || strings.HasPrefix(table, st+"_") {
+		return true
+	}
+	for _, t := range families[feature] {
+		if t == table {
+			return true
+		}
+	}
+	return false
 }

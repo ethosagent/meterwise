@@ -24,7 +24,7 @@ func targets() []target {
 		{"contract-ts", "web/src/contract/generated.ts", func(string) ([]byte, error) { return genContractTS() }},
 		{"openapi", "internal/api/openapi.json", func(string) ([]byte, error) { return genOpenAPI() }},
 		{"schema", "docs/schema.md", func(root string) ([]byte, error) {
-			ms, err := loadMigrations(os.DirFS(root), migrationsDir)
+			ms, _, err := loadMigrations(os.DirFS(root), migrationsDir)
 			if err != nil {
 				return nil, err
 			}
@@ -73,16 +73,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func runLint(root string, stdout, stderr io.Writer) (failed bool) {
-	ms, err := loadMigrations(os.DirFS(root), migrationsDir)
+	ms, stray, err := loadMigrations(os.DirFS(root), migrationsDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "✗", err)
 		return true
 	}
-	if len(ms) == 0 {
+	if len(ms) == 0 && len(stray) == 0 {
 		fmt.Fprintln(stdout, "SKIP migrations lint: internal/store/migrations has no migrations yet (goes live with the first one)")
 		return false
 	}
-	for _, p := range lintMigrations(ms) {
+	families, err := loadFamilies(os.DirFS(root))
+	if err != nil {
+		fmt.Fprintln(stderr, "✗", err)
+		return true
+	}
+	for _, p := range lintMigrations(ms, stray, families) {
 		fmt.Fprintln(stderr, "✗", p)
 		failed = true
 	}

@@ -94,13 +94,18 @@ func goodMigration(feature string) string {
 	return "-- feature: " + feature + "\n-- +goose Up\nCREATE TABLE " + feature + " (\n  id uuid PRIMARY KEY,\n  name text NOT NULL,\n  UNIQUE (name)\n);\n-- +goose Down\nDROP TABLE " + feature + ";\n"
 }
 
+// wsWith is a workspaces migration whose Up also runs stmt.
+func wsWith(stmt string) string {
+	return "-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\n" + stmt + "\n-- +goose Down\nDROP TABLE workspaces;\n"
+}
+
 func writeMigration(t *testing.T, root, name, body string) {
 	t.Helper()
-	dir := filepath.Join(root, "internal/store/migrations")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path := filepath.Join(root, "internal/store/migrations", name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -122,6 +127,18 @@ func TestMigrationLintGoesRedOnEachBadInput(t *testing.T) {
 		{"bad file name", map[string]string{"orgs.sql": goodMigration("orgs")}, "name must be NNNN_<feature>.sql"},
 		{"duplicate number", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0001_users.sql": goodMigration("users")}, "number 0001 already used"},
 		{"alters a table nobody created", map[string]string{"0001_orgs.sql": "-- feature: orgs\n-- +goose Up\nALTER TABLE ghosts ADD COLUMN x int;\n-- +goose Down\nALTER TABLE ghosts DROP COLUMN x;\n"}, "no earlier migration creates"},
+		{"generic feature name holding several tables", map[string]string{"0001_misc.sql": "-- feature: misc\n-- +goose Up\nCREATE TABLE orgs (id int);\nCREATE TABLE workspaces (id int);\nCREATE TABLE audit_log (id int);\n-- +goose Down\nDROP TABLE audit_log;\nDROP TABLE workspaces;\nDROP TABLE orgs;\n"}, "too generic"},
+		{"feature creating a table of another family", map[string]string{"0001_orgs.sql": "-- feature: orgs\n-- +goose Up\nCREATE TABLE orgs (id int);\nCREATE TABLE audit_log (id int);\n-- +goose Down\nDROP TABLE audit_log;\nDROP TABLE orgs;\n"}, "table audit_log does not belong to feature orgs"},
+		{"quoted ALTER of another feature's table", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("ALTER TABLE \"orgs\" ADD COLUMN x int;")}, "touches table orgs owned by feature orgs"},
+		{"schema-qualified quoted ALTER", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("ALTER TABLE public.\"orgs\" ADD COLUMN x int;")}, "touches table orgs"},
+		{"ALTER TABLE IF EXISTS", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("ALTER TABLE IF EXISTS orgs ADD COLUMN x int;")}, "touches table orgs"},
+		{"trigger on another feature's table", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("CREATE TRIGGER t BEFORE INSERT ON orgs FOR EACH ROW EXECUTE FUNCTION f();")}, "touches table orgs"},
+		{"policy on another feature's table", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("CREATE POLICY p ON orgs USING (true);")}, "touches table orgs"},
+		{"comment on another feature's column", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("COMMENT ON COLUMN orgs.name IS 'x';")}, "touches table orgs"},
+		{"grant on another feature's table", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("GRANT SELECT ON TABLE orgs TO reader;")}, "touches table orgs"},
+		{"merge into another feature's table", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_workspaces.sql": wsWith("MERGE INTO orgs USING workspaces ON true WHEN MATCHED THEN DO NOTHING;")}, "touches table orgs"},
+		{"subdirectory in the migrations dir", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "old/0002_x.sql": goodMigration("x")}, "not a migration"},
+		{"upper-case extension", map[string]string{"0001_orgs.SQL": goodMigration("orgs")}, "not a migration"},
 		{"creates the same table twice", map[string]string{"0001_orgs.sql": goodMigration("orgs"), "0002_orgs.sql": goodMigration("orgs")}, "already created"},
 	}
 	for _, tc := range tests {
@@ -145,6 +162,33 @@ func TestMigrationLintAcceptsOneFeaturePerFile(t *testing.T) {
 	writeMigration(t, root, "0003_workspaces.sql", "-- feature: workspaces\n-- +goose Up\nALTER TABLE workspaces ADD COLUMN archived_at timestamptz;\n-- +goose Down\nALTER TABLE workspaces DROP COLUMN archived_at;\n")
 	if code, _, errs := gen(t, root, "migrations"); code != 0 {
 		t.Fatalf("a clean one-feature-per-file history was rejected: %s", errs)
+	}
+}
+
+func TestFamilyManifestAllowsAnOwnedTable(t *testing.T) {
+	root := t.TempDir()
+	body := "-- feature: ledger\n-- +goose Up\nCREATE TABLE calls (id int);\n-- +goose Down\nDROP TABLE calls;\n"
+	writeMigration(t, root, "0001_ledger.sql", body)
+	if code, _, errs := gen(t, root, "migrations"); code != 1 || !strings.Contains(errs, "table calls does not belong") {
+		t.Fatalf("without a manifest entry: %d %q", code, errs)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal/store/migration-families.txt"), []byte("# owners\nledger calls sessions # the ledger\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errs := gen(t, root, "migrations"); code != 0 {
+		t.Fatalf("with a manifest entry: %q", errs)
+	}
+}
+
+func TestStemAndViews(t *testing.T) {
+	for in, want := range map[string]string{"workspaces": "workspace", "policies": "policy", "audit": "audit"} {
+		if got := stem(in); got != want {
+			t.Errorf("stem(%q) = %q, want %q", in, got, want)
+		}
+	}
+	m := parseMigration("0001_orgs.sql", "-- feature: orgs\n-- +goose Up\nCREATE VIEW org_names AS SELECT 1;\nCREATE TABLE IF NOT EXISTS public.\"orgs\" (id int) ;\n-- +goose Down\nDROP VIEW org_names;\n")
+	if len(m.Created) != 2 {
+		t.Fatalf("created %v", m.Created)
 	}
 }
 
