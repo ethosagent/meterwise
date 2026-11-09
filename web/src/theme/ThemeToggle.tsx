@@ -1,10 +1,10 @@
 import { DesktopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { Segmented } from "antd";
-import { DEFAULT_PREFERENCES, useSavePreferences, useServerPreferences } from "../api/preferences";
-import type { ThemeChoice } from "../api/types";
+import { useSavePreferences } from "../api/preferences";
+import type { Theme } from "../contract/generated";
 import { useTheme } from "./useTheme";
 
-const OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = [
+const OPTIONS: { value: Theme; label: string; icon: React.ReactNode }[] = [
   { value: "light", label: "Light", icon: <SunOutlined /> },
   { value: "dark", label: "Dark", icon: <MoonOutlined /> },
   { value: "system", label: "System", icon: <DesktopOutlined /> },
@@ -14,12 +14,10 @@ const OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = 
 export function ThemeToggle() {
   const mode = useTheme((s) => s.mode);
   const setMode = useTheme((s) => s.setMode);
-  const prefs = useServerPreferences();
   const save = useSavePreferences();
-  const current = prefs.data ?? DEFAULT_PREFERENCES;
 
   return (
-    <Segmented<ThemeChoice>
+    <Segmented<Theme>
       aria-label="Theme"
       value={mode}
       options={OPTIONS.map((o) => ({
@@ -33,7 +31,7 @@ export function ThemeToggle() {
       }))}
       onChange={(next) => {
         setMode(next);
-        save.mutate({ ...current, theme: next });
+        save.mutate({ theme: next });
       }}
     />
   );

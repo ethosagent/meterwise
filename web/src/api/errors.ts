@@ -1,5 +1,7 @@
-import { ERROR_STATUS, type ErrorCode } from "../contract/generated";
-import type { ApiErrorBody } from "./types";
+import { ERROR_STATUS, type ErrorBody, type ErrorCode } from "../contract/generated";
+
+/** A body as read off the wire: the generated shape with the code widened to any string. */
+type WireErrorBody = Omit<ErrorBody, "code"> & { code: string };
 
 /** A failed API call: the registry error body plus the HTTP status. */
 export class ApiError extends Error {
@@ -7,16 +9,22 @@ export class ApiError extends Error {
   readonly status: number;
   readonly details: Record<string, unknown>;
 
-  constructor(status: number, body: ApiErrorBody) {
+  constructor(status: number, body: WireErrorBody) {
     super(body.message);
     this.name = "ApiError";
     this.code = body.code;
     this.status = status;
     this.details = body.details;
   }
+
+  /** The list of problems (config or validation) the server put under details.problems. */
+  get problems(): string[] {
+    const p = this.details.problems;
+    return Array.isArray(p) ? p.filter((x): x is string => typeof x === "string") : [];
+  }
 }
 
-function isErrorBody(value: unknown): value is ApiErrorBody {
+function isErrorBody(value: unknown): value is WireErrorBody {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return typeof v.code === "string" && typeof v.message === "string";

@@ -15,6 +15,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0007](0007-dependency-allowlists.md) | Dependency allowlists for Go layers and npm | Accepted |
 | [0008](0008-web-design-tokens-derived-from-the-plan-and-prototype.md) | Web design tokens derived from the plan and prototype | Accepted |
 | [0010](0010-control-plane-stack.md) | Control plane on the stdlib mux, with OTel API and OTLP/HTTP | Accepted |
+| [0011](0011-declare-testing-library-dom.md) | Declare @testing-library/dom as a dev dependency | Accepted |
 
 Template: [`template.md`](template.md).
 

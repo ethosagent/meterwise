@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import type { AppConfig } from "../contract/generated";
 import { apiFetch } from "./client";
-import type { AppConfig } from "./types";
 
 export const configKey = ["config"] as const;
 

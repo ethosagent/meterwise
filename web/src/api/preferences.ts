@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Preferences, PreferencesPatch } from "../contract/generated";
 import { apiFetch } from "./client";
-import type { Preferences } from "./types";
 
 export const preferencesKey = ["me", "preferences"] as const;
 
@@ -14,11 +14,11 @@ export function useServerPreferences() {
   });
 }
 
-/** PATCH the full preferences object so the server never has to guess missing fields. */
+/** PATCH only the fields that changed: the server merges, so an unrelated stored field is never overwritten. */
 export function useSavePreferences() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (next: Preferences) =>
+    mutationFn: (next: PreferencesPatch) =>
       apiFetch<Preferences>("/api/me/preferences", { method: "PATCH", body: JSON.stringify(next) }),
     onSuccess: (saved) => qc.setQueryData(preferencesKey, saved),
   });

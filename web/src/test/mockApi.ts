@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { AppConfig, Preferences } from "../api/types";
+import type { AppConfig, Preferences, PreferencesPatch } from "../contract/generated";
 
 export const TEST_CONFIG: AppConfig = { appName: "Acme Meter", proxyPublicHost: "proxy.acme.test" };
 
@@ -12,6 +12,8 @@ export interface MockApi {
 interface Options {
   config?: AppConfig | Response;
   preferences?: Preferences;
+  /** Make GET /api/me/preferences fail with this status. */
+  preferencesGetStatus?: number;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -32,11 +34,16 @@ export function mockApi(opts: Options = {}): MockApi {
       const c = opts.config ?? TEST_CONFIG;
       return c instanceof Response ? c.clone() : json(c);
     }
-    if (url === "/api/me/preferences" && method === "GET") return json(prefs);
+    if (url === "/api/me/preferences" && method === "GET") {
+      if (opts.preferencesGetStatus) {
+        return json({ code: "internal", message: "down", details: {} }, opts.preferencesGetStatus);
+      }
+      return json(prefs);
+    }
     if (url === "/api/me/preferences" && method === "PATCH") {
-      const body = JSON.parse(String(init?.body)) as Preferences;
+      const body = JSON.parse(String(init?.body)) as PreferencesPatch;
       patches.push(body);
-      prefs = body;
+      prefs = { ...prefs, ...body } as Preferences; // the server merges a partial patch
       return json(prefs);
     }
     return json({ code: "not_found", message: "no such route", details: {} }, 404);

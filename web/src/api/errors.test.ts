@@ -25,6 +25,21 @@ describe("toApiError", () => {
     ]);
   });
 
+  it("reads the problem list from details.problems and ignores other shapes", async () => {
+    const mk = (details: unknown) =>
+      toApiError(
+        new Response(JSON.stringify({ code: "invalid_request", message: "m", details }), {
+          status: 400,
+        }),
+      );
+    expect((await mk({ problems: ["theme: must be one of", "body: too large"] })).problems).toEqual(
+      ["theme: must be one of", "body: too large"],
+    );
+    expect((await mk({ problems: "nope" })).problems).toEqual([]);
+    expect((await mk(["legacy"])).problems).toEqual([]);
+    expect((await mk({})).problems).toEqual([]);
+  });
+
   it("defaults missing details to an empty object", async () => {
     const res = new Response(JSON.stringify({ code: "c", message: "m" }), { status: 400 });
     expect((await toApiError(res)).details).toEqual({});

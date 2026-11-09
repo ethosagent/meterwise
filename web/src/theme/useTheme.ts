@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { ThemeChoice } from "../api/types";
+import type { Theme } from "../contract/generated";
 import type { ResolvedMode } from "./theme";
 
 export const THEME_STORAGE_KEY = "ui.theme";
@@ -9,12 +9,12 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
 const MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 interface ThemeState {
-  mode: ThemeChoice;
-  setMode: (mode: ThemeChoice) => void;
+  mode: Theme;
+  setMode: (mode: Theme) => void;
 }
 
 // Storage can throw (private windows, blocked site data): fall back to memory only.
-const safeStorage = createJSONStorage<{ mode: ThemeChoice }>(() => ({
+const safeStorage = createJSONStorage<{ mode: Theme }>(() => ({
   getItem: (k) => {
     try {
       return localStorage.getItem(k);

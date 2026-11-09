@@ -12,6 +12,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { useTheme } from "../theme/useTheme";
 import { FALLBACK_BRAND } from "./Brand";
 import { ALL_PAGES } from "./nav";
+import { STUB_WORKSPACES } from "./stub";
 
 function renderApp(path: string) {
   return render(
@@ -101,11 +102,28 @@ describe("Shell chrome", () => {
     renderApp("/overview");
     const sw = await screen.findByTestId("workspace-switcher");
     expect(sw).toHaveTextContent("Default workspace");
-    expect(screen.queryByText(/organization/i, { selector: "button *" })).toBeNull();
     await userEvent.click(sw);
-    await userEvent.click(await screen.findByText("Staging"));
+    const staging = await screen.findByRole("menuitem", { name: "Staging" });
+    const menu = staging.closest<HTMLElement>('[role="menu"]');
+    expect(menu).not.toBeNull();
+    const items = within(menu as HTMLElement).getAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual(STUB_WORKSPACES.map((w) => w.name));
+    expect(within(menu as HTMLElement).queryByText(/organi[sz]ation/i)).toBeNull();
+    await userEvent.click(staging);
     expect(useUi.getState().activeWorkspaceId).toBe("ws-staging");
     expect(screen.getByTestId("workspace-switcher")).toHaveTextContent("Staging");
+  });
+
+  it("keeps the Settings group open on a settings page and closed elsewhere", async () => {
+    mockApi();
+    const { container } = renderApp("/overview");
+    await screen.findByTestId("brand-name");
+    const settingsOpen = () =>
+      container.querySelector(".ant-menu-submenu-open > .ant-menu-submenu-title") !== null;
+    expect(settingsOpen()).toBe(false);
+    await userEvent.click(screen.getByLabelText("Account menu"));
+    await userEvent.click(await screen.findByText("Profile", { selector: ".ant-dropdown *" }));
+    await waitFor(() => expect(settingsOpen()).toBe(true));
   });
 
   it("collapses and expands the sider", async () => {
@@ -134,7 +152,7 @@ describe("Shell chrome", () => {
 });
 
 describe("Theme toggle", () => {
-  it("applies the choice at once and PATCHes the full preferences object", async () => {
+  it("applies the choice at once and PATCHes only the theme, leaving reducedMotion alone", async () => {
     const api = mockApi({ preferences: { theme: "system", reducedMotion: true } });
     renderApp("/overview");
     await screen.findByTestId("brand-name");
@@ -143,8 +161,20 @@ describe("Theme toggle", () => {
     );
     await userEvent.click(screen.getByRole("img", { name: "Dark" }));
     expect(useTheme.getState().mode).toBe("dark");
-    await waitFor(() => expect(api.patches).toEqual([{ theme: "dark", reducedMotion: true }]));
+    await waitFor(() => expect(api.patches).toEqual([{ theme: "dark" }]));
     expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("does not clobber a stored reducedMotion when the preferences GET failed", async () => {
+    const api = mockApi({
+      preferences: { theme: "system", reducedMotion: true },
+      preferencesGetStatus: 500,
+    });
+    renderApp("/overview");
+    await screen.findByTestId("brand-name");
+    await userEvent.click(screen.getByRole("img", { name: "Dark" }));
+    await waitFor(() => expect(api.patches).toEqual([{ theme: "dark" }]));
+    expect(api.patches[0]).not.toHaveProperty("reducedMotion");
   });
 
   it("adopts the server theme when this device has no stored choice", async () => {

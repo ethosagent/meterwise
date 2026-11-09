@@ -134,7 +134,7 @@ var webAllow = []string{
 	"@tanstack/react-query", "zustand", "recharts",
 	"@types/react", "@types/react-dom", "@types/node", "@vitejs/plugin-react",
 	"vite", "vitest", "@vitest/coverage-v8", "typescript", "@biomejs/biome", "jsdom",
-	"@testing-library/react", "@testing-library/jest-dom", "@testing-library/user-event",
+	"@testing-library/react", "@testing-library/dom", "@testing-library/jest-dom", "@testing-library/user-event",
 }
 
 var importRe = regexp.MustCompile("(?m)(?:\\bfrom\\s*|\\bimport\\s*\\(?\\s*|\\brequire\\(\\s*)[\"'`]([^\"'`]+)[\"'`]")

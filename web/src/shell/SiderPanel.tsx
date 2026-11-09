@@ -1,4 +1,5 @@
 import { Layout, Menu, theme } from "antd";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useUi } from "../state/ui";
 import { SIDER_COLLAPSED_WIDTH, SIDER_WIDTH } from "../theme/theme";
@@ -26,6 +27,14 @@ export function SiderPanel() {
   const collapsed = useUi((s) => s.siderCollapsed);
   const setCollapsed = useUi((s) => s.setSiderCollapsed);
   const page = pageByPath(pathname);
+  const inSettings = page?.group !== undefined;
+  const [openKeys, setOpenKeys] = useState<string[]>(inSettings ? [SETTINGS_KEY] : []);
+  // The shell outlives route changes, so navigating onto a settings page (menu, avatar, link)
+  // opens its group; the user can still close it by hand afterwards.
+  useEffect(() => {
+    if (inSettings)
+      setOpenKeys((keys) => (keys.includes(SETTINGS_KEY) ? keys : [...keys, SETTINGS_KEY]));
+  }, [inSettings, pathname]);
 
   return (
     <Layout.Sider
@@ -45,7 +54,8 @@ export function SiderPanel() {
         mode="inline"
         aria-label="Main navigation"
         selectedKeys={page ? [page.path] : []}
-        defaultOpenKeys={page?.group ? [SETTINGS_KEY] : []}
+        openKeys={openKeys}
+        onOpenChange={setOpenKeys}
         items={MENU_ITEMS}
         onClick={({ key }) => navigate(key)}
         style={{ borderInlineEnd: 0, paddingInline: token.paddingXXS }}
