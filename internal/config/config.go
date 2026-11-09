@@ -193,12 +193,37 @@ func (c Config) validateIdentity(p *problems) {
 		p.add(EnvAppURL, "must be an http(s):// URL")
 	}
 	for _, party := range c.Clerk.AuthorizedParties {
-		u, err := url.Parse(party)
-		if err != nil || !hasScheme(party, "http", "https") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil {
-			p.add(EnvClerkParties, "each entry must be an origin such as https://app.example.com (scheme and host, no path)")
+		if !validOrigin(party) {
+			p.add(EnvClerkParties, "each entry must be an origin such as https://app.example.com (scheme and one concrete host, optional port; no path, query, fragment, credentials or wildcard)")
 			break
 		}
 	}
+}
+
+// validOrigin reports whether s is a scheme://host[:port] origin naming one concrete
+// host. A wildcard host, a fragment or a stray colon would widen or blur the azp match.
+func validOrigin(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || !hasScheme(s, "http", "https") || (u.Path != "" && u.Path != "/") ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.User != nil || strings.ContainsAny(s, "#?*") {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" || strings.HasSuffix(u.Host, ":") {
+		return false
+	}
+	for _, r := range host {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == ':') {
+			return false
+		}
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return false
+		}
+	}
+	return true
 }
 
 // list splits a comma-separated value, trimming blanks and trailing slashes.

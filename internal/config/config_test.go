@@ -274,7 +274,9 @@ func TestAuthorizedPartiesAreRequiredOutsideDevAndReportedWithTheOtherProblems(t
 	if err != nil || ok.CheckServe() != nil || len(ok.Clerk.AuthorizedParties) != 2 || ok.Clerk.AuthorizedParties[1] != "https://admin.example" {
 		t.Fatalf("%+v %v %v", ok.Clerk.AuthorizedParties, err, ok.CheckServe())
 	}
-	for _, bad := range []string{"app.example", "https://app.example/path", "ftp://app.example", "https://u:p@app.example"} {
+	for _, bad := range []string{"app.example", "https://app.example/path", "ftp://app.example", "https://u:p@app.example",
+		"https://app.example#frag", "https://app.example/#frag", "https://*.example.com", "https://*", "https://app.*.example",
+		"https://", "https://app.example:99999", "https://app example", "https://app.example:", "http://*:3000"} {
 		_, err := config.Load(rawEnv(with(map[string]string{config.EnvClerkParties: bad})))
 		if e := contract.AsError(err); e.Code != contract.CodeConfigInvalid || !hasDetail(e.Details, config.EnvClerkParties) {
 			t.Errorf("%q accepted: %v", bad, err)

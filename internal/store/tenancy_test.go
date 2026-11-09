@@ -273,3 +273,35 @@ func TestDriverFailuresSurfaceAsScrubbedStoreErrors(t *testing.T) {
 		t.Fatalf("a failing migrate must be a store error: %v", err)
 	}
 }
+
+func TestResolveUserIsOneReadAndFallsBackToTheUpsert(t *testing.T) {
+	s, ctx, org := openMigrated(t), context.Background(), store.OrgID()
+	id := contract.Identity{Subject: "user_r", Email: "R@Example.test", Name: "R"}
+	// missing row: the lazy upsert creates it (works with zero webhooks), no membership yet
+	u, role, active, err := s.ResolveUser(ctx, org, id)
+	if err != nil || u.ID == "" || u.Email != "r@example.test" || active || role != "" {
+		t.Fatalf("first sight: %+v %q %v %v", u, role, active, err)
+	}
+	if err := s.UpsertActiveMembership(ctx, org, u.ID, contract.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	// same claims, and empty claims: the joined read answers with the membership
+	for _, in := range []contract.Identity{id, {Subject: "user_r"}} {
+		got, role, active, err := s.ResolveUser(ctx, org, in)
+		if err != nil || got.ID != u.ID || !active || role != contract.RoleAdmin {
+			t.Fatalf("read path: %+v %q %v %v", got, role, active, err)
+		}
+	}
+	// changed claims: refreshed through the upsert, membership still attached
+	got, role, active, err := s.ResolveUser(ctx, org, contract.Identity{Subject: "user_r", Name: "Renamed"})
+	if err != nil || got.Name != "Renamed" || !active || role != contract.RoleAdmin {
+		t.Fatalf("claims changed: %+v %q %v %v", got, role, active, err)
+	}
+	// a soft-deleted user stays deleted
+	if err := s.SoftDeleteUser(ctx, org, "user_r"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, active, err := s.ResolveUser(ctx, org, id); err != nil || !got.Deleted || active {
+		t.Fatalf("deleted: %+v %v %v", got, active, err)
+	}
+}

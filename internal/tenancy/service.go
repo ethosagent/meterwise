@@ -75,11 +75,12 @@ func notInvited() error {
 // different address claim an invitation written for another. Internationalized addresses
 // need a proper IDN and Unicode comparison policy before they can be admitted.
 func NormalizeEmail(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if strings.IndexFunc(trimmed, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+	// The raw value is judged: TrimSpace would strip Unicode whitespace (U+00A0, U+3000, ...)
+	// and let a different string claim an address written without it.
+	if strings.IndexFunc(raw, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
 		return "", invalid("email", "must be a plain ASCII email address")
 	}
-	e := strings.ToLower(trimmed)
+	e := strings.ToLower(strings.TrimSpace(raw))
 	addr, err := mail.ParseAddress(e)
 	if e == "" || len(e) > maxEmailLength || err != nil || addr.Address != e || addr.Name != "" {
 		return "", invalid("email", "must be a plain email address")
@@ -364,6 +365,14 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contrac
 			}
 			return i, false, nil
 		case contract.InvitationAccepted:
+			// A removed admin may be the only way back in: re-activate that admin.
+			back, rerr := s.st.ReactivateRemovedAdmin(ctx, s.org, e)
+			if rerr != nil {
+				return contract.Invitation{}, false, rerr
+			}
+			if back {
+				return i, false, nil
+			}
 			return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
 				"that email already accepted an invitation; invite admins from Settings > Organization")
 		}

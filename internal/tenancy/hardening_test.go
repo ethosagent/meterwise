@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/tenancy"
 )
 
@@ -18,6 +19,12 @@ var foldingImpostors = map[string]string{
 	"dotted capital I in the domain":    "ceo@\u0130bm.test",
 	"long s (U+017F) for s":             "\u017fam@corp.test",
 	"non-ASCII with surrounding spaces": "  \u212aate@corp.test ",
+	// Unicode whitespace is not trimmed away before the ASCII check: the raw value is judged.
+	"no-break space before the address":  "\u00a0kate@corp.test",
+	"no-break space after the address":   "kate@corp.test\u00a0",
+	"ideographic space around":           "\u3000kate@corp.test\u3000",
+	"em space before the address":        "\u2003kate@corp.test",
+	"zero width no-break space (U+FEFF)": "\ufeffkate@corp.test",
 }
 
 func TestNormalizeEmailRefusesNonASCIIBeforeFolding(t *testing.T) {
@@ -197,4 +204,77 @@ func TestResendThatFailsToRefreshRevokesTheNewProviderInvitation(t *testing.T) {
 		}
 	}
 	_ = logs
+}
+
+// A failed re-read of the membership is our failure, never a verdict on the person.
+func TestCompleteSignupSurfacesAFailedMembershipReread(t *testing.T) {
+	r, ctx := newRig(t, 5), context.Background()
+	sess, err := r.svc.Resolve(ctx, contract.Identity{Subject: "user_nobody", Email: "nobody@example.test", EmailVerified: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Pool().Exec(ctx, "ALTER TABLE memberships RENAME TO memberships_gone"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.svc.CompleteSignup(ctx, sess)
+	if err == nil {
+		t.Fatal("CompleteSignup succeeded without a readable membership table")
+	}
+	if errCode(err) == contract.CodeNotInvited {
+		t.Fatalf("a store failure was reported as not_invited: %v", err)
+	}
+	if got := contract.AsError(err).Status(); got != 500 && got != 503 {
+		t.Fatalf("status %d for %v, want 500 or 503", got, err)
+	}
+}
+
+// A removed admin may be the only way back in: bootstrap-admin re-activates that admin.
+func TestBootstrapAdminReactivatesARemovedAdmin(t *testing.T) {
+	r, ctx := newRig(t, 5), context.Background()
+	id := contract.Identity{Subject: "user_boss", Email: "boss@example.test", EmailVerified: true}
+	if _, _, err := r.svc.BootstrapAdmin(ctx, "boss@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := r.svc.Resolve(ctx, id)
+	if _, err := r.svc.CompleteSignup(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.svc.BootstrapAdmin(ctx, "boss@example.test"); errCode(err) != contract.CodeConflict {
+		t.Fatalf("an active admin keeps the conflict: %v", err)
+	}
+	if err := r.db.SetMembershipStatus(ctx, store.OrgID(), sess.User.ID, "removed"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.svc.Resolve(ctx, id); got.Member {
+		t.Fatal("setup: the admin is still a member")
+	}
+	inv, created, err := r.svc.BootstrapAdmin(ctx, "Boss@Example.test")
+	if err != nil || created || inv.Email != "boss@example.test" {
+		t.Fatalf("re-activation: %+v created=%v err=%v", inv, created, err)
+	}
+	if got, _ := r.svc.Resolve(ctx, id); !got.Member || got.Principal.Role != contract.RoleAdmin {
+		t.Fatalf("not an active admin again: %+v", got)
+	}
+}
+
+// A removed plain member is not a way back in for bootstrap-admin: Settings re-invites.
+func TestBootstrapAdminDoesNotReactivateARemovedMember(t *testing.T) {
+	r, ctx := newRig(t, 5), context.Background()
+	adm := admin(t, r.svc)
+	if _, err := r.svc.CreateInvitation(ctx, adm, "dev@example.test", contract.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_dev", Email: "dev@example.test", EmailVerified: true})
+	if _, err := r.svc.CompleteSignup(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.SetMembershipStatus(ctx, store.OrgID(), sess.User.ID, "removed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.svc.BootstrapAdmin(ctx, "dev@example.test"); errCode(err) != contract.CodeConflict {
+		t.Fatalf("%v", err)
+	}
+	if got, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_dev"}); got.Member {
+		t.Fatal("a removed member became active through bootstrap-admin")
+	}
 }

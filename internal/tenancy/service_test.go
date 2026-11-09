@@ -17,6 +17,7 @@ import (
 )
 
 type rig struct {
+	db   *store.Store
 	svc  *tenancy.Service
 	mock *clerkmock.Server
 	clk  *clock
@@ -57,7 +58,7 @@ func newRigLogged(t *testing.T, maxWS int) (rig, *syncLog) {
 	if err := svc.EnsureDefaults(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	return rig{svc: svc, mock: mock, clk: clk}, logs
+	return rig{db: db, svc: svc, mock: mock, clk: clk}, logs
 }
 
 // syncLog is a goroutine-safe log sink.
