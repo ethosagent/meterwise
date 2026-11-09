@@ -12,8 +12,8 @@
 #      An emptied migrations directory fails when the base branch tracks migrations.
 #   4. goose, on a THROWAWAY database of a loopback Postgres (TEST_DATABASE_URL or the
 #      compose Postgres): for every migration, up-by-one, down, up must reproduce the
-#      schema exactly (a Down that does not undo its Up fails), then down-to 0 leaves
-#      no tables and up applies everything.
+#      schema exactly (pg_dump --schema-only, so a Down that leaves a sequence, an enum value
+#      or a grant behind fails), then down-to 0 leaves no tables and up applies everything.
 # SKIP only when no SQL input of any shape exists (ruling R5); with inputs it fails closed,
 # including when no Postgres is reachable.
 set -euo pipefail
@@ -90,22 +90,37 @@ dsn="$(printf '%s' "$admin" | sed -E "s#^([a-z]+://[^/?]*/)[^/?]+#\\1$name#")"
 case "$dsn" in *"/$name"*) ;; *) echo "✗ could not point the DSN at the throwaway database"; exit 1 ;; esac
 goose() { gotool goose -dir "$dir" postgres "$dsn" "$@"; }
 
-# A deterministic description of the public schema, excluding goose's own table.
+# pg_dump must not be older than the server. Against the compose Postgres it runs INSIDE the
+# container (always version-matched); against another loopback server (TEST_DATABASE_URL) the
+# local client is used and must be at least the server's major version.
+[ -z "$(dsn_problem "$dsn")" ] || { echo "✗ throwaway DSN rejected: $(dsn_problem "$dsn")"; exit 1; }
+in_container=0
+if [ "$admin" = "$PG_DSN_DEFAULT" ] && [ -n "$(cd "$REPO_ROOT" && docker compose ps -q postgres 2>/dev/null)" ]; then in_container=1; fi
+dump() {
+  if [ "$in_container" -eq 1 ]; then
+    (cd "$REPO_ROOT" && docker compose exec -T postgres pg_dump -U meterwise -d "$name" --schema-only --no-owner --exclude-table='goose_db_version*')
+  else
+    pg_dump "$dsn" --schema-only --no-owner --exclude-table='goose_db_version*'
+  fi
+}
+if [ "$in_container" -eq 0 ]; then
+  command -v pg_dump >/dev/null 2>&1 || { echo "✗ pg_dump not found; install the PostgreSQL client (or use the compose Postgres: make db-up)"; exit 1; }
+  server_major="$(( $(psql "$dsn" -qtAX -c 'show server_version_num') / 10000 ))"
+  client_major="$(pg_dump --version | grep -oE '[0-9]+' | head -n 1)"
+  if [ "$client_major" -lt "$server_major" ]; then
+    echo "✗ local pg_dump $client_major is older than the Postgres $server_major server: install a matching client or use the compose Postgres (make db-up)"
+    exit 1
+  fi
+fi
+
+# A deterministic description of the whole schema (pg_dump --schema-only: tables, columns,
+# indexes, constraints, triggers, policies, views, functions, types and enum values, sequences,
+# grants), excluding goose's own table. Volatile lines are dropped: \restrict/\unrestrict
+# carry a random token, and the "Dumped from/by" comments carry client and server versions.
 snap() {
-  psql "$dsn" -qtAX -v ON_ERROR_STOP=1 <<'SQL'
-select x from (
-  select 'col ' || table_name || '.' || column_name || ' ' || data_type || ' ' || udt_name || ' len=' || coalesce(character_maximum_length::text, '') || ' prec=' || coalesce(numeric_precision::text, '') || ',' || coalesce(numeric_scale::text, '') || ' ' || is_nullable || ' ' || coalesce(column_default, '') as x
-    from information_schema.columns where table_schema = 'public' and table_name <> 'goose_db_version'
-  union all select 'idx ' || indexdef from pg_indexes where schemaname = 'public' and tablename <> 'goose_db_version'
-  union all select 'con ' || conrelid::regclass || ' ' || conname || ' ' || pg_get_constraintdef(oid)
-    from pg_constraint where connamespace = 'public'::regnamespace and conrelid::regclass::text <> 'goose_db_version'
-  union all select 'trg ' || pg_get_triggerdef(oid) from pg_trigger where not tgisinternal
-  union all select 'pol ' || tablename || ' ' || policyname || ' ' || coalesce(qual, '') || coalesce(with_check, '') from pg_policies where schemaname = 'public'
-  union all select 'view ' || viewname || ' ' || definition from pg_views where schemaname = 'public'
-  union all select 'func ' || proname from pg_proc where pronamespace = 'public'::regnamespace
-  union all select 'type ' || typname from pg_type where typnamespace = 'public'::regnamespace and typtype in ('e', 'd')
-) s order by x
-SQL
+  local out
+  out="$(dump)" || { echo "✗ pg_dump failed" >&2; return 1; }
+  printf '%s\n' "$out" | grep -vE '^\\(un)?restrict |^-- Dumped (from|by) '
 }
 
 count="$(ls "$dir"/*.sql | wc -l | tr -d ' ')"

@@ -270,6 +270,9 @@ m_mig_noopdown() { mig 0001_orgs.sql "$GOOD"; mig 0002_orgs.sql '-- feature: org
 m_mig_origin() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; git update-ref refs/remotes/origin/main HEAD; git branch -m main feature; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; }
 m_mig_nobase() { mig 0001_orgs.sql "$GOOD"; git branch -m main feature; }
 green migrate "origin/main fallback: new migration on a PR branch is fine" "all gates passed" m_mig_origin_ok
+m_mig_seq() { mig 0001_orgs.sql "$GOOD"; mig 0002_orgs.sql '-- feature: orgs\n-- +goose Up\nCREATE SEQUENCE orgs_seq;\n-- +goose Down\nSELECT 1;\n'; }
+m_mig_enum() { mig 0001_orgs.sql '-- feature: orgs\n-- +goose Up\nCREATE TYPE org_kind AS ENUM ('"'a'"');\nCREATE TABLE orgs (id uuid PRIMARY KEY, kind org_kind);\n-- +goose Down\nDROP TABLE orgs;\nDROP TYPE org_kind;\n'; mig 0002_orgs.sql '-- feature: orgs\n-- +goose Up\nALTER TYPE org_kind ADD VALUE '"'b'"';\n-- +goose Down\nSELECT 1;\n'; }
+m_mig_grant() { mig 0001_orgs.sql "$GOOD"; mig 0002_orgs.sql '-- feature: orgs\n-- +goose Up\nGRANT SELECT ON orgs TO PUBLIC;\n-- +goose Down\nSELECT 1;\n'; }
 m_mig_prec() { mig 0001_orgs.sql '-- feature: orgs\n-- +goose Up\nCREATE TABLE orgs (id int, price numeric(14,6));\n-- +goose Down\nDROP TABLE orgs;\n'; mig 0002_orgs.sql '-- feature: orgs\n-- +goose Up\nALTER TABLE orgs ALTER COLUMN price TYPE numeric(20,2);\n-- +goose Down\nSELECT 1;\n'; }
 m_mig_alias() { mig 0001_orgs.sql "$GOOD"; mig 0002_workspaces.sql '-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\nUPDATE orgs o SET name = $$x$$;\n-- +goose Down\nDROP TABLE workspaces;\n'; }
 m_mig_launder() { mig 0001_workspaces.sql '-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\nCREATE TABLE audit_log (id int);\nCREATE TABLE calls (id int);\nCREATE TABLE orgs (id int);\n-- +goose Down\nDROP TABLE orgs;\nDROP TABLE calls;\nDROP TABLE audit_log;\nDROP TABLE workspaces;\n'; printf 'workspaces audit_log calls orgs\n' >internal/store/migration-families.txt; }
@@ -288,6 +291,9 @@ red migrate "upper-case .SQL migration" "SQL outside" m_mig_upper
 red migrate "generic feature name holding three tables" "too generic" m_mig_misc
 red migrate "quoted ALTER of another feature's table" "owned by feature orgs" m_mig_quoted
 red migrate "trigger on another feature's table" "owned by feature orgs" m_mig_trigger
+red migrate "Down that leaves a sequence behind" "Down does not restore the schema" m_mig_seq
+red migrate "Down that leaves an enum value behind" "Down does not restore the schema" m_mig_enum
+red migrate "Down that leaves a grant behind" "Down does not restore the schema" m_mig_grant
 red migrate "Down that is a no-op" "Down does not restore the schema" m_mig_noopdown
 red migrate "applied migration edited, only origin/main exists" "applied migrations were modified" m_mig_origin
 m_mig_lastcommit() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m edit; }
