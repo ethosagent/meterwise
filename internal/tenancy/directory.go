@@ -38,6 +38,11 @@ type Directory struct {
 	mu    sync.Mutex
 	byPub map[string]cached
 	byID  map[string]cached
+	// seq counts busts; bustedAt[workspace] is the seq of its latest bust. A lookup remembers seq
+	// before it reads Postgres and does not cache what it read if the workspace was busted since:
+	// the row may predate the change the bust announced.
+	seq      uint64
+	bustedAt map[string]uint64
 }
 
 var _ contract.WorkspaceDirectory = (*Directory)(nil)
@@ -47,7 +52,7 @@ func NewDirectory(st *store.Store, now func() time.Time, rand io.Reader) *Direct
 	if now == nil {
 		now = time.Now
 	}
-	return &Directory{st: st, org: store.OrgID(), now: now, rand: rand, byPub: map[string]cached{}, byID: map[string]cached{}}
+	return &Directory{st: st, org: store.OrgID(), now: now, rand: rand, byPub: map[string]cached{}, byID: map[string]cached{}, bustedAt: map[string]uint64{}}
 }
 
 // ByPublicID resolves a current or retired public id. A retired id inside its
@@ -57,10 +62,11 @@ func (d *Directory) ByPublicID(ctx context.Context, publicID string) (contract.W
 	if c, ok := d.hit(d.byPub, publicID); ok {
 		return c.ws, c.err
 	}
+	seen := d.seqNow()
 	ws, err := d.st.WorkspaceByPublicID(ctx, publicID, d.now())
 	if err != nil {
 		if contract.AsError(err).Code == contract.CodeWorkspaceURLReset {
-			d.putAt(d.byPub, publicID, cached{err: err, ws: ws}, d.now().Add(DirectoryTTL))
+			d.putAt(d.byPub, publicID, cached{err: err, ws: ws}, d.now().Add(DirectoryTTL), seen)
 		}
 		return contract.Workspace{}, err
 	}
@@ -68,7 +74,7 @@ func (d *Directory) ByPublicID(ctx context.Context, publicID string) (contract.W
 	if ws.Retired && ws.GraceUntil != nil && ws.GraceUntil.Before(exp) {
 		exp = *ws.GraceUntil
 	}
-	d.putAt(d.byPub, publicID, cached{ws: ws}, exp)
+	d.putAt(d.byPub, publicID, cached{ws: ws}, exp, seen)
 	return ws, nil
 }
 
@@ -78,11 +84,12 @@ func (d *Directory) ByID(ctx context.Context, id string) (contract.Workspace, er
 	if c, ok := d.hit(d.byID, id); ok {
 		return c.ws, nil
 	}
+	seen := d.seqNow()
 	ws, err := d.st.WorkspaceByID(ctx, id)
 	if err != nil {
 		return contract.Workspace{}, err
 	}
-	d.putAt(d.byID, id, cached{ws: ws}, d.now().Add(DirectoryTTL))
+	d.putAt(d.byID, id, cached{ws: ws}, d.now().Add(DirectoryTTL), seen)
 	return ws, nil
 }
 
@@ -145,6 +152,8 @@ func (d *Directory) SweepRetired(now time.Time) int {
 func (d *Directory) Bust(workspaceID string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.seq++
+	d.bustedAt[workspaceID] = d.seq
 	for k, c := range d.byPub {
 		if c.ws.ID == workspaceID {
 			delete(d.byPub, k)
@@ -164,9 +173,20 @@ func (d *Directory) hit(m map[string]cached, key string) (cached, bool) {
 	return c, true
 }
 
-func (d *Directory) putAt(m map[string]cached, key string, c cached, exp time.Time) {
+func (d *Directory) seqNow() uint64 {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.seq
+}
+
+// putAt caches c unless its workspace was busted after the lookup began (seen is the seq then);
+// a row read before a reset, retire or delete must not outlive the bust that followed it.
+func (d *Directory) putAt(m map[string]cached, key string, c cached, exp time.Time, seen uint64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if at, ok := d.bustedAt[c.ws.ID]; (ok && at > seen) || (c.ws.ID == "" && d.seq > seen) {
+		return
+	}
 	if len(d.byPub)+len(d.byID) >= maxCacheEntries {
 		clear(d.byPub)
 		clear(d.byID)

@@ -2,6 +2,7 @@ package tenancy_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,5 +76,47 @@ func TestRetirePreviousEndsGraceAtOnceAndSweepDropsDeadEntries(t *testing.T) {
 	}
 	if n := dir.SweepRetired(clk.t); n != 0 {
 		t.Fatalf("second sweep dropped %d", n)
+	}
+}
+
+// A lookup that read Postgres before a reset must not put its stale row in the cache after the
+// reset's Bust: the old id would then authenticate as current until the TTL ran out.
+func TestALookupRacingAResetNeverRecachesTheOldID(t *testing.T) {
+	dir, svc, _, _ := newDir(t)
+	ctx := context.Background()
+	ws, err := svc.CreateWorkspace(ctx, principal(), "Alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := ws.PublicID
+	for round := range 60 {
+		old := current
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					dir.Bust(ws.ID)
+					_, _ = dir.ByPublicID(ctx, old)
+				}
+			}()
+		}
+		res, err := dir.Reset(ctx, principal(), ws.ID, 0)
+		close(stop)
+		wg.Wait()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := dir.ByPublicID(ctx, old); errCode(err) != contract.CodeWorkspaceURLReset {
+			t.Fatalf("round %d: the old id (grace 0) must be %s, got %v", round, contract.CodeWorkspaceURLReset, err)
+		}
+		current = res.Workspace.PublicID
 	}
 }
