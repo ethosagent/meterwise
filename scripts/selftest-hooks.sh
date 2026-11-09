@@ -65,8 +65,12 @@ if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ reader mode never sends .env fi
 rm -f "$SCRATCH/port.seen"
 seq 1 450 | sed 's/^1$/api_key = abcdef1234567890/' >"$P/notes.txt"
 read_hook "$P/notes.txt" "" >/dev/null 2>&1
+# a file well over the pipe buffer (64 KB) with a secret on line 5: the sniff must still catch it
+{ seq 1 4; echo 'api_key = "abcdef1234567890abcdef"'; yes 'filler line to make this file large enough to fill a pipe' | head -n 3000; } >"$P/large-notes.txt"
+[ "$(wc -c <"$P/large-notes.txt")" -gt 65536 ] || { echo "✗ fixture too small"; bad=$((bad + 1)); }
+read_hook "$P/large-notes.txt" "" >/dev/null 2>&1
 seq 1 450 >"$P/id_ed25519"; read_hook "$P/id_ed25519" "" >/dev/null 2>&1
-if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ reader mode never sends a file whose content or name looks secret"; pass=$((pass + 1)); else echo "✗ reader mode sent a secret-looking file"; bad=$((bad + 1)); fi
+if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ reader mode never sends a file whose content (even in a file over 64 KB) or name looks secret"; pass=$((pass + 1)); else echo "✗ reader mode sent a secret-looking file"; bad=$((bad + 1)); fi
 METERWISE_READER_URL="http://127.0.0.1.evil.test:$(cat "$SCRATCH/port")" t "reader mode refuses a non-loopback reader URL" 2 "Use Grep" -- read_hook "$P/big.txt" ""
 if [ ! -e "$SCRATCH/port.seen" ]; then echo "✓ ...and sent nothing"; pass=$((pass + 1)); else echo "✗ non-loopback reader received data"; bad=$((bad + 1)); fi
 unset METERWISE_READER_URL

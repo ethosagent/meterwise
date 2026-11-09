@@ -9,6 +9,11 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib.sh
 if [ ! -f web/package.json ]; then
+  # SKIP only when the web app never existed: a deleted package.json is not "no input" (ruling R5)
+  if [ -d web/src ] || tracked_on_base web/package.json; then
+    echo "✗ web/package.json is missing but the web app exists (web/src, or web/package.json on the base branch)"
+    exit 1
+  fi
   skip web "no web/package.json yet"
   exit 0
 fi

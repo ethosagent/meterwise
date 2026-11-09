@@ -3,4 +3,5 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 . scripts/lib.sh
-gotool golangci-lint run --config "$REPO_ROOT/.golangci.yml" ./...
+# --allow-parallel-runners: parallel worktrees and CI jobs lint at the same time on one machine
+gotool golangci-lint run --allow-parallel-runners --config "$REPO_ROOT/.golangci.yml" ./...

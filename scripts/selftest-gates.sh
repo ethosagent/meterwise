@@ -70,6 +70,14 @@ red fmt "unformatted Go file" "not gofmt-formatted" m_fmt
 red vet "printf verb mismatch" "Sprintf format" m_vet
 red mod "unused requirement in go.mod" "not tidy" m_mod
 red lint "fmt.Println in library code" "forbidigo" m_lint
+if want_gate lint; then
+  rm -rf "$SCRATCH/pl1" "$SCRATCH/pl2"; cp -Rp "$BASE" "$SCRATCH/pl1"; cp -Rp "$BASE" "$SCRATCH/pl2"
+  (cd "$SCRATCH/pl1" && scripts/check-lint.sh >"$SCRATCH/pl1.out" 2>&1) & p1=$!
+  (cd "$SCRATCH/pl2" && scripts/check-lint.sh >"$SCRATCH/pl2.out" 2>&1) & p2=$!
+  wait "$p1"; r1=$?; wait "$p2"; r2=$?
+  if [ "$r1" -eq 0 ] && [ "$r2" -eq 0 ]; then echo "✓ GREEN   [lint] two concurrent lint runs (parallel worktrees)"; pass=$((pass + 1))
+  else echo "✗ NOT GREEN [lint] concurrent lint runs (rc $r1, $r2)"; tail -n 3 "$SCRATCH/pl1.out" "$SCRATCH/pl2.out"; bad=$((bad + 1)); fi
+fi
 green fmt "clean tree" "all gates passed" nop
 
 # ---- arch: one seeded violation per rule, on the real repository layout
@@ -119,6 +127,27 @@ package store
 import _ "github.com/jackc/pgx/v5"'; }
 modclean() { git diff --quiet -- go.mod && [ ! -e go.sum ]; }
 POST=modclean green arch "an allowlisted import missing from go.mod does not rewrite go.mod or go.sum" "all gates passed" m_h6store
+m_h9() { mkdir -p internal/config/nested; printf 'module nested\n' >internal/config/nested/go.mod; gofile internal/config/nested/n_test.go <<<'package nested
+import "testing"
+func TestFail(t *testing.T) { t.Fatal("hidden by a nested module") }'; }
+m_dist() { gofile internal/savings/dist/doc.go <<<'// Package dist hides behind a directory name.
+package dist'; gofile internal/savings/dist/x.go <<<'//go:build offline
+
+package dist
+import _ "net/http"'; }
+m_h8c() { gofile internal/audit/doc.go <<<'// Package audit appends audit events.
+package audit'; gofile internal/audit/net_test.go <<<'package audit
+import (
+	"os"
+	"testing"
+)
+// TestMain should call nonet.Run(m) but only this comment says so.
+func TestMain(m *testing.M) { os.Exit(m.Run()) }'; }
+m_h4alias() { mkdir -p internal/store/queries; printf 'UPDATE calls c SET n = 1;\n' >internal/store/queries/workspaces.sql; }
+red arch "H9 nested go.mod hides a package from every gate" "H9 " m_h9
+red arch "H7 build tag inside a package named dist" "H7 " m_dist
+red arch "H8 nonet.Run only mentioned in a comment" "H8 " m_h8c
+red arch "H4 aliased UPDATE on a ledger table" "H4 " m_h4alias
 red arch "H1 imports tollgate's non-public cmd package" "H1 " m_h1cmd
 red arch "H4 quoted UPDATE ONLY on a ledger table" "H4 " m_h4q
 red arch "H7 build tag hides a package from every gate" "H7 " m_h7
@@ -241,6 +270,18 @@ m_mig_noopdown() { mig 0001_orgs.sql "$GOOD"; mig 0002_orgs.sql '-- feature: org
 m_mig_origin() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; git update-ref refs/remotes/origin/main HEAD; git branch -m main feature; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; }
 m_mig_nobase() { mig 0001_orgs.sql "$GOOD"; git branch -m main feature; }
 green migrate "origin/main fallback: new migration on a PR branch is fine" "all gates passed" m_mig_origin_ok
+m_mig_prec() { mig 0001_orgs.sql '-- feature: orgs\n-- +goose Up\nCREATE TABLE orgs (id int, price numeric(14,6));\n-- +goose Down\nDROP TABLE orgs;\n'; mig 0002_orgs.sql '-- feature: orgs\n-- +goose Up\nALTER TABLE orgs ALTER COLUMN price TYPE numeric(20,2);\n-- +goose Down\nSELECT 1;\n'; }
+m_mig_alias() { mig 0001_orgs.sql "$GOOD"; mig 0002_workspaces.sql '-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\nUPDATE orgs o SET name = $$x$$;\n-- +goose Down\nDROP TABLE workspaces;\n'; }
+m_mig_launder() { mig 0001_workspaces.sql '-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\nCREATE TABLE audit_log (id int);\nCREATE TABLE calls (id int);\nCREATE TABLE orgs (id int);\n-- +goose Down\nDROP TABLE orgs;\nDROP TABLE calls;\nDROP TABLE audit_log;\nDROP TABLE workspaces;\n'; printf 'workspaces audit_log calls orgs\n' >internal/store/migration-families.txt; }
+m_mig_deleted() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; rm internal/store/migrations/0001_orgs.sql; }
+m_mig_order() { mig 0002_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; git checkout -q -b feature; echo x >unrelated.txt; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m other; mig 0001_users.sql '-- feature: users\n-- +goose Up\nCREATE TABLE users (id int);\n-- +goose Down\nDROP TABLE users;\n'; }
+red migrate "numeric(14,6) to numeric(20,2) with a no-op Down" "Down does not restore the schema" m_mig_prec
+red migrate "aliased UPDATE of another feature's table" "touches table orgs" m_mig_alias
+red migrate "manifest line that launders a four-table migration" "ledger table audit_log may only belong" m_mig_launder
+red migrate "every applied migration deleted" "applied migrations were deleted" m_mig_deleted
+red migrate "new migration numbered below the newest applied one" "must use a higher number" m_mig_order
+red migrate "TEST_DATABASE_URL with a percent-encoded host parameter" "not allowed" m_mig_ok TEST_DATABASE_URL='postgres://u:p@127.0.0.1:54329/x?h%6Fst=db.example.com'
+red migrate "TEST_DATABASE_URL with a dbname override" "not allowed" m_mig_ok TEST_DATABASE_URL='postgres://u:p@127.0.0.1:54329/x?dbname=real'
 red migrate "SQL in db/migrations" "SQL outside" m_mig_db
 red migrate "SQL in a migrations subdirectory" "SQL outside" m_mig_sub
 red migrate "upper-case .SQL migration" "SQL outside" m_mig_upper
@@ -266,6 +307,8 @@ m_barrelmts() { printf 'export const a = 1;\n' >web/src/index.mts; }
 m_nofeat() { mkdir -p web/src/features/billing; printf 'export const b = 1;\n' >web/src/features/billing/Page.ts; }
 m_h5web() { printf 'import _ from "lodash";\nexport const l = _;\n' >web/src/bad.ts; }
 m_pkg() { sed -i.bak 's/"devDependencies": {/"devDependencies": {\n    "left-pad": "1.3.0",/' web/package.json; rm -f web/package.json.bak; }
+m_webnopkg() { git rm -q web/package.json; }
+red web "web/package.json deleted while web/src exists" "web/package.json is missing" m_webnopkg
 red web "explicit any" "npm run check failed" m_any
 red web "type error" "npm run typecheck failed" m_tsc
 red web "failing vitest" "npm run test failed" m_vitest

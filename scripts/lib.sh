@@ -49,6 +49,9 @@ cover_gate() {
   fi
 }
 
+# The environment must not redirect libpq clients (psql, goose) away from the DSN.
+unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGDATABASE PGPORT PGOPTIONS PGSSLROOTCERT 2>/dev/null || true
+
 # ensure_pg prints a loopback DSN for the compose Postgres, starting it when
 # docker is available. It prints nothing and returns 1 when no database can be
 # reached, or when TEST_DATABASE_URL names a non-loopback host or has no database
@@ -63,7 +66,19 @@ dsn_problem() {
   case "$dsn" in postgres://* | postgresql://*) ;; *) echo "not a postgres:// URL"; return ;; esac
   auth="$(printf '%s' "$dsn" | sed -E 's#^[a-z]+://([^/?]*).*#\1#')"
   case "$auth" in *,*) echo "multiple hosts are not allowed"; return ;; esac
-  if printf '%s' "$dsn" | grep -qiE '[?&](host|hostaddr|service)='; then echo "host/hostaddr/service query parameters are not allowed"; return; fi
+  # libpq lets the query string override host, database or service, also percent-encoded
+  # (?h%6Fst=...): only sslmode may appear there.
+  local query="" kv key
+  case "$dsn" in *\?*) query="${dsn#*\?}" ;; esac
+  if [ -n "$query" ]; then
+    local IFS='&'
+    for kv in $query; do
+      key="${kv%%=*}"
+      key="$(printf '%b' "$(printf '%s' "$key" | sed -E 's/%([0-9A-Fa-f]{2})/\\x\1/g')" | tr '[:upper:]' '[:lower:]')"
+      if [ "$key" != sslmode ]; then echo "query parameter '$key' is not allowed (only sslmode)"; return; fi
+    done
+    unset IFS
+  fi
   host="$(printf '%s' "${auth##*@}" | sed -E 's#^(\[[^]]*\]|[^:]*).*#\1#')"
   if ! printf '%s' "$host" | grep -qE '^(localhost|127(\.[0-9]+){3}|\[::1\])$'; then echo "host '$host' is not loopback"; return; fi
   printf '%s' "$dsn" | grep -qE '^[a-z]+://[^/?]*/[^/?]+' || echo "no database name in the URL path"
@@ -86,6 +101,29 @@ ensure_pg() {
     psql "$PG_DSN_DEFAULT" -qtAc 'select 1' >/dev/null 2>&1 || return 1
   fi
   printf '%s\n' "$PG_DSN_DEFAULT"
+}
+
+# base_ref prints the branch applied work is compared with: main, else origin/main, else nothing.
+base_ref() {
+  local r
+  for r in main origin/main; do
+    if git rev-parse --verify -q "$r^{commit}" >/dev/null; then echo "$r"; return; fi
+  done
+}
+
+# tracked_on_base PATH: is PATH tracked on the base branch (or, on the base branch itself,
+# in its previous commit)? A gate whose input vanished must fail, not SKIP (ruling R5).
+tracked_on_base() {
+  local b mb r refs
+  b="$(base_ref)"
+  [ -n "$b" ] || return 1
+  refs="$b"
+  mb="$(git merge-base HEAD "$b" 2>/dev/null || true)"
+  if [ -n "$mb" ] && [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then refs="$refs HEAD~1"; fi
+  for r in $refs; do
+    if [ -n "$(git ls-tree -r --name-only "$r" -- "$1" 2>/dev/null | head -n 1)" ]; then return 0; fi
+  done
+  return 1
 }
 
 # sqlc_state prints "none", "ready" or "error: <why>". SKIP is only legal when no

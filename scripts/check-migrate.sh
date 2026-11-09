@@ -8,6 +8,8 @@
 #      origin/main when there is no local main) only new files (status A) may appear.
 #      On main itself the last commit is compared. No base to compare with fails under
 #      CI=true and prints a SKIP locally.
+#      New migration numbers must exceed the newest one on the base branch.
+#      An emptied migrations directory fails when the base branch tracks migrations.
 #   4. goose, on a THROWAWAY database of a loopback Postgres (TEST_DATABASE_URL or the
 #      compose Postgres): for every migration, up-by-one, down, up must reproduce the
 #      schema exactly (a Down that does not undo its Up fails), then down-to 0 leaves
@@ -26,6 +28,10 @@ if [ -n "$stray" ]; then
   exit 1
 fi
 if [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+  if tracked_on_base "$dir"; then
+    echo "✗ $dir is empty but the base branch tracks migrations there: applied migrations were deleted (add a NEW migration instead)"
+    exit 1
+  fi
   skip migrate "no migrations exist yet in $dir (Plan 01 adds the first); this gate fails closed the moment one does"
   exit 0
 fi
@@ -45,6 +51,20 @@ if [ -n "$base_ref" ] && mb="$(git merge-base HEAD "$base_ref" 2>/dev/null)" && 
 $(git diff --name-status HEAD~1 HEAD -- "$dir")"
   fi
   changed="$(printf '%s\n' "$diffs" | grep -v -E '^(A[[:space:]]|$)' || true)"
+  # numbers must increase: a new migration numbered below the newest applied one is out of order
+  ord_ref="$mb"
+  if [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then ord_ref="HEAD~1"; fi
+  base_max="$(git ls-tree --name-only "$ord_ref" -- "$dir/" | sed 's#.*/##' | grep -oE '^[0-9]{4}' | sort | tail -n 1 || true)"
+  if [ -n "$base_max" ]; then
+    while IFS=$'\t' read -r st f; do
+      [ "$st" = A ] || continue
+      n="$(basename "$f" | grep -oE '^[0-9]{4}' || true)"
+      if [ -n "$n" ] && [ ! "$n" \> "$base_max" ]; then
+        echo "✗ $f is numbered $n but $base_max is already applied on the base branch: new migrations must use a higher number (renumber it)"
+        exit 1
+      fi
+    done <<<"$diffs"
+  fi
   if [ -n "$changed" ]; then
     echo "✗ applied migrations were modified or removed (add a NEW migration instead):"
     echo "$changed"
@@ -71,7 +91,7 @@ goose() { gotool goose -dir "$dir" postgres "$dsn" "$@"; }
 snap() {
   psql "$dsn" -qtAX -v ON_ERROR_STOP=1 <<'SQL'
 select x from (
-  select 'col ' || table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '') as x
+  select 'col ' || table_name || '.' || column_name || ' ' || data_type || ' ' || udt_name || ' len=' || coalesce(character_maximum_length::text, '') || ' prec=' || coalesce(numeric_precision::text, '') || ',' || coalesce(numeric_scale::text, '') || ' ' || is_nullable || ' ' || coalesce(column_default, '') as x
     from information_schema.columns where table_schema = 'public' and table_name <> 'goose_db_version'
   union all select 'idx ' || indexdef from pg_indexes where schemaname = 'public' and tablename <> 'goose_db_version'
   union all select 'con ' || conrelid::regclass || ' ' || conname || ' ' || pg_get_constraintdef(oid)
