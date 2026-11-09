@@ -1,6 +1,21 @@
 {
   "components": {
     "schemas": {
+      "AppConfig": {
+        "properties": {
+          "appName": {
+            "type": "string"
+          },
+          "proxyPublicHost": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "appName",
+          "proxyPublicHost"
+        ],
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -14,15 +29,14 @@
               "not_available",
               "not_found",
               "rate_limited",
-              "unauthorized"
+              "unauthorized",
+              "unavailable"
             ],
             "type": "string"
           },
           "details": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "additionalProperties": true,
+            "type": "object"
           },
           "message": {
             "type": "string"
@@ -30,7 +44,8 @@
         },
         "required": [
           "code",
-          "message"
+          "message",
+          "details"
         ],
         "type": "object"
       },
@@ -43,6 +58,43 @@
         "required": [
           "status"
         ],
+        "type": "object"
+      },
+      "Preferences": {
+        "properties": {
+          "reducedMotion": {
+            "type": "boolean"
+          },
+          "theme": {
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme",
+          "reducedMotion"
+        ],
+        "type": "object"
+      },
+      "PreferencesPatch": {
+        "properties": {
+          "reducedMotion": {
+            "type": "boolean"
+          },
+          "theme": {
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "Version": {
@@ -75,6 +127,111 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/config": {
+      "get": {
+        "operationId": "getApiConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "App name and public proxy host for the shell"
+      }
+    },
+    "/api/me/preferences": {
+      "get": {
+        "operationId": "getApiMePreferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preferences"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read the caller's UI preferences",
+        "x-permission": "self"
+      },
+      "patch": {
+        "operationId": "patchApiMePreferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preferences"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change the caller's UI preferences",
+        "x-permission": "self"
+      }
+    },
     "/api/v1/version": {
       "get": {
         "operationId": "getApiV1Version",
