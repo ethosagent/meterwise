@@ -2,6 +2,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { App, Button, Card, Flex, Popconfirm, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
 import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
+import { useAccessToast } from "../../api/useAccessToast";
 import type { Invitation } from "../../contract/generated";
 import { InviteModal } from "./InviteModal";
 
@@ -19,6 +20,7 @@ const STATUS_COLOR: Record<Invitation["status"], string> = {
 export function InvitationsTable({ isAdmin }: { isAdmin: boolean }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
+  const fail = useAccessToast();
   const list = useInvitations(true);
   const resend = useResendInvitation();
   const revoke = useRevokeInvitation();
@@ -75,7 +77,7 @@ export function InvitationsTable({ isAdmin }: { isAdmin: boolean }) {
                     onClick={() =>
                       resend.mutate(inv.id, {
                         onSuccess: () => message.success(`Invitation resent to ${inv.email}`),
-                        onError: () => message.error("Could not resend the invitation."),
+                        onError: (e) => fail(e, "Could not resend the invitation."),
                       })
                     }
                   >
@@ -87,7 +89,7 @@ export function InvitationsTable({ isAdmin }: { isAdmin: boolean }) {
                     okButtonProps={{ danger: true }}
                     onConfirm={() =>
                       revoke.mutate(inv.id, {
-                        onError: () => message.error("Could not revoke the invitation."),
+                        onError: (e) => fail(e, "Could not revoke the invitation."),
                       })
                     }
                   >

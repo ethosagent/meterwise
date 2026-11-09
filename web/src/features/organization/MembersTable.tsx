@@ -1,9 +1,9 @@
 import { PlusOutlined } from "@ant-design/icons";
 import { App, Button, Card, Flex, Popconfirm, Select, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
-import { ACCESS_ERROR_TEXT, useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
-import { describeApiError } from "../../api/errors";
+import { useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
 import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
+import { useAccessToast } from "../../api/useAccessToast";
 import type { Invitation, Member, Role } from "../../contract/generated";
 import { InviteModal } from "./InviteModal";
 
@@ -34,8 +34,7 @@ export function MembersTable({ canManage, isAdmin }: Props) {
   const resend = useResendInvitation();
   const revoke = useRevokeInvitation();
   const [inviting, setInviting] = useState(false);
-  const fail = (e: unknown, fallback: string) =>
-    message.error(describeApiError(e, { byCode: ACCESS_ERROR_TEXT, fallback }));
+  const fail = useAccessToast();
 
   const rows: Row[] = [
     ...(members.data ?? []).map((m): Row => ({ key: m.userId, kind: "member", member: m })),

@@ -1,15 +1,10 @@
-import { App, Skeleton, Transfer } from "antd";
-import {
-  ACCESS_ERROR_TEXT,
-  useGroupMembers,
-  useSetGroupMembers,
-  useMembers,
-} from "../../api/access";
-import { describeApiError } from "../../api/errors";
+import { Skeleton, Transfer } from "antd";
+import { useGroupMembers, useMembers, useSetGroupMembers } from "../../api/access";
+import { useAccessToast } from "../../api/useAccessToast";
 
 /** Two lists: organization members on the left, this group's members on the right. Moving touches group_users only. */
 export function MembersTransfer({ groupId, disabled }: { groupId: string; disabled: boolean }) {
-  const { message } = App.useApp();
+  const fail = useAccessToast();
   const all = useMembers(true);
   const inGroup = useGroupMembers(groupId);
   const move = useSetGroupMembers();
@@ -34,13 +29,7 @@ export function MembersTransfer({ groupId, disabled }: { groupId: string; disabl
         move.mutate(
           { id: groupId, userIds: next.map(String) },
           {
-            onError: (e) =>
-              message.error(
-                describeApiError(e, {
-                  byCode: ACCESS_ERROR_TEXT,
-                  fallback: "Could not update the group's members.",
-                }),
-              ),
+            onError: (e) => fail(e, "Could not update the group's members."),
           },
         )
       }
