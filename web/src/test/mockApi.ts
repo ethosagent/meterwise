@@ -15,6 +15,7 @@ import {
   type AccessMock,
   createAccessMock,
   errorResponse,
+  forbidden,
   jsonResponse as json,
 } from "./mockAccess";
 import { createUrlMock, type UrlMock } from "./mockUrl";
@@ -176,7 +177,7 @@ export function mockApi(opts: Options = {}): MockApi {
       // The interface file: PATCH needs workspace:write, DELETE workspace:manage, switch workspace:read.
       const need = method === "PATCH" ? "write" : method === "DELETE" ? "manage" : "read";
       if (!access.can("workspace", need, target.id)) {
-        return errorResponse(403, "forbidden", "not allowed", { reason: "no matching grant" });
+        return forbidden("no matching grant");
       }
       if (ws[2] && method === "POST") {
         me = { ...me, activeWorkspaceId: target.id };
@@ -198,13 +199,13 @@ export function mockApi(opts: Options = {}): MockApi {
     }
     if (path.startsWith("/api/invitations")) {
       if (!access.can("member", "manage")) {
-        return errorResponse(403, "forbidden", "not allowed", { reason: "no matching grant" });
+        return forbidden("no matching grant");
       }
       const inv = /^\/api\/invitations\/([^/]+)(\/resend)?$/.exec(path);
       if (path === "/api/invitations" && method === "GET") return json({ items: invitations });
       if (path === "/api/invitations" && method === "POST") {
         if (body.role === "admin" && !access.isAdmin()) {
-          return errorResponse(403, "forbidden", "not allowed", { reason: "admin required" });
+          return forbidden("admin required");
         }
         if (access.members.some((x) => x.email === body.email)) {
           return errorResponse(409, "already_member", "already a member");

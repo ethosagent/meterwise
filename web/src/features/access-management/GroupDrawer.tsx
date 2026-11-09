@@ -12,6 +12,7 @@ import {
 } from "antd";
 import { useState } from "react";
 import {
+  ACCESS_ERROR_TEXT,
   useAttachWorkspace,
   useDeleteGroup,
   useDetachWorkspace,
@@ -20,7 +21,7 @@ import {
   useRenameGroup,
 } from "../../api/access";
 import { useWorkspaces } from "../../api/identity";
-import { useAccessToast } from "../../api/useAccessToast";
+import { useErrorToast } from "../../api/useErrorToast";
 import type { Group } from "../../contract/generated";
 import { GrantsEditor } from "./GrantsEditor";
 import { MembersTransfer } from "./MembersTransfer";
@@ -40,7 +41,7 @@ function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
   const attach = useAttachWorkspace();
   const detach = useDetachWorkspace();
   const [name, setName] = useState(group.name);
-  const fail = useAccessToast();
+  const fail = useErrorToast(ACCESS_ERROR_TEXT);
   const nameOf = (id: string) => workspaces.find((w) => w.id === id)?.name ?? id;
   return (
     <>

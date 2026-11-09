@@ -1,18 +1,11 @@
 import { CopyOutlined } from "@ant-design/icons";
-import { App, Button, theme } from "antd";
+import { Button, theme } from "antd";
+import { useCopy } from "../../api/useCopy";
 
 /** One ready-to-paste snippet, mono and selectable, with a Copy button. */
 export function Snippet({ label, text }: { label: string; text: string }) {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      message.success(`${label} snippet copied`);
-    } catch {
-      message.error("Could not copy. Select the snippet and copy it by hand.");
-    }
-  };
+  const copy = useCopy(text, `${label} snippet`);
   return (
     <div style={{ position: "relative" }}>
       <Button

@@ -1,7 +1,7 @@
 import { App, Button, Flex, theme } from "antd";
 import { useState } from "react";
 import { ACCESS_ERROR_TEXT } from "../../api/access";
-import { describeApiError } from "../../api/errors";
+import { useErrorToast } from "../../api/useErrorToast";
 import type { Grant } from "../../contract/generated";
 import { type MatrixSection, PermissionsMatrix } from "./PermissionsMatrix";
 
@@ -24,6 +24,7 @@ interface Props {
 export function GrantsEditor({ sections, saved, disabled, save, saving }: Props) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
+  const fail = useErrorToast(ACCESS_ERROR_TEXT);
   const [draft, setDraft] = useState<Grant[]>(saved);
   const dirty = norm(draft) !== norm(saved);
   return (
@@ -42,13 +43,7 @@ export function GrantsEditor({ sections, saved, disabled, save, saving }: Props)
           onClick={() =>
             save(draft, {
               onSuccess: () => message.success("Permissions saved"),
-              onError: (e) =>
-                message.error(
-                  describeApiError(e, {
-                    byCode: ACCESS_ERROR_TEXT,
-                    fallback: "Could not save the permissions.",
-                  }),
-                ),
+              onError: (e) => fail(e, "Could not save the permissions."),
             })
           }
         >
