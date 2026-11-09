@@ -1,11 +1,22 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// Sources as raw text, bundled by Vite: no node built-ins in web/src.
-const sources = import.meta.glob(["../**/*.ts", "../**/*.tsx", "../**/*.css"], {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+// Sources are read with node:fs, not import.meta.glob("?raw"): a raw import registers the file as
+// loaded, which hides never-imported files from the coverage floor.
+const SRC = resolve(import.meta.dirname, "..");
+
+function walk(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+  );
+}
+
+const sources: Record<string, string> = Object.fromEntries(
+  walk(SRC)
+    .filter((f) => /\.(ts|tsx|css)$/.test(f))
+    .map((f) => [`../${relative(SRC, f).split(sep).join("/")}`, readFileSync(f, "utf8")]),
+);
 
 const shipped = Object.entries(sources).filter(
   ([p]) =>
