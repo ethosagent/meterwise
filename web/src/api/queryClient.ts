@@ -3,26 +3,30 @@ import { permissionsKey, refreshAccess } from "./access";
 import { ApiError } from "./errors";
 
 /**
- * The app's query client. A 403 `forbidden` from any call means the permission snapshot the UI
- * held was stale (a grant was revoked elsewhere), so refetch the snapshot, the workspace list and
- * Me. The snapshot's own query is exempt, or a 403 on it would loop.
+ * The app's query client. A 403 `forbidden` from any call can mean the permission snapshot the UI
+ * held was stale, so refetch the snapshot, the workspace list and Me. That refresh is worth doing
+ * only while the snapshot could still change: if it is unchanged since the last refresh, a
+ * further 403 is a real refusal and refreshing again would cycle (a persistent 403 on any of the
+ * refreshed queries). So a refresh is skipped when the snapshot equals the one the last refresh
+ * started from. The snapshot's own query is exempt.
  */
 export function createQueryClient(retry: number | false): QueryClient {
+  let lastRefreshedFrom: string | undefined;
+  const onForbidden = (error: unknown) => {
+    if (!(error instanceof ApiError && error.status === 403 && error.code === "forbidden")) return;
+    const snapshot = JSON.stringify(client.getQueryData(permissionsKey) ?? null);
+    if (snapshot === lastRefreshedFrom) return;
+    lastRefreshedFrom = snapshot;
+    void refreshAccess(client);
+  };
   const client: QueryClient = new QueryClient({
     defaultOptions: { queries: { retry, refetchOnWindowFocus: false } },
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (query.queryKey[0] === permissionsKey[0]) return;
-        onForbidden(client, error);
+        if (query.queryKey[0] !== permissionsKey[0]) onForbidden(error);
       },
     }),
-    mutationCache: new MutationCache({ onError: (error) => onForbidden(client, error) }),
+    mutationCache: new MutationCache({ onError: onForbidden }),
   });
   return client;
-}
-
-function onForbidden(client: QueryClient, error: unknown) {
-  if (error instanceof ApiError && error.status === 403 && error.code === "forbidden") {
-    void refreshAccess(client);
-  }
 }

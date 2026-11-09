@@ -65,6 +65,7 @@ function useMockSession(): SessionApi {
     () => ({
       isLoaded: true,
       isSignedIn: email !== null,
+      userId: email,
       getToken,
       signOut: async () => signOut(),
     }),

@@ -4,6 +4,8 @@ import type { ComponentType, ReactNode } from "react";
 export interface SessionApi {
   isLoaded: boolean;
   isSignedIn: boolean;
+  /** Who is signed in (null when nobody is). A change of this value is a change of identity. */
+  userId: string | null;
   /** A fresh bearer token for the API, or null when signed out. */
   getToken: () => Promise<string | null>;
   signOut: () => Promise<void>;

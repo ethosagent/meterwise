@@ -183,3 +183,62 @@ describe("AccessManagementPage (member)", () => {
     expect(api.callsTo("GET", "/api/members")).toHaveLength(0);
   });
 });
+
+describe("Organization defaults tab", () => {
+  const open = async () => {
+    await userEvent.click(await screen.findByRole("tab", { name: "Defaults" }));
+    return screen.findByText("Organization defaults apply to all members in all workspaces");
+  };
+
+  it("tells admins the defaults reach everyone everywhere, and saves the whole set in one PUT", async () => {
+    const api = mockApi();
+    renderAt(<AccessManagementPage />, PATH);
+    await open();
+    const sessionRead = await screen.findByLabelText("Every workspace: session:read");
+    expect(sessionRead).toBeChecked(); // the seed
+    await userEvent.click(sessionRead);
+    await userEvent.click(screen.getByLabelText("Organization: member:read"));
+    await userEvent.click(screen.getByRole("button", { name: "Save permissions" }));
+    await waitFor(() =>
+      expect(api.callsTo("PUT", "/api/organization/permissions")).toHaveLength(1),
+    );
+    const grants = (
+      api.callsTo("PUT", "/api/organization/permissions")[0]?.body as { grants: unknown[] }
+    ).grants;
+    expect(grants).toHaveLength(5); // 5 seeded reads, minus session, plus member:read
+    expect(grants).toContainEqual({ workspaceId: null, resourceType: "member", action: "read" });
+    expect(grants).not.toContainEqual({
+      workspaceId: null,
+      resourceType: "session",
+      action: "read",
+    });
+    expect(grants.every((g) => (g as { workspaceId: unknown }).workspaceId === null)).toBe(true);
+    await waitFor(() =>
+      expect(api.callsTo("GET", "/api/me/permissions").length).toBeGreaterThan(1),
+    );
+  });
+
+  it("is read-only for a member with member:read", async () => {
+    const api = mockApi({ me: MEMBER_ME, access: { snapshot: MEMBER_READ } });
+    renderAt(<AccessManagementPage />, PATH);
+    await open();
+    expect(await screen.findByLabelText("Every workspace: session:read")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save permissions" })).toBeDisabled();
+    expect(api.callsTo("PUT", /organization/)).toHaveLength(0);
+  });
+
+  it("has no Defaults tab without member:read", async () => {
+    mockApi({
+      me: MEMBER_ME,
+      access: {
+        snapshot: {
+          admin: false,
+          grants: [{ workspaceId: null, resourceType: "member", action: "manage" }],
+        },
+      },
+    });
+    renderAt(<AccessManagementPage />, PATH);
+    expect(await screen.findByRole("tab", { name: "Invitations" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Defaults" })).toBeNull();
+  });
+});

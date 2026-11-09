@@ -8,6 +8,8 @@ import {
 function parse(permission: Permission): { resource: ResourceType; action: string } | undefined {
   const [resource, action] = permission.split(":");
   if (!resource || !action || !(resource in TAXONOMY)) return undefined;
+  const actions: readonly string[] = TAXONOMY[resource as ResourceType].actions;
+  if (!actions.includes(action)) return undefined;
   return { resource: resource as ResourceType, action };
 }
 

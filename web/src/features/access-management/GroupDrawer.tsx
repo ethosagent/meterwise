@@ -18,6 +18,7 @@ import {
   useDeleteGroup,
   useGroupGrants,
   useGroupWorkspace,
+  usePutGroupGrants,
   useRenameGroup,
 } from "../../api/access";
 import { describeApiError } from "../../api/errors";
@@ -150,6 +151,7 @@ function Permissions({
   nameOf: (id: string) => string;
 }) {
   const grants = useGroupGrants(group.id);
+  const put = usePutGroupGrants();
   if (!grants.data) return <Skeleton active />;
   const sections = [
     ...group.workspaceIds.map((id) => ({ title: nameOf(id), workspaceId: id })),
@@ -158,13 +160,21 @@ function Permissions({
   // Remount the editor whenever the server's copy changes, so a refetch replaces a stale draft.
   const key = JSON.stringify([group.workspaceIds, grants.data]);
   return (
-    <GrantsEditor
-      key={key}
-      groupId={group.id}
-      sections={sections}
-      saved={grants.data}
-      disabled={!isAdmin}
-    />
+    <>
+      {group.workspaceIds.length === 0 ? (
+        <Typography.Paragraph type="secondary">
+          Attach a workspace to give this group access to it.
+        </Typography.Paragraph>
+      ) : null}
+      <GrantsEditor
+        key={key}
+        sections={sections}
+        saved={grants.data}
+        disabled={!isAdmin}
+        saving={put.isPending}
+        save={(next, on) => put.mutate({ id: group.id, grants: next }, on)}
+      />
+    </>
   );
 }
 

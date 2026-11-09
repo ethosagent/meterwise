@@ -4,6 +4,7 @@ import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { InvitationsTable } from "../organization/InvitationsTable";
 import { GroupsTab } from "./GroupsTab";
+import { OrgDefaultsTab } from "./OrgDefaultsTab";
 import { UsersTab } from "./UsersTab";
 
 /** Settings > Access management: Groups, Users, Invitations. Each tab appears only when its reads would not 403. */
@@ -16,6 +17,7 @@ export function AccessManagementPage() {
       ? [
           { key: "groups", label: "Groups", children: <GroupsTab isAdmin={isAdmin} /> },
           { key: "users", label: "Users", children: <UsersTab /> },
+          { key: "defaults", label: "Defaults", children: <OrgDefaultsTab isAdmin={isAdmin} /> },
         ]
       : []),
     ...(canManage

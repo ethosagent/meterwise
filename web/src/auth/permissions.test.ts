@@ -49,6 +49,14 @@ describe("hasPermission", () => {
     );
   });
 
+  it("rejects an action the taxonomy does not define for that resource, even with a matching grant", () => {
+    const odd = member({ workspaceId: null, resourceType: "session", action: "write" });
+    expect(hasPermission(odd, "session:write" as never, "ws_1")).toBe(false);
+    expect(
+      hasPermission(member(grant(null, "session", "read")), "session:manage" as never, "ws_1"),
+    ).toBe(false);
+  });
+
   it("is false for a missing snapshot and an unknown permission", () => {
     expect(hasPermission(undefined, "workspace:read", "ws_1")).toBe(false);
     expect(hasPermission(member(), "nope:read" as never, "ws_1")).toBe(false);

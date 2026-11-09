@@ -62,12 +62,15 @@ export interface AccessInit {
   snapshot?: PermissionSnapshot;
   members?: Member[];
   groups?: MockGroup[];
+  /** The organization defaults (default: the seed, read on every workspace-scoped resource). */
+  orgDefaults?: Grant[];
 }
 
 export interface AccessMock {
   members: Member[];
   groups: MockGroup[];
   snapshot: PermissionSnapshot;
+  orgDefaults: Grant[];
   setSnapshot: (s: PermissionSnapshot) => void;
   /** The gateway's rule, written independently of the production hasPermission. */
   can: (resource: ResourceType, action: Action, workspaceId?: string) => boolean;
@@ -82,6 +85,7 @@ export function createAccessMock(admin: boolean, init: AccessInit = {}): AccessM
   const m: AccessMock = {
     members: structuredClone(init.members ?? [ADA, BO]),
     groups: structuredClone(init.groups ?? []),
+    orgDefaults: structuredClone(init.orgDefaults ?? READS),
     snapshot: init.snapshot ?? (admin ? ADMIN_SNAPSHOT : MEMBER_SNAPSHOT),
     setSnapshot: (s) => {
       m.snapshot = s;
@@ -110,6 +114,7 @@ const view = (g: MockGroup): Group => ({
 
 function handle(m: AccessMock, method: string, path: string, body: Record<string, unknown>) {
   if (path === "/api/me/permissions") return jsonResponse(m.snapshot);
+  if (path === "/api/organization/permissions") return orgDefaults(m, method, body);
   const mem = /^\/api\/members(?:\/([^/]+))?$/.exec(path);
   if (mem) return members(m, method, mem[1], body);
   const grp =
@@ -218,4 +223,19 @@ function groups(m: AccessMock, method: string, r: GroupRoute, body: Record<strin
     return new Response(null, { status: 204 });
   }
   return jsonResponse({ items: m.members.filter((x) => g.memberIds.includes(x.userId)) });
+}
+
+function orgDefaults(m: AccessMock, method: string, body: Record<string, unknown>) {
+  if (method === "GET") {
+    return m.can("member", "read")
+      ? jsonResponse({ grants: m.orgDefaults })
+      : forbidden("no matching grant");
+  }
+  if (!m.isAdmin()) return forbidden("admin required");
+  const grants = body.grants as Grant[];
+  if (grants.some((g) => g.workspaceId !== null)) {
+    return errorResponse(422, "validation_failed", "org defaults must use a null workspace");
+  }
+  m.orgDefaults = grants;
+  return jsonResponse({ grants });
 }

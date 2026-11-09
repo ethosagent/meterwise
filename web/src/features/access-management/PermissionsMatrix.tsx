@@ -4,6 +4,7 @@ import {
   type Grant,
   RESOURCE_TYPES,
   type ResourceType,
+  type Scope,
   TAXONOMY,
 } from "../../access/plan03-types";
 
@@ -14,6 +15,9 @@ export interface MatrixSection {
   title: string;
   /** The workspace the grants in this section apply to; null for the org-scoped section. */
   workspaceId: string | null;
+  /** Which resource types the table lists. Default: org-scoped for a null workspace, else workspace-scoped.
+   *  Organization defaults set it explicitly: a null workspace there also covers workspace-scoped resources. */
+  scope?: Scope;
 }
 
 function same(g: Grant, workspaceId: string | null, r: ResourceType, a: Action) {
@@ -39,10 +43,10 @@ export function PermissionsMatrix({ sections, grants, onChange, disabled }: Prop
   return (
     <>
       {sections.map((s) => {
-        const scope = s.workspaceId === null ? "org" : "workspace";
+        const scope = s.scope ?? (s.workspaceId === null ? "org" : "workspace");
         const rows = RESOURCE_TYPES.filter((r) => TAXONOMY[r].scope === scope);
         return (
-          <div key={s.workspaceId ?? "org"} style={{ marginBottom: token.marginLG }}>
+          <div key={`${s.workspaceId ?? "null"}-${scope}`} style={{ marginBottom: token.marginLG }}>
             <Typography.Title level={5}>{s.title}</Typography.Title>
             <Table<ResourceType>
               size="small"

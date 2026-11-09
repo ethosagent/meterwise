@@ -1,8 +1,10 @@
+import { QueryObserver } from "@tanstack/react-query";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { permissionsKey } from "../api/access";
 import { ApiError } from "../api/errors";
+import { meKey, workspacesKey } from "../api/identity";
 import { createQueryClient } from "../api/queryClient";
 import { AppRoutes } from "../routes";
 import { MEMBER_ME, mockApi } from "../test/mockApi";
@@ -95,6 +97,34 @@ describe("a 403 means the snapshot was stale", () => {
     expect(spy).not.toHaveBeenCalled();
     await client.fetchQuery({ queryKey: ["other"], queryFn: refuse }).catch(() => undefined);
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+  });
+
+  it.each([
+    ["me", meKey],
+    ["workspaces", workspacesKey],
+  ])("a persistent 403 on %s refreshes access once and then stops", async (_n, key) => {
+    const client = createQueryClient(false);
+    let refused = 0;
+    let snapshots = 0;
+    const watch = (queryKey: readonly unknown[], queryFn: () => Promise<unknown>) =>
+      new QueryObserver(client, { queryKey, queryFn }).subscribe(() => undefined);
+    const stops = [
+      watch(key, () => {
+        refused++;
+        return Promise.reject(new ApiError(403, { code: "forbidden", message: "no", details: {} }));
+      }),
+      watch(permissionsKey, async () => {
+        snapshots++;
+        return { admin: false, grants: [] };
+      }),
+    ];
+    await new Promise((r) => setTimeout(r, 300)); // settle: a loop would keep counting
+    expect(refused).toBeLessThanOrEqual(3);
+    expect(snapshots).toBeLessThanOrEqual(3);
+    const settled = refused;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(refused).toBe(settled);
+    for (const stop of stops) stop();
   });
 });
 

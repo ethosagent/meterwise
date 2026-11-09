@@ -13,6 +13,7 @@ import { meKey, workspacesKey } from "./identity";
 export const permissionsKey = ["permissions"] as const;
 export const membersKey = ["members"] as const;
 export const groupsKey = ["groups"] as const;
+export const orgPermissionsKey = ["organization", "permissions"] as const;
 
 const enc = encodeURIComponent;
 
@@ -79,12 +80,27 @@ export function useGroupMembers(groupId: string) {
   });
 }
 
+/** The organization defaults: grants that apply to every member. A null workspace means every workspace. */
+export function useOrgDefaults(enabled: boolean) {
+  return useQuery({
+    queryKey: orgPermissionsKey,
+    enabled,
+    queryFn: async () =>
+      (await apiFetch<{ grants: Grant[] }>("/api/organization/permissions")).grants,
+  });
+}
+
 /** A mutation that refreshes the given keys and then the caller's own access. */
-function useAccessMutation<V, R>(fn: (v: V) => Promise<R>, keys: readonly (readonly unknown[])[]) {
+function useAccessMutation<V, R>(
+  fn: (v: V) => Promise<R>,
+  keys: readonly (readonly unknown[])[],
+  /** Refresh on failure too, for a mutation that sends several requests and can half-apply. */
+  settled = false,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: async () => {
+    [settled ? "onSettled" : "onSuccess"]: async () => {
       await Promise.all([
         ...keys.map((queryKey) => qc.invalidateQueries({ queryKey })),
         refreshAccess(qc),
@@ -165,6 +181,18 @@ export function useGroupMembership() {
       }
     },
     [groupsKey, membersKey],
+    true,
+  );
+}
+
+export function usePutOrgDefaults() {
+  return useAccessMutation(
+    (grants: Grant[]) =>
+      apiFetch<{ grants: Grant[] }>("/api/organization/permissions", {
+        method: "PUT",
+        body: body({ grants }),
+      }),
+    [orgPermissionsKey],
   );
 }
 
