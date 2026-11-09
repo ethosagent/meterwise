@@ -20,14 +20,31 @@ tests create and drop their own throwaway databases; they never touch the `meter
 ## Run the binary
 
 ```sh
-export METERWISE_DATABASE_URL="$TEST_DATABASE_URL"
+export DATABASE_URL="$TEST_DATABASE_URL"
 go run ./cmd/meterwised config check -json     # lists every configuration problem at once
-go run ./cmd/meterwised serve                  # /healthz and /api/v1/version in the current build
-curl -s 127.0.0.1:8080/healthz
+go run ./cmd/meterwised migrate                # goose baseline (0001_store) against DATABASE_URL
+go run ./cmd/meterwised serve                  # proxy :8080, API + web :8081, admin 127.0.0.1:9090
+curl -s 127.0.0.1:8081/healthz                 # {"status":"ok"} (pings Postgres)
+curl -s 127.0.0.1:8081/api/config              # {"appName":...,"proxyPublicHost":...}
+curl -s 127.0.0.1:8080/readyz                  # tollgate's own probe on the proxy listener
+curl -s 127.0.0.1:9090/statusz                 # tollgate admin; keep this listener private
 ```
 
-Environment: `METERWISE_LISTEN` (default `:8080`), `METERWISE_DATABASE_URL` (required), `METERWISE_LOG_LEVEL`
-(`debug|info|warn|error`), `METERWISE_ENV` (`dev|test|prod`), `METERWISE_MAX_WORKSPACES` (default 20).
+Proxy dev mode (`tollgate.NoAuth`, one tenant): point an agent at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`)
+with its own provider key. The per-workspace `/w/{id}/...` URL arrives in Plan 05. The control plane resolves every
+request to a stub admin until Plan 02.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | required | `postgres://` URL |
+| `LISTEN_PROXY` / `LISTEN_API` / `LISTEN_ADMIN` | `:8080` / `:8081` / `127.0.0.1:9090` | must be distinct ports |
+| `PROXY_PUBLIC_HOST` / `APP_NAME` | `localhost:8080` / `Meterwise` | returned by `GET /api/config` |
+| `PRIVACY_MODE` | `true` | tollgate privacy mode (decision D12) |
+| `MAX_WORKSPACES` / `MAX_CONCURRENT_PER_WORKSPACE` | `20` / `8` | operational limits (D13) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | base URL of an OTLP/HTTP collector; unset turns tracing off |
+| `CLERK_ISSUER` / `CLERK_JWKS_URL` / `CLERK_PUBLISHABLE_KEY` | unset | consumed by Plan 02 |
+| `WEB_DIR` | `web/dist` | built web app served on `LISTEN_API` |
+| `LOG_LEVEL` / `APP_ENV` | `info` / `dev` | `debug|info|warn|error` / `dev|test|prod` |
 
 ## Web
 
@@ -42,7 +59,7 @@ cd web && npm ci && npm run test && npm run build
 | Fast loop | `scripts/run-checks.sh --fast` |
 | One gate | `scripts/run-checks.sh arch` (logs in `.logs/arch.log`) |
 | Quiet test run | `scripts/quiet.sh go test -race ./internal/config` |
-| Regenerate | `go run ./cmd/gen` (and `go tool -modfile=tools/go.mod sqlc generate` once sqlc is configured) |
+| Regenerate | `go run ./cmd/gen` (and `make sqlc` after changing `internal/store/queries` or a migration) |
 | Risk tier of a change | `scripts/risk-tier.sh $(git diff --name-only HEAD)` |
 
 ## Tests and the network

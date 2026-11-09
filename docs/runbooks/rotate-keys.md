@@ -5,7 +5,7 @@ Meterwise holds few secrets. It never stores customer provider keys (they pass t
 | Secret | Where it lives | Rotate when | How |
 |---|---|---|---|
 | Clerk secret key and JWKS URL | deployment environment | suspected leak, staff change | create the new key in Clerk, deploy it, revoke the old key |
-| Database password | deployment environment (`METERWISE_DATABASE_URL`) | suspected leak, quarterly | create a second role/password, deploy, drop the old one |
+| Database password | deployment environment (`DATABASE_URL`) | suspected leak, quarterly | create a second role/password, deploy, drop the old one |
 | Workspace public id | `workspace_public_ids` table | the URL leaked or was shared too widely | the workspace admin uses Reset URL; the old id answers `gone` for the grace window |
 | Svix webhook secret | deployment environment | suspected leak | rotate in Svix, deploy, then retire the old one |
 
