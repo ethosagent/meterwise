@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BO, type MockGroup } from "../test/mockAccess";
 import { mockApi } from "../test/mockApi";
 import { renderAt } from "../test/render";
-import { useGroupMembership, useGroups } from "./access";
+import { useAttachWorkspace, useDetachWorkspace, useGroupMembership, useGroups } from "./access";
 
 const GROUP: MockGroup = {
   id: "g1",
@@ -41,5 +41,36 @@ describe("useGroupMembership", () => {
     // the first add applied, the second (not a member) was refused with 422
     await waitFor(() => expect(api.callsTo("POST", "/api/groups/g1/members")).toHaveLength(2));
     expect(await screen.findByText("1")).toBeInTheDocument();
+  });
+});
+
+function WsProbe() {
+  const attach = useAttachWorkspace();
+  const detach = useDetachWorkspace();
+  return (
+    <>
+      <button type="button" onClick={() => attach.mutate({ id: "g1", workspaceId: "ws_2" })}>
+        attach
+      </button>
+      <button type="button" onClick={() => detach.mutate({ id: "g1", workspaceId: "ws_2" })}>
+        detach
+      </button>
+    </>
+  );
+}
+
+describe("attach and detach", () => {
+  it("attach POSTs the workspace and detach DELETEs it", async () => {
+    const api = mockApi({ access: { groups: [GROUP] } });
+    renderAt(<WsProbe />);
+    await userEvent.click(await screen.findByRole("button", { name: "attach" }));
+    await waitFor(() => expect(api.callsTo("POST", "/api/groups/g1/workspaces")).toHaveLength(1));
+    expect(api.callsTo("POST", "/api/groups/g1/workspaces")[0]?.body).toEqual({
+      workspaceId: "ws_2",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "detach" }));
+    await waitFor(() =>
+      expect(api.callsTo("DELETE", "/api/groups/g1/workspaces/ws_2")).toHaveLength(1),
+    );
   });
 });

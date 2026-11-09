@@ -14,9 +14,10 @@ import {
 import { useState } from "react";
 import {
   ACCESS_ERROR_TEXT,
+  useAttachWorkspace,
   useDeleteGroup,
+  useDetachWorkspace,
   useGroupGrants,
-  useGroupWorkspace,
   usePutGroupGrants,
   useRenameGroup,
 } from "../../api/access";
@@ -39,7 +40,8 @@ function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
   const workspaces = useWorkspaces().data ?? [];
   const rename = useRenameGroup();
   const del = useDeleteGroup();
-  const attach = useGroupWorkspace();
+  const attach = useAttachWorkspace();
+  const detach = useDetachWorkspace();
   const [name, setName] = useState(group.name);
   const fail = (e: unknown, fallback: string) =>
     message.error(describeApiError(e, { byCode: ACCESS_ERROR_TEXT, fallback }));
@@ -75,8 +77,8 @@ function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
             closable={isAdmin}
             onClose={(e) => {
               e.preventDefault();
-              attach.mutate(
-                { id: group.id, workspaceId: id, attach: false },
+              detach.mutate(
+                { id: group.id, workspaceId: id },
                 { onError: (err) => fail(err, "Could not detach the workspace.") },
               );
             }}
@@ -97,7 +99,7 @@ function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
         onChange={(workspaceId) =>
           workspaceId !== null &&
           attach.mutate(
-            { id: group.id, workspaceId, attach: true },
+            { id: group.id, workspaceId },
             { onError: (e) => fail(e, "Could not attach the workspace.") },
           )
         }

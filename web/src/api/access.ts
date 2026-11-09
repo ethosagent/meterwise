@@ -128,21 +128,25 @@ export function usePutGroupGrants() {
   );
 }
 
-/** Attach or detach a workspace. Attaching seeds read grants and detaching drops the group's grants there. */
-export function useGroupWorkspace() {
+/** Attaching seeds read grants for the group on the workspace. */
+export function useAttachWorkspace() {
   return useInvalidatingMutation(
-    async (v: { id: string; workspaceId: string; attach: boolean }) => {
-      if (v.attach) {
-        await apiFetch<Group>(`/api/groups/${enc(v.id)}/workspaces`, {
-          method: "POST",
-          body: json({ workspaceId: v.workspaceId }),
-        });
-      } else {
-        await apiFetch<void>(`/api/groups/${enc(v.id)}/workspaces/${enc(v.workspaceId)}`, {
-          method: "DELETE",
-        });
-      }
-    },
+    (v: { id: string; workspaceId: string }) =>
+      apiFetch<Group>(`/api/groups/${enc(v.id)}/workspaces`, {
+        method: "POST",
+        body: json({ workspaceId: v.workspaceId }),
+      }),
+    [groupsKey, ...ACCESS_KEYS],
+  );
+}
+
+/** Detaching drops every grant the group has on the workspace. */
+export function useDetachWorkspace() {
+  return useInvalidatingMutation(
+    (v: { id: string; workspaceId: string }) =>
+      apiFetch<void>(`/api/groups/${enc(v.id)}/workspaces/${enc(v.workspaceId)}`, {
+        method: "DELETE",
+      }),
     [groupsKey, ...ACCESS_KEYS],
   );
 }
