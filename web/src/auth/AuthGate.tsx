@@ -1,7 +1,6 @@
 import { Navigate, Outlet, useLocation, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/errors";
-import { useMe } from "../api/identity";
-import { IDENTITY_ERRORS } from "../api/identity-types";
+import { IDENTITY_ERRORS, useMe } from "../api/identity";
 import { useAuthContext } from "./AuthProvider";
 import { LoadFailedScreen, LoadingScreen, NotInvitedScreen, SessionExpiredScreen } from "./screens";
 import { useSession } from "./session";

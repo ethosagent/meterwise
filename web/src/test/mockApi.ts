@@ -1,7 +1,14 @@
 import { vi } from "vitest";
 import type { WireErrorBody } from "../api/errors";
-import type { Invitation, Me, Role, Workspace } from "../api/identity-types";
-import type { AppConfig, Preferences, PreferencesPatch } from "../contract/generated";
+import type {
+  AppConfig,
+  Invitation,
+  Me,
+  Preferences,
+  PreferencesPatch,
+  Role,
+  Workspace,
+} from "../contract/generated";
 
 export const TEST_CONFIG: AppConfig = { appName: "Acme Meter", proxyPublicHost: "proxy.acme.test" };
 
@@ -65,6 +72,8 @@ interface Options {
   workspaces?: Workspace[];
   invitations?: Invitation[];
   maxWorkspaces?: number;
+  /** Workspaces the list only includes from its second fetch on (a stale list that a refetch repairs). */
+  revealOnRefetch?: Workspace[];
 }
 
 function json(body: unknown, status = 200): Response {
@@ -87,6 +96,7 @@ export function mockApi(opts: Options = {}): MockApi {
   let invitations = [...(opts.invitations ?? [])];
   let nextId = 100;
   let expired = false;
+  let listFetches = 0;
   const patches: unknown[] = [];
   const calls: Call[] = [];
 
@@ -119,7 +129,11 @@ export function mockApi(opts: Options = {}): MockApi {
     if (path === "/api/me") return me ? json(me) : notInvited();
     if (!me) return notInvited();
     const ws = /^\/api\/workspaces\/([^/]+)(\/switch)?$/.exec(path);
-    if (path === "/api/workspaces" && method === "GET") return json({ items: workspaces });
+    if (path === "/api/workspaces" && method === "GET") {
+      listFetches++;
+      const late = listFetches > 1 ? (opts.revealOnRefetch ?? []) : [];
+      return json({ items: [...workspaces, ...late] });
+    }
     if (path === "/api/workspaces" && method === "POST") {
       if (workspaces.length >= (opts.maxWorkspaces ?? 20)) {
         return errorResponse(409, "workspace_limit", "workspace limit reached");
@@ -131,6 +145,10 @@ export function mockApi(opts: Options = {}): MockApi {
     if (ws) {
       const target = workspaces.find((w) => w.id === ws[1]);
       if (!target) return notFound();
+      // Mirrors internal/contract/routes.go: members may create and switch, not rename or delete.
+      if ((method === "PATCH" || method === "DELETE") && me.role !== "admin") {
+        return errorResponse(403, "forbidden", "admins only");
+      }
       if (ws[2] && method === "POST") {
         me = { ...me, activeWorkspaceId: target.id };
         return json({ activeWorkspaceId: target.id });

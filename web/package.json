@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "build": "vite build",
-    "build:release": "node scripts/require-auth-key.mjs && vite build"
+    "build:release": "node scripts/require-auth-key.mjs && vite build && node scripts/assert-no-mock.mjs dist"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",

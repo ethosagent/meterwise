@@ -1,4 +1,5 @@
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -17,8 +18,8 @@ import {
   useMe,
   useRenameWorkspace,
 } from "../../api/identity";
-import type { Workspace } from "../../api/identity-types";
 import { hasPermission } from "../../auth/permissions";
+import type { Workspace } from "../../contract/generated";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { ProxyUrl } from "./ProxyUrl";
@@ -107,16 +108,24 @@ function DangerZone({ ws }: { ws: Workspace }) {
 /** Settings > Workspace: name, proxy URL and the danger zone for the active workspace. */
 export function WorkspacePage() {
   const me = useMe().data;
-  const ws = useActiveWorkspace();
+  const active = useActiveWorkspace();
   const canManage = hasPermission(me, "workspaces.manage");
   return (
     <section aria-labelledby="page-title">
       <PageHead page={pageByKey("workspace")} />
-      {ws ? (
+      {active.state === "ready" ? (
         <>
-          <General ws={ws} canManage={canManage} />
-          {canManage ? <DangerZone ws={ws} /> : null}
+          <General ws={active.workspace} canManage={canManage} />
+          {canManage ? <DangerZone ws={active.workspace} /> : null}
         </>
+      ) : active.state === "missing" ? (
+        <Alert
+          type="error"
+          showIcon
+          title="Your active workspace could not be found"
+          description="It may have been deleted in another session. Nothing is shown here rather than the wrong workspace."
+          action={<Button onClick={active.retry}>Try again</Button>}
+        />
       ) : (
         <Skeleton active />
       )}

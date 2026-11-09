@@ -12,7 +12,9 @@ export interface SessionApi {
 /** The seam between the app and an identity provider (Clerk in production, a mock in tests and dev). */
 export interface AuthAdapter {
   kind: "clerk" | "mock";
-  Provider: ComponentType<{ children: ReactNode }>;
+  /** Set by providers that need configuration (Clerk's publishable key); handed to `Provider`. */
+  publishableKey?: string;
+  Provider: ComponentType<{ children: ReactNode; publishableKey?: string | undefined }>;
   /** Called inside `Provider`. */
   useAuthSession: () => SessionApi;
   /** Sign-in, including the provider's own forgot and reset steps. */

@@ -21,7 +21,8 @@ export const useSession = create<SessionState>((set) => ({
   expired: false,
   getToken: NO_TOKEN,
   setSignedIn: (signedIn, getToken) =>
-    set(signedIn ? { signedIn, getToken } : { signedIn, getToken: NO_TOKEN }),
+    // Signing in by any path ends an expired session; only the sign-out clears nothing else.
+    set(signedIn ? { signedIn, getToken, expired: false } : { signedIn, getToken: NO_TOKEN }),
   markExpired: () => set({ expired: true }),
   clearExpired: () => set({ expired: false }),
 }));

@@ -69,14 +69,18 @@ function AcceptInviteScreen() {
   );
 }
 
-// The adapter is built once per page load, so the key lives at module level and Provider stays a module-level component.
-let configuredKey = "";
-
-function Provider({ children }: { children: ReactNode }) {
+function Provider({
+  children,
+  publishableKey,
+}: {
+  children: ReactNode;
+  publishableKey?: string | undefined;
+}) {
   const navigate = useNavigate();
+  if (!publishableKey) throw new Error("the Clerk adapter was built without a publishable key");
   return (
     <ClerkProvider
-      publishableKey={configuredKey}
+      publishableKey={publishableKey}
       signInUrl={LOGIN_PATH}
       afterSignOutUrl={LOGIN_PATH}
       routerPush={(to) => navigate(to)}
@@ -87,16 +91,14 @@ function Provider({ children }: { children: ReactNode }) {
   );
 }
 
-const adapter: AuthAdapter = {
-  kind: "clerk",
-  Provider,
-  useAuthSession: useClerkSession,
-  LoginScreen,
-  AcceptInviteScreen,
-};
-
-/** Clerk-backed adapter. Needs the instance's publishable key. */
+/** Clerk-backed adapter for one publishable key. The key travels on the adapter, not in module state. */
 export function clerkAdapter(publishableKey: string): AuthAdapter {
-  configuredKey = publishableKey;
-  return adapter;
+  return {
+    kind: "clerk",
+    publishableKey,
+    Provider,
+    useAuthSession: useClerkSession,
+    LoginScreen,
+    AcceptInviteScreen,
+  };
 }

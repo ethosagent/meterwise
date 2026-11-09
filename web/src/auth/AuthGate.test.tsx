@@ -6,6 +6,7 @@ import { AppRoutes } from "../routes";
 import { mockApi } from "../test/mockApi";
 import { renderAt } from "../test/render";
 import { useMockAuth } from "./mock";
+import { useSession } from "./session";
 
 const NOT_INVITED = "You have not been invited yet";
 
@@ -81,6 +82,16 @@ describe("AuthGate", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(useMockAuth.getState().email).toBe("ada@acme.test"));
     expect(await screen.findByRole("heading", { level: 2, name: "Overview" })).toBeInTheDocument();
+  });
+
+  it("does not show the expired screen to someone who signs in again by the login route", async () => {
+    mockApi();
+    renderAt(<AppRoutes />, "/login", { signedInAs: null });
+    useSession.getState().markExpired(); // a 401 left the flag set; the person reached /login by URL
+    await userEvent.type(await screen.findByLabelText("Email"), "ada@acme.test");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "Overview" })).toBeInTheDocument();
+    expect(screen.queryByText("Your session expired")).toBeNull();
   });
 
   it("offers the accept-invite landing", async () => {

@@ -14,12 +14,13 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const { message } = App.useApp();
   const me = useMe().data;
   const workspaces = useWorkspaces().data ?? [];
-  const active = useActiveWorkspace();
+  const activeState = useActiveWorkspace();
+  const active = activeState.state === "ready" ? activeState.workspace : undefined;
   const switchTo = useSwitchWorkspace();
   const openCreate = useUi((s) => s.setCreateWorkspaceOpen);
   const [open, setOpen] = useState(false);
-  const name = active?.name ?? "";
-  const canCreate = hasPermission(me, "workspaces.manage");
+  const name = active?.name ?? (activeState.state === "missing" ? "Workspace unavailable" : "");
+  const canCreate = hasPermission(me, "workspaces.create");
 
   const trigger = (
     <button

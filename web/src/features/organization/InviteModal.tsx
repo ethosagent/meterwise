@@ -1,7 +1,7 @@
 import { Alert, Button, Form, Input, Modal, Select } from "antd";
 import { ApiError } from "../../api/errors";
-import { useInvite } from "../../api/identity";
-import { IDENTITY_ERRORS, type Role } from "../../api/identity-types";
+import { IDENTITY_ERRORS, useInvite } from "../../api/identity";
+import type { Role } from "../../contract/generated";
 
 const ROLES: { value: Role; label: string }[] = [
   { value: "member", label: "Member" },

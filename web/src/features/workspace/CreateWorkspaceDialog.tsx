@@ -1,8 +1,8 @@
 import { Alert, Button, Form, Input, Modal, Typography, theme } from "antd";
 import { useState } from "react";
 import { ApiError } from "../../api/errors";
-import { useCreateWorkspace } from "../../api/identity";
-import { IDENTITY_ERRORS, type Workspace } from "../../api/identity-types";
+import { IDENTITY_ERRORS, useCreateWorkspace } from "../../api/identity";
+import type { Workspace } from "../../contract/generated";
 import { ProxyUrl } from "./ProxyUrl";
 
 /** What to tell the person when a create fails; the limit is the one they can act on. */

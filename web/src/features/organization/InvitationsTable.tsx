@@ -2,7 +2,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { App, Button, Card, Flex, Popconfirm, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
 import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
-import type { Invitation } from "../../api/identity-types";
+import type { Invitation } from "../../contract/generated";
 import { InviteModal } from "./InviteModal";
 
 const STATUS_COLOR: Record<Invitation["status"], string> = {

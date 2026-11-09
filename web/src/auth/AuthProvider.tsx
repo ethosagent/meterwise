@@ -21,7 +21,7 @@ function Bridge({ adapter, children }: { adapter: AuthAdapter; children: ReactNo
 /** Hosts the identity provider and publishes the session. Everything signed-in sits below it. */
 export function AuthProvider({ adapter, children }: { adapter: AuthAdapter; children: ReactNode }) {
   return (
-    <adapter.Provider>
+    <adapter.Provider publishableKey={adapter.publishableKey}>
       <Bridge adapter={adapter}>{children}</Bridge>
     </adapter.Provider>
   );

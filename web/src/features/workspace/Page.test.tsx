@@ -115,14 +115,53 @@ describe("CreateWorkspaceDialog (from the switcher)", () => {
     expect(dialog.queryByLabelText("Proxy URL")).toBeNull();
   });
 
-  it("offers no create entry to a member", async () => {
-    mockApi({ me: MEMBER_ME });
+  it("lets a member create a workspace (create is open to members)", async () => {
+    const api = mockApi({ me: MEMBER_ME });
+    const { Shell } = await import("../../shell/Shell");
+    renderAt(<Shell />, "/overview");
+    const dialog = await openDialog();
+    await userEvent.type(dialog.getByLabelText("Name"), "Member made");
+    await userEvent.click(dialog.getByRole("button", { name: "Create" }));
+    await dialog.findByLabelText("Proxy URL");
+    expect(api.callsTo("POST", "/api/workspaces")[0]?.body).toEqual({ name: "Member made" });
+  });
+});
+
+describe("the active workspace is never substituted", () => {
+  const GONE = {
+    ...TEST_WORKSPACES[1],
+    id: "ws_gone",
+    name: "Gone",
+  } as (typeof TEST_WORKSPACES)[number];
+
+  it("shows an error, not the default workspace's name or URL, when the active id is not in the list", async () => {
+    const api = mockApi({ me: { ...ADMIN_ME, activeWorkspaceId: "ws_gone" } });
+    renderAt(<WorkspacePage />, PATH);
+    expect(await screen.findByText("Your active workspace could not be found")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Proxy URL")).toBeNull();
+    expect(screen.queryByDisplayValue("Default workspace")).toBeNull();
+    expect(screen.queryByText("Delete workspace")).toBeNull();
+    // it refetched both before giving up
+    expect(api.callsTo("GET", "/api/workspaces").length).toBeGreaterThanOrEqual(2);
+    expect(api.callsTo("GET", "/api/me").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("recovers when the refetch finds the workspace (a stale list)", async () => {
+    mockApi({
+      me: { ...ADMIN_ME, activeWorkspaceId: "ws_gone" },
+      revealOnRefetch: [GONE],
+    });
+    renderAt(<WorkspacePage />, PATH);
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue("Gone"));
+    expect(screen.getByLabelText("Proxy URL")).toHaveValue(GONE.proxyUrl);
+  });
+
+  it("labels the switcher as unavailable rather than naming the default", async () => {
+    mockApi({ me: { ...ADMIN_ME, activeWorkspaceId: "ws_gone" } });
     const { Shell } = await import("../../shell/Shell");
     renderAt(<Shell />, "/overview");
     const sw = await screen.findByTestId("workspace-switcher");
-    await waitFor(() => expect(sw).toHaveTextContent("Default workspace"));
-    await userEvent.click(sw);
-    await screen.findByRole("menuitem", { name: "Staging" });
-    expect(screen.queryByRole("menuitem", { name: "＋ New workspace" })).toBeNull();
+    await waitFor(() => expect(sw).toHaveTextContent("Workspace unavailable"));
+    expect(sw).not.toHaveTextContent("Default workspace");
   });
 });
