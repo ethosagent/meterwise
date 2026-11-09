@@ -1,6 +1,8 @@
 import { ConfigProvider, Layout, Typography, theme } from "antd";
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { CreateWorkspaceDialog } from "../features/workspace/CreateWorkspaceDialog";
+import { useUi } from "../state/ui";
 import { siderTheme } from "../theme/theme";
 import { useAppName } from "./Brand";
 import { HeaderBar } from "./HeaderBar";
@@ -22,9 +24,12 @@ export function Shell() {
   const { token } = theme.useToken();
   const appName = useAppName();
   useDocumentTitle();
+  const createOpen = useUi((s) => s.createWorkspaceOpen);
+  const setCreateOpen = useUi((s) => s.setCreateWorkspaceOpen);
 
   return (
     <Layout hasSider style={{ minHeight: "100vh" }}>
+      <CreateWorkspaceDialog open={createOpen} onClose={() => setCreateOpen(false)} />
       <ConfigProvider theme={siderTheme}>
         <SiderPanel />
       </ConfigProvider>

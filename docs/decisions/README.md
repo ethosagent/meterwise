@@ -16,6 +16,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0008](0008-web-design-tokens-derived-from-the-plan-and-prototype.md) | Web design tokens derived from the plan and prototype | Accepted |
 | [0010](0010-control-plane-stack.md) | Control plane on the stdlib mux, with OTel API and OTLP/HTTP | Accepted |
 | [0011](0011-declare-testing-library-dom.md) | Declare @testing-library/dom as a dev dependency | Accepted |
+| [0012](0012-clerk-react-sdk.md) | Clerk React SDK for sign-in, behind an auth adapter | Accepted |
 | [0013](0013-clerk-go-sdk-and-svix-for-identity.md) | The Clerk Go SDK and Svix verify identity and webhooks | Accepted |
 | [0014](0014-single-org-now-org-id-everywhere-rls-deferred.md) | Single org now, org_id everywhere, RLS deferred | Accepted |
 

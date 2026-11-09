@@ -1,16 +1,25 @@
 import { AppstoreOutlined, DownOutlined } from "@ant-design/icons";
-import { Dropdown, Tooltip, Typography, theme } from "antd";
+import { App, Menu, Popover, Tooltip, Typography, theme } from "antd";
+import { useState } from "react";
+import { useActiveWorkspace, useMe, useSwitchWorkspace, useWorkspaces } from "../api/identity";
+import { hasPermission } from "../auth/permissions";
 import { useUi } from "../state/ui";
 import { SIDER_WIDTH } from "../theme/theme";
-import { STUB_WORKSPACES } from "./stub";
+
+const CREATE_KEY = "__create";
 
 /** Workspace row only: one org, many workspaces, so there is no org switcher. */
 export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const { token } = theme.useToken();
-  const activeId = useUi((s) => s.activeWorkspaceId);
-  const setActive = useUi((s) => s.setActiveWorkspaceId);
-  const active = STUB_WORKSPACES.find((w) => w.id === activeId) ?? STUB_WORKSPACES[0];
+  const { message } = App.useApp();
+  const me = useMe().data;
+  const workspaces = useWorkspaces().data ?? [];
+  const active = useActiveWorkspace();
+  const switchTo = useSwitchWorkspace();
+  const openCreate = useUi((s) => s.setCreateWorkspaceOpen);
+  const [open, setOpen] = useState(false);
   const name = active?.name ?? "";
+  const canCreate = hasPermission(me, "workspaces.manage");
 
   const trigger = (
     <button
@@ -54,18 +63,42 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div style={{ padding: `0 ${token.paddingSM}px ${token.paddingSM}px` }}>
-      <Dropdown
-        trigger={["click"]}
-        // The popup is as wide as its trigger; on the collapsed rail that is a few pixels and clips the names.
-        styles={{ root: { minWidth: SIDER_WIDTH - 2 * token.paddingSM } }}
-        menu={{
-          selectable: true,
-          // The Sider tells every menu below it that it is collapsed, which would reduce these items to initials.
-          inlineCollapsed: false,
-          selectedKeys: [activeId],
-          items: STUB_WORKSPACES.map((w) => ({ key: w.id, label: w.name })),
-          onClick: ({ key }) => setActive(key),
+      {/* A Popover, not a Dropdown: Dropdown forces every Menu inside it to vertical, and a vertical Menu
+          in the Sider reduces its items to initials (the Sider's collapsed context). A Popover lets an inline
+          Menu opt out with inlineCollapsed=false. antd has no public way to reset the Sider context. */}
+      <Popover
+        trigger="click"
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottomLeft"
+        arrow={false}
+        styles={{
+          root: { minWidth: SIDER_WIDTH - 2 * token.paddingSM },
+          container: { padding: token.paddingXXS },
         }}
+        content={
+          <Menu
+            mode="inline"
+            inlineCollapsed={false}
+            selectable
+            selectedKeys={active ? [active.id] : []}
+            items={[
+              ...workspaces.map((w) => ({ key: w.id, label: w.name })),
+              ...(canCreate
+                ? [{ type: "divider" as const }, { key: CREATE_KEY, label: "＋ New workspace" }]
+                : []),
+            ]}
+            onClick={({ key }) => {
+              setOpen(false);
+              if (key === CREATE_KEY) return openCreate(true);
+              if (key === active?.id) return;
+              switchTo.mutate(key, {
+                onError: () => message.error("Could not switch workspace."),
+              });
+            }}
+            style={{ background: "transparent", borderInlineEnd: 0 }}
+          />
+        }
       >
         {collapsed ? (
           <Tooltip title={name} placement="right">
@@ -74,7 +107,7 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
         ) : (
           trigger
         )}
-      </Dropdown>
+      </Popover>
     </div>
   );
 }

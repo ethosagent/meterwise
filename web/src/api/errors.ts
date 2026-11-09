@@ -1,7 +1,7 @@
 import { ERROR_STATUS, type ErrorBody, type ErrorCode } from "../contract/generated";
 
 /** A body as read off the wire: the generated shape with the code widened to any string. */
-type WireErrorBody = Omit<ErrorBody, "code"> & { code: string };
+export type WireErrorBody = Omit<ErrorBody, "code"> & { code: string };
 
 /** A failed API call: the registry error body plus the HTTP status. */
 export class ApiError extends Error {

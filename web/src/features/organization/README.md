@@ -1,11 +1,11 @@
 # organization
 
-Stub page for **Settings / Organization**, route `/settings/organization`.
+**Settings / Organization** (`/settings/organization`).
 
-- Shows: the page head (title and one-line description from `shell/nav.tsx`) and an `Empty` body.
-- Endpoints: none yet.
-- Permission: none yet; real gating with `hasPermission` arrives with auth (Plan 02).
-- Test: `Page.test.tsx` renders the page at its route and checks the head and the empty body.
-
-When the real page lands, replace `StubPage` in `Page.tsx` with the feature body and add `api.ts`
-and `hooks.ts` per the `add-page` skill; keep the head via `PageHead`.
+- Shows: the organization name (the deployment's `appName`; the API has no organization endpoint yet),
+  and for admins the **Invitations** table: `＋ Invite member` (email, role admin or member), Resend and
+  Revoke on pending rows. A `409 duplicate_invitation` is explained in the dialog.
+- Out of scope: the Members table (Plan 03).
+- Endpoints: `GET|POST /api/invitations`, `POST /api/invitations/{id}/resend`, `DELETE /api/invitations/{id}`.
+- Permission: `invitations.manage`. A member sees the name only and the page never requests invitations.
+- Tests: `Page.test.tsx` (admin flows, member view) against `test/mockApi.ts`.

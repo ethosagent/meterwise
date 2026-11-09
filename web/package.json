@@ -11,7 +11,8 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "build": "vite build"
+    "build": "vite build",
+    "build:release": "node scripts/require-auth-key.mjs && vite build"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
@@ -31,6 +32,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "6.3.4",
+    "@clerk/react": "6.18.6",
     "@tanstack/react-query": "5.107.1",
     "antd": "6.7.0",
     "react": "19.3.1",

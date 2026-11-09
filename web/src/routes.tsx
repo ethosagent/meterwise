@@ -1,4 +1,6 @@
+import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { AcceptInviteRoute, AuthGate, LoginRoute } from "./auth/AuthGate";
 import { AccessManagementPage } from "./features/access-management/Page";
 import { MonitorsPage } from "./features/monitors/Page";
 import { OrganizationPage } from "./features/organization/Page";
@@ -8,24 +10,35 @@ import { SessionsPage } from "./features/sessions/Page";
 import { SetupPage } from "./features/setup/Page";
 import { WorkspacePage } from "./features/workspace/Page";
 import { NotFound } from "./shell/NotFound";
-import { DEFAULT_PATH, pageByKey } from "./shell/nav";
+import { ALL_PAGES, DEFAULT_PATH, type NavKey, pageByKey } from "./shell/nav";
 import { Shell } from "./shell/Shell";
+
+/** One element per nav key. The Record type makes a page without a route (or a route without a page) a compile error. */
+const PAGE_ELEMENTS: Record<NavKey, ReactElement> = {
+  overview: <OverviewPage />,
+  sessions: <SessionsPage />,
+  monitors: <MonitorsPage />,
+  setup: <SetupPage />,
+  profile: <ProfilePage />,
+  workspace: <WorkspacePage />,
+  organization: <OrganizationPage />,
+  access: <AccessManagementPage />,
+};
 
 export function AppRoutes() {
   return (
     <Routes>
-      <Route element={<Shell />}>
-        <Route index element={<Navigate to={DEFAULT_PATH} replace />} />
-        <Route path={pageByKey("overview").path} element={<OverviewPage />} />
-        <Route path={pageByKey("sessions").path} element={<SessionsPage />} />
-        <Route path={pageByKey("monitors").path} element={<MonitorsPage />} />
-        <Route path={pageByKey("setup").path} element={<SetupPage />} />
-        <Route path="/settings" element={<Navigate to={pageByKey("profile").path} replace />} />
-        <Route path={pageByKey("profile").path} element={<ProfilePage />} />
-        <Route path={pageByKey("workspace").path} element={<WorkspacePage />} />
-        <Route path={pageByKey("organization").path} element={<OrganizationPage />} />
-        <Route path={pageByKey("access").path} element={<AccessManagementPage />} />
-        <Route path="*" element={<NotFound />} />
+      <Route path="/login/*" element={<LoginRoute />} />
+      <Route path="/accept-invite/*" element={<AcceptInviteRoute />} />
+      <Route element={<AuthGate />}>
+        <Route element={<Shell />}>
+          <Route index element={<Navigate to={DEFAULT_PATH} replace />} />
+          <Route path="/settings" element={<Navigate to={pageByKey("profile").path} replace />} />
+          {ALL_PAGES.map((p) => (
+            <Route key={p.key} path={p.path} element={PAGE_ELEMENTS[p.key]} />
+          ))}
+          <Route path="*" element={<NotFound />} />
+        </Route>
       </Route>
     </Routes>
   );

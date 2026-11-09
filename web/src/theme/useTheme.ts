@@ -56,32 +56,36 @@ export function hasStoredTheme(): boolean {
   }
 }
 
-function subscribeMedia(query: string) {
-  return (notify: () => void) => {
-    const mql = window.matchMedia(query);
-    mql.addEventListener("change", notify);
-    return () => mql.removeEventListener("change", notify);
+/** A media query as an external store. Subscribe and snapshot are built once, so React never resubscribes. */
+function mediaStore(query: string) {
+  return {
+    subscribe: (notify: () => void) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener("change", notify);
+      return () => mql.removeEventListener("change", notify);
+    },
+    getSnapshot: () => window.matchMedia(query).matches,
+    getServerSnapshot: () => false,
   };
 }
 
-function useMedia(query: string): boolean {
-  return useSyncExternalStore(
-    subscribeMedia(query),
-    () => window.matchMedia(query).matches,
-    () => false,
-  );
+const darkStore = mediaStore(DARK_QUERY);
+const motionStore = mediaStore(MOTION_QUERY);
+
+function useMedia(store: ReturnType<typeof mediaStore>): boolean {
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
 }
 
 /** The mode to render: an explicit choice wins, "system" follows prefers-color-scheme. */
 export function useResolvedMode(): ResolvedMode {
   const mode = useTheme((s) => s.mode);
-  const systemDark = useMedia(DARK_QUERY);
+  const systemDark = useMedia(darkStore);
   if (mode === "system") return systemDark ? "dark" : "light";
   return mode;
 }
 
 export function usePrefersReducedMotion(): boolean {
-  return useMedia(MOTION_QUERY);
+  return useMedia(motionStore);
 }
 
 /** Mirrors the resolved mode onto <html> so the browser's own widgets match. */

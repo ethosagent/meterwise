@@ -1,35 +1,24 @@
-import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AppRoutes } from "../routes";
 import { useUi } from "../state/ui";
-import { errorResponse, mockApi } from "../test/mockApi";
-import { testQueryClient } from "../test/render";
+import { errorResponse, mockApi, TEST_WORKSPACES } from "../test/mockApi";
+import { renderAt } from "../test/render";
 import { installMatchMedia } from "../test/setup";
-import { ThemeProvider } from "../theme/ThemeProvider";
 import { useTheme } from "../theme/useTheme";
 import { FALLBACK_BRAND } from "./Brand";
 import { ALL_PAGES } from "./nav";
-import { STUB_WORKSPACES } from "./stub";
 
-function renderApp(path: string) {
-  return render(
-    <QueryClientProvider client={testQueryClient()}>
-      <ThemeProvider>
-        <MemoryRouter initialEntries={[path]}>
-          <AppRoutes />
-        </MemoryRouter>
-      </ThemeProvider>
-    </QueryClientProvider>,
-  );
-}
+const renderApp = (path: string) => renderAt(<AppRoutes />, path);
+/** Pages with real content; every other destination is still the empty stub. */
+const BUILT = new Set(["workspace", "organization"]);
+const NAMES = TEST_WORKSPACES.map((w) => w.name);
 
 beforeEach(() => {
   useTheme.setState({ mode: "system" });
   localStorage.clear();
-  useUi.setState({ siderCollapsed: false, activeWorkspaceId: "ws-default" });
+  useUi.setState({ siderCollapsed: false });
 });
 
 describe("Shell brand", () => {
@@ -61,14 +50,14 @@ describe("Shell navigation", () => {
     }
   });
 
-  it("renders the right head and an Empty body on every route", async () => {
+  it("renders the right head on every route, and an Empty body on the unbuilt ones", async () => {
     mockApi();
     for (const page of ALL_PAGES) {
       const { unmount } = renderApp(page.path);
       expect(
         await screen.findByRole("heading", { level: 2, name: page.label }),
       ).toBeInTheDocument();
-      expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
+      if (!BUILT.has(page.key)) expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
       unmount();
     }
   });
@@ -98,20 +87,21 @@ describe("Shell navigation", () => {
 
 describe("Shell chrome", () => {
   it("has a workspace switcher with no organization row, and switching changes it", async () => {
-    mockApi();
+    const api = mockApi();
     renderApp("/overview");
     const sw = await screen.findByTestId("workspace-switcher");
-    expect(sw).toHaveTextContent("Default workspace");
+    await waitFor(() => expect(sw).toHaveTextContent("Default workspace"));
     await userEvent.click(sw);
     const staging = await screen.findByRole("menuitem", { name: "Staging" });
-    const menu = staging.closest<HTMLElement>('[role="menu"]');
-    expect(menu).not.toBeNull();
-    const items = within(menu as HTMLElement).getAllByRole("menuitem");
-    expect(items.map((i) => i.textContent)).toEqual(STUB_WORKSPACES.map((w) => w.name));
-    expect(within(menu as HTMLElement).queryByText(/organi[sz]ation/i)).toBeNull();
+    const menu = staging.closest<HTMLElement>('[role="menu"]') as HTMLElement;
+    const items = within(menu).getAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual([...NAMES, "＋ New workspace"]);
+    expect(within(menu).queryByText(/organi[sz]ation/i)).toBeNull();
     await userEvent.click(staging);
-    expect(useUi.getState().activeWorkspaceId).toBe("ws-staging");
-    expect(screen.getByTestId("workspace-switcher")).toHaveTextContent("Staging");
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-switcher")).toHaveTextContent("Staging"),
+    );
+    expect(api.callsTo("POST", "/api/workspaces/ws_2/switch")).toHaveLength(1);
   });
 
   it("shows full workspace names in the switcher popup while the sider is collapsed", async () => {
@@ -121,7 +111,7 @@ describe("Shell chrome", () => {
     await userEvent.click(container.querySelector(".ant-layout-sider-trigger") as Element);
     await userEvent.click(screen.getByTestId("workspace-switcher"));
     const items = await screen.findAllByRole("menuitem", { name: /workspace|Staging|Research/ });
-    expect(items.map((i) => i.textContent)).toEqual(STUB_WORKSPACES.map((w) => w.name));
+    expect(items.map((i) => i.textContent)).toEqual([...NAMES, "＋ New workspace"]);
   });
 
   it("keeps the Settings group open on a settings page and closed elsewhere", async () => {
@@ -157,7 +147,7 @@ describe("Shell chrome", () => {
     expect(within(header).getByText("Monitors")).toBeInTheDocument();
     expect(within(header).getByLabelText("Search")).toBeInTheDocument();
     expect(within(header).getByLabelText("Theme")).toBeInTheDocument();
-    expect(within(header).getByLabelText("Account menu")).toHaveTextContent("DU");
+    expect(within(header).getByLabelText("Account menu")).toHaveTextContent("AA");
   });
 });
 
@@ -185,6 +175,15 @@ describe("Theme toggle", () => {
     await userEvent.click(screen.getByRole("img", { name: "Dark" }));
     await waitFor(() => expect(api.patches).toEqual([{ theme: "dark" }]));
     expect(api.patches[0]).not.toHaveProperty("reducedMotion");
+  });
+
+  it("tells the person when the theme could not be saved, and keeps it on this device", async () => {
+    mockApi({ preferencesPatchStatus: 500 });
+    renderApp("/overview");
+    await screen.findByTestId("brand-name");
+    await userEvent.click(screen.getByRole("img", { name: "Dark" }));
+    expect(await screen.findByText(/Could not save your theme/)).toBeInTheDocument();
+    expect(useTheme.getState().mode).toBe("dark");
   });
 
   it("adopts the server theme when this device has no stored choice", async () => {
