@@ -35,7 +35,7 @@ func (s *server) gateway(row contract.Route, next http.Handler) http.Handler {
 		}
 		if row.Permission != contract.PermSelf {
 			if !sess.Member {
-				writeError(w, contract.NewError(contract.CodeNotInvited, "this account has not been invited to the organization"))
+				writeError(w, contract.NotInvited())
 				return
 			}
 			workspaceID := ""

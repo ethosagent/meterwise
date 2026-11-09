@@ -136,13 +136,9 @@ func (s *server) readableWorkspaces(c Call) ([]contract.Workspace, error) {
 	return out, nil
 }
 
-func notInvitedErr() error {
-	return contract.NewError(contract.CodeNotInvited, "this account has not been invited to the organization")
-}
-
 func (s *server) getMe(c Call, _ none) (contract.Me, error) {
 	if !c.Session.Member {
-		return contract.Me{}, notInvitedErr()
+		return contract.Me{}, contract.NotInvited()
 	}
 	return s.me(c)
 }
@@ -158,7 +154,7 @@ func (s *server) completeSignup(c Call, _ none) (contract.Me, error) {
 
 func (s *server) mePermissions(c Call, _ none) (contract.PermissionSnapshot, error) {
 	if !c.Session.Member {
-		return contract.PermissionSnapshot{}, notInvitedErr()
+		return contract.PermissionSnapshot{}, contract.NotInvited()
 	}
 	return s.Authz.Snapshot(c.Ctx, c.Principal)
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net/mail"
 	"strings"
 	"time"
 	"unicode"
@@ -18,9 +17,8 @@ import (
 )
 
 const (
-	maxNameRunes   = 80
-	maxEmailLength = 254
-	maxIDAttempts  = 5
+	maxNameRunes  = 80
+	maxIDAttempts = 5
 	// DefaultWorkspaceName names the workspace created at first boot.
 	DefaultWorkspaceName = "Default"
 )
@@ -66,27 +64,13 @@ func invalid(field, msg string) error {
 	return contract.NewError(contract.CodeValidationFailed, "request validation failed", field+": "+msg)
 }
 
-func notInvited() error {
-	return contract.NewError(contract.CodeNotInvited, "this account has not been invited to the organization")
-}
-
-// NormalizeEmail trims and lower-cases an email and checks it is a bare address.
-// Non-ASCII addresses are refused before any case folding: Unicode folding maps
-// some characters to ASCII (U+212A KELVIN SIGN to "k", U+0130 to "i"), which would let a
-// different address claim an invitation written for another. Internationalized addresses
-// need a proper IDN and Unicode comparison policy before they can be admitted.
-func NormalizeEmail(raw string) (string, error) {
-	// The raw value is judged: TrimSpace would strip Unicode whitespace (U+00A0, U+3000, ...)
-	// and let a different string claim an address written without it.
-	if strings.IndexFunc(raw, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
-		return "", invalid("email", "must be a plain ASCII email address")
+// inviteEmail normalises an address typed by a person: surrounding ASCII whitespace is dropped (the
+// one place anything is trimmed), then contract.NormalizeEmail judges the rest.
+func inviteEmail(raw string) (string, error) {
+	if e, ok := contract.NormalizeEmail(strings.Trim(raw, " \t\r\n")); ok {
+		return e, nil
 	}
-	e := strings.ToLower(strings.TrimSpace(raw))
-	addr, err := mail.ParseAddress(e)
-	if e == "" || len(e) > maxEmailLength || err != nil || addr.Address != e || addr.Name != "" {
-		return "", invalid("email", "must be a plain email address")
-	}
-	return e, nil
+	return "", invalid("email", "must be a plain ASCII email address")
 }
 
 func validName(raw string) (string, error) {
@@ -134,11 +118,11 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 		return sess, nil
 	}
 	if !sess.Identity.EmailVerified {
-		return contract.Session{}, notInvited()
+		return contract.Session{}, contract.NotInvited()
 	}
-	email, err := NormalizeEmail(sess.Identity.Email)
-	if err != nil {
-		return contract.Session{}, notInvited()
+	email, ok := contract.NormalizeEmail(sess.Identity.Email)
+	if !ok {
+		return contract.Session{}, contract.NotInvited()
 	}
 	role, ok, err := s.st.AcceptOpenInvitation(ctx, s.org, sess.User.ID, email, s.cfg.Now())
 	if err != nil {
@@ -155,7 +139,7 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 		return contract.Session{}, err
 	}
 	if !active {
-		return contract.Session{}, notInvited()
+		return contract.Session{}, contract.NotInvited()
 	}
 	return s.asMember(sess, r), nil
 }
@@ -168,7 +152,11 @@ func (s *Service) EnsureMember(ctx context.Context, userID string, role contract
 
 // ApplyWebhookUser upserts a user from a Clerk webhook.
 func (s *Service) ApplyWebhookUser(ctx context.Context, u identity.WebhookUser) error {
-	_, err := s.st.UpsertUser(ctx, s.org, contract.Identity{Subject: u.ClerkUserID, Email: u.Email, EmailVerified: u.EmailVerified, Name: u.Name, AvatarURL: u.AvatarURL})
+	email, verified := u.Email, u.EmailVerified
+	if _, ok := contract.NormalizeEmail(email); !ok {
+		email, verified = "", false // never trimmed or folded into a match, as for token claims
+	}
+	_, err := s.st.UpsertUser(ctx, s.org, contract.Identity{Subject: u.ClerkUserID, Email: email, EmailVerified: verified, Name: u.Name, AvatarURL: u.AvatarURL})
 	return err
 }
 
@@ -311,7 +299,7 @@ func (s *Service) providerInvite(ctx context.Context, email string) (string, err
 }
 
 func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role contract.Role) (contract.Invitation, error) {
-	email, err := NormalizeEmail(rawEmail)
+	email, err := inviteEmail(rawEmail)
 	if err != nil {
 		return contract.Invitation{}, err
 	}
@@ -355,7 +343,7 @@ func (s *Service) CreateInvitation(ctx context.Context, p contract.Principal, em
 // or the last admin was deleted at the provider). While any admin is active it refuses with a
 // conflict. It is idempotent: an open admin invitation for the email is returned with created=false.
 func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contract.Invitation, created bool, err error) {
-	e, err := NormalizeEmail(email)
+	e, err := inviteEmail(email)
 	if err != nil {
 		return contract.Invitation{}, false, err
 	}
