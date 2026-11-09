@@ -39,7 +39,7 @@ var roleHelpers = map[string]bool{
 // Any comparison with the constant "admin" or "member" is flagged too. Passing a role on, storing
 // it, converting it for a DTO and calling its Valid method are not decisions.
 func scanInlineRoleChecks(files map[string]string) []Violation {
-	ld := &roleLoader{files: files, pkgs: map[string]*types.Package{}}
+	ld := &roleLoader{files: files, pkgs: map[string]*types.Package{}, busy: map[string]bool{}}
 	var dirs []string
 	byDir := map[string][]string{}
 	for rel := range files {
@@ -69,6 +69,7 @@ func scanInlineRoleChecks(files map[string]string) []Violation {
 type roleLoader struct {
 	files map[string]string
 	pkgs  map[string]*types.Package
+	busy  map[string]bool // packages being checked: an import cycle (H2 and H0 break it on purpose) ends here
 }
 
 func (l *roleLoader) Import(ip string) (*types.Package, error) {
@@ -79,6 +80,11 @@ func (l *roleLoader) Import(ip string) (*types.Package, error) {
 	if p, ok := l.pkgs[ip]; ok {
 		return p, nil
 	}
+	if l.busy[ip] {
+		return nil, errors.New("import cycle through " + ip)
+	}
+	l.busy[ip] = true
+	defer delete(l.busy, ip)
 	var names []string
 	for f := range l.files {
 		if path.Dir(f) == rel && path.Ext(f) == ".go" && !strings.HasSuffix(f, "_test.go") {

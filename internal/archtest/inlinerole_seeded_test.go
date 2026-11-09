@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sort"
 	"testing"
+	"time"
 )
 
 const roleStub = `package contract
@@ -138,5 +139,20 @@ func mayAssign(a, b contract.Role) error { return nil }`),
 	}
 	if got := scanInlineRoleChecks(good); len(got) != 0 {
 		t.Fatalf("legal uses flagged: %v", got)
+	}
+}
+
+// An import cycle (what the H0 and H2 mutations create) must end the scan, not recurse forever.
+func TestRoleScanSurvivesAnImportCycle(t *testing.T) {
+	files := map[string]string{
+		"internal/contract/ports.go": "package contract\nimport _ \"" + module + "/internal/tenancy\"\ntype Role string\n",
+		"internal/tenancy/a.go":      "package tenancy\nimport _ \"" + cn + "\"\nfunc f() {}\n",
+	}
+	done := make(chan struct{})
+	go func() { scanInlineRoleChecks(files); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the role scan did not return on an import cycle")
 	}
 }
