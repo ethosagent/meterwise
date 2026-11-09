@@ -242,7 +242,7 @@ export interface ResetURLRequest {
 }
 
 export interface ResetURLResponse {
-  proxyUrl: string;
+  proxyUrl: string | null;
   previousGraceUntil: string;
 }
 

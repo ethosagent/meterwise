@@ -34,7 +34,7 @@ func TestResetURLKeepsTheOldIDInGraceThenGoneAndIsAudited(t *testing.T) {
 	old, id := s.defaultWorkspace(t, admin.tok)
 	before := time.Now()
 	res := decodeAs[contract.ResetURLResponse](t, s.must(t, admin.tok, "POST", "/api/workspaces/"+id+"/url/reset", `{"graceMinutes":30}`, 200))
-	fresh := idOf(res.ProxyURL)
+	fresh := idOf(deref(res.ProxyURL))
 	until, err := time.Parse(time.RFC3339, res.PreviousGraceUntil)
 	if err != nil || fresh == old || len(fresh) != 22 || until.Before(before.Add(29*time.Minute)) || until.After(time.Now().Add(31*time.Minute)) {
 		t.Fatalf("reset = %+v (%v)", res, err)
@@ -197,5 +197,36 @@ func TestAnAuditFailureDoesNotFailTheChange(t *testing.T) {
 	f.do(t, "POST", "/api/groups", `{"name":"y"}`)
 	if len(ok.events) != 1 || ok.events[0].Action != contract.AuditGroupCreate || ok.events[0].ActorID != "u-1" || ok.events[0].OrgID != "o-1" || ok.events[0].ResourceID == "" {
 		t.Fatalf("events = %+v", ok.events)
+	}
+}
+
+func TestManageWithoutReadNeverReceivesTheURL(t *testing.T) {
+	s := newStack(t)
+	admin := s.admin(t, "user_admin")
+	m := s.invited(t, admin.tok, "user_m", contract.RoleMember)
+	old, id := s.defaultWorkspace(t, admin.tok)
+	s.must(t, admin.tok, "PUT", "/api/organization/permissions",
+		`{"grants":[{"resourceType":"workspace","action":"read","workspaceId":null},{"resourceType":"workspace_url","action":"manage","workspaceId":null}]}`, 200)
+
+	raw := s.must(t, m.tok, "POST", "/api/workspaces/"+id+"/url/reset", `{"graceMinutes":5}`, 200)
+	res := decodeAs[contract.ResetURLResponse](t, raw)
+	fresh, _ := s.defaultWorkspace(t, admin.tok)
+	if res.ProxyURL != nil || res.PreviousGraceUntil == "" || strings.Contains(string(raw), "/w/") || strings.Contains(string(raw), fresh) || strings.Contains(string(raw), old) {
+		t.Fatalf("a caller without workspace_url:read got the URL: %s", raw)
+	}
+	for _, c := range []struct{ method, path, body string }{
+		{"PUT", "/url/allowed-cidrs", `{"cidrs":["203.0.113.0/24"]}`},
+		{"POST", "/url/retire-previous", ""},
+	} {
+		code, b := s.call(t, c.method, "/api/workspaces/"+id+c.path, m.tok, c.body)
+		if (code != 200 && code != 204) || strings.Contains(string(b), "/w/") || strings.Contains(string(b), fresh) || strings.Contains(string(b), old) {
+			t.Fatalf("%s %s -> %d %s", c.method, c.path, code, b)
+		}
+	}
+	// a caller who also holds read still gets it
+	s.must(t, admin.tok, "PUT", "/api/organization/permissions",
+		`{"grants":[{"resourceType":"workspace","action":"read","workspaceId":null},{"resourceType":"workspace_url","action":"read","workspaceId":null},{"resourceType":"workspace_url","action":"manage","workspaceId":null}]}`, 200)
+	if r := decodeAs[contract.ResetURLResponse](t, s.must(t, m.tok, "POST", "/api/workspaces/"+id+"/url/reset", `{}`, 200)); r.ProxyURL == nil {
+		t.Fatal("manage plus read must return the URL")
 	}
 }

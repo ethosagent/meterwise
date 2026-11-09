@@ -59,7 +59,7 @@ func TestEndToEndResetURLGraceThen410AuditRowsAreAppendOnly(t *testing.T) {
 
 	st, b = e.do("POST", "/api/workspaces/"+ws.ID+"/url/reset", "", `{"graceMinutes":10}`)
 	e.want(200, st, b, "reset")
-	second := decodeInto[contract.ResetURLResponse](t, b).ProxyURL
+	second := *decodeInto[contract.ResetURLResponse](t, b).ProxyURL
 	second = second[strings.LastIndex(second, "/")+1:]
 	if second == first {
 		t.Fatal("the id did not change")

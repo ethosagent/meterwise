@@ -606,7 +606,14 @@
             "type": "string"
           },
           "proxyUrl": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

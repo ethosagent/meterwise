@@ -257,8 +257,10 @@ type ResetURLRequest struct {
 }
 
 // ResetURLResponse is the reset result: the new URL and when the previous one stops answering.
+// ProxyURL is null unless the caller also holds workspace_url:read on the workspace: managing the
+// URL does not entitle anyone to see it.
 type ResetURLResponse struct {
-	ProxyURL           string `json:"proxyUrl"`
+	ProxyURL           *string `json:"proxyUrl"`
 	PreviousGraceUntil string `json:"previousGraceUntil"`
 }
 
