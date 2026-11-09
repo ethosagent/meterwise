@@ -18,15 +18,34 @@ const sources: Record<string, string> = Object.fromEntries(
     .map((f) => [`../${relative(SRC, f).split(sep).join("/")}`, readFileSync(f, "utf8")]),
 );
 
-const shipped = Object.entries(sources).filter(
-  ([p]) =>
-    !p.includes(".test.") &&
-    !p.includes("/test/") &&
-    !p.includes("/contract/") &&
-    !p.endsWith("/theme/theme.ts"),
-);
+/** Test-support files that are not shipped; anything else under src/test/ is shipped code. */
+const TEST_SUPPORT = new Set(["../test/setup.ts", "../test/mockApi.ts", "../test/render.tsx"]);
+const GENERATED = "../contract/generated.ts";
+
+/** Whether a source (path relative to src, as "../x") is shipped and so subject to the scans. */
+function isShipped(p: string): boolean {
+  return (
+    !p.includes(".test.") && !TEST_SUPPORT.has(p) && p !== GENERATED && p !== "../theme/theme.ts"
+  );
+}
+
+const shipped = Object.entries(sources).filter(([p]) => isShipped(p));
 
 describe("design-token and brand hygiene", () => {
+  it("exempts only the named test-support files, generated.ts and theme.ts", () => {
+    expect(isShipped("../test/extra.ts")).toBe(true); // a new file in src/test/ is scanned
+    expect(isShipped("../contract/hand.ts")).toBe(true); // a hand-written file next to generated.ts is scanned
+    expect(isShipped("../contract/contract.test.ts")).toBe(false);
+    expect(isShipped("../test/mockApi.ts")).toBe(false);
+    expect(isShipped("../contract/generated.ts")).toBe(false);
+    expect(isShipped("../theme/theme.ts")).toBe(false);
+    expect(isShipped("../shell/Shell.tsx")).toBe(true);
+  });
+
+  it("the exempt files all exist (a rename must not widen the exemption silently)", () => {
+    for (const p of [...TEST_SUPPORT, GENERATED]) expect(Object.keys(sources)).toContain(p);
+  });
+
   it("scans a meaningful set of sources", () => {
     expect(shipped.length).toBeGreaterThan(20);
   });

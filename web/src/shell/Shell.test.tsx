@@ -114,6 +114,16 @@ describe("Shell chrome", () => {
     expect(screen.getByTestId("workspace-switcher")).toHaveTextContent("Staging");
   });
 
+  it("shows full workspace names in the switcher popup while the sider is collapsed", async () => {
+    mockApi();
+    const { container } = renderApp("/overview");
+    await screen.findByTestId("brand-name");
+    await userEvent.click(container.querySelector(".ant-layout-sider-trigger") as Element);
+    await userEvent.click(screen.getByTestId("workspace-switcher"));
+    const items = await screen.findAllByRole("menuitem", { name: /workspace|Staging|Research/ });
+    expect(items.map((i) => i.textContent)).toEqual(STUB_WORKSPACES.map((w) => w.name));
+  });
+
   it("keeps the Settings group open on a settings page and closed elsewhere", async () => {
     mockApi();
     const { container } = renderApp("/overview");

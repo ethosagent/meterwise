@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 // The dev server proxies /api to the Go backend; in production one origin serves both.
-const backend = process.env.METERWISE_API_URL ?? "http://127.0.0.1:8080";
+const backend = process.env.METERWISE_API_URL ?? "http://127.0.0.1:8081";
 
 export default defineConfig({
   plugins: [react()],
@@ -19,7 +19,9 @@ export default defineConfig({
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
         "src/main.tsx",
-        "src/test/**",
+        "src/test/setup.ts",
+        "src/test/mockApi.ts",
+        "src/test/render.tsx",
         "src/contract/generated.ts",
       ],
       // Floor 70 % (docs/context-budget.md). Raise, never lower.
