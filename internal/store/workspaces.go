@@ -212,6 +212,7 @@ func (s *Store) ResetWorkspaceURL(ctx context.Context, orgID, id, newPublicID st
 		return contract.Workspace{}, time.Time{}, errNotFound
 	}
 	until := now.Add(grace)
+	var ws contract.Workspace
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
 		if _, err := q.LockWorkspace(ctx, sqlc.LockWorkspaceParams{OrgID: orgID, ID: id}); err != nil {
 			return err
@@ -222,7 +223,17 @@ func (s *Store) ResetWorkspaceURL(ctx context.Context, orgID, id, newPublicID st
 		if err := q.InsertPublicID(ctx, sqlc.InsertPublicIDParams{PublicID: newPublicID, OrgID: orgID, WorkspaceID: id}); err != nil {
 			return err
 		}
-		return q.SetWorkspacePublicID(ctx, sqlc.SetWorkspacePublicIDParams{PublicID: newPublicID, OrgID: orgID, ID: id})
+		if err := q.SetWorkspacePublicID(ctx, sqlc.SetWorkspacePublicIDParams{PublicID: newPublicID, OrgID: orgID, ID: id}); err != nil {
+			return err
+		}
+		// Read the row inside the transaction: once it commits nothing may fail, or the caller
+		// would report an error for a reset that happened (a retry would rotate the id again).
+		r, err := q.GetWorkspace(ctx, sqlc.GetWorkspaceParams{OrgID: orgID, ID: id})
+		if err != nil {
+			return err
+		}
+		ws = wsRow(r).workspace()
+		return nil
 	})
 	if isUnique(err) {
 		return contract.Workspace{}, time.Time{}, ErrPublicIDTaken
@@ -230,8 +241,7 @@ func (s *Store) ResetWorkspaceURL(ctx context.Context, orgID, id, newPublicID st
 	if err != nil {
 		return contract.Workspace{}, time.Time{}, queryErr(err)
 	}
-	ws, err := s.Workspace(ctx, orgID, id)
-	return ws, until, err
+	return ws, until, nil
 }
 
 // EndPreviousURLGrace ends the grace window of every retired public id of the workspace that is

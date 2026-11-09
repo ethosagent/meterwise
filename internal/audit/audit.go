@@ -50,13 +50,15 @@ func (s *Sink) List(ctx context.Context, q contract.AuditQuery) (contract.AuditP
 }
 
 // Emit appends e and, if that fails, logs at ERROR and returns: an audit failure must not undo or
-// fail the change that already committed. The log line carries the action and the error class
+// fail the change that already committed. The append
+// runs on a context detached from the request, so a client that disconnects right after the
+// commit does not lose the row. The log line carries the action and the error class
 // only, never the event's metadata, ids of the workspace URL or the client address.
 func Emit(ctx context.Context, log *slog.Logger, sink contract.AuditSink, e contract.AuditEvent) {
 	if sink == nil {
 		return
 	}
-	if err := sink.Append(ctx, e); err != nil && log != nil {
+	if err := sink.Append(context.WithoutCancel(ctx), e); err != nil && log != nil {
 		log.LogAttrs(ctx, slog.LevelError, "audit: append failed", slog.String("action", string(e.Action)), slog.String("code", string(contract.AsError(err).Code)))
 	}
 }

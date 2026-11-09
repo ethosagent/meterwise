@@ -87,3 +87,33 @@ func TestEmitLogsAFailureWithoutLeakingTheEventAndNeverPanicsOnNil(t *testing.T)
 	audit.Emit(context.Background(), log, nil, contract.AuditEvent{}) // nil sink: a no-op
 	audit.Emit(context.Background(), nil, failing{}, contract.AuditEvent{})
 }
+
+// ctxProbe records whether the context its Append received was already cancelled.
+type ctxProbe struct{ got []error }
+
+func (p *ctxProbe) Append(ctx context.Context, _ contract.AuditEvent) error {
+	p.got = append(p.got, ctx.Err())
+	return ctx.Err()
+}
+
+func TestEmitAppendsOnAContextDetachedFromTheRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the client went away right after the change committed
+	var logs bytes.Buffer
+	probe := &ctxProbe{}
+	audit.Emit(ctx, slog.New(slog.NewTextHandler(&logs, nil)), probe, contract.AuditEvent{Action: contract.AuditGroupCreate, ResourceType: "group"})
+	if len(probe.got) != 1 || probe.got[0] != nil || logs.Len() != 0 {
+		t.Fatalf("append must run on a live context and not fail: %v log=%q", probe.got, logs.String())
+	}
+}
+
+func TestEmitWritesTheRowEvenWithACancelledRequestContext(t *testing.T) {
+	s := newSink(t, time.Now)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	audit.Emit(ctx, nil, s, contract.AuditEvent{Action: contract.AuditGroupCreate, ResourceType: "group"})
+	page, err := s.List(context.Background(), contract.AuditQuery{})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("the row must be written: %+v %v", page, err)
+	}
+}
