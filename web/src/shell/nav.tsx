@@ -10,6 +10,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
+import type { Permission } from "../access/plan03-types";
 
 export type NavKey =
   | "overview"
@@ -29,6 +30,8 @@ export interface NavPage {
   icon: ReactNode;
   /** Parent group label for the breadcrumb, when the page lives under a group. */
   group?: string;
+  /** An org-scoped permission needed to see the destination at all; the gateway would 403 the page's data without it. */
+  permission?: Permission;
 }
 
 export const SETTINGS_LABEL = "Settings";
@@ -98,6 +101,7 @@ export const SETTINGS_PAGES: readonly NavPage[] = [
     description: "Who can see and change what.",
     icon: <LockOutlined />,
     group: SETTINGS_LABEL,
+    permission: "member:read",
   },
 ];
 

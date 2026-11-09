@@ -1,4 +1,5 @@
-import { createContext, type ReactNode, useContext, useLayoutEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { createContext, type ReactNode, useContext, useLayoutEffect, useState } from "react";
 import type { AuthAdapter, SessionApi } from "./adapter";
 import { useSession } from "./session";
 
@@ -13,8 +14,20 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function Bridge({ adapter, children }: { adapter: AuthAdapter; children: ReactNode }) {
   const session = adapter.useAuthSession();
   const setSignedIn = useSession((s) => s.setSignedIn);
-  const { isSignedIn, getToken } = session;
+  const { isSignedIn, getToken, userId } = session;
   useLayoutEffect(() => setSignedIn(isSignedIn, getToken), [isSignedIn, getToken, setSignedIn]);
+
+  // Everything cached belongs to one identity (Me, the permission snapshot and workspaces never go
+  // stale by themselves). When the identity changes, drop the whole cache, and render nothing
+  // below until it is dropped, so the new person never sees one frame of the previous one's data.
+  const qc = useQueryClient();
+  const [settledFor, setSettledFor] = useState(userId);
+  useLayoutEffect(() => {
+    if (settledFor === userId) return;
+    qc.clear();
+    setSettledFor(userId);
+  }, [settledFor, userId, qc]);
+  if (settledFor !== userId) return null;
   return <AuthContext.Provider value={{ adapter, session }}>{children}</AuthContext.Provider>;
 }
 

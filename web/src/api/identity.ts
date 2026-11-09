@@ -1,6 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import type { ErrorCode, Invitation, Me, Role, Workspace } from "../contract/generated";
+import type { Me } from "../access/plan03-types";
+import type { ErrorCode, Invitation, Role, Workspace } from "../contract/generated";
 import { apiFetch } from "./client";
 import { ApiError } from "./errors";
 
@@ -62,19 +63,21 @@ export function useWorkspaces() {
  * The active workspace, never a stand-in for it. "missing" means the id in Me is not in the
  * workspace list even after one refetch of both: show an error, not the default workspace's name
  * or proxy URL (the URL is the workspace, so a wrong one routes an agent to the wrong place).
+ * "none" means the server says the caller can read no workspace (activeWorkspaceId is null).
  */
 export type ActiveWorkspace =
   | { state: "loading" }
+  | { state: "none" }
   | { state: "missing" }
   | { state: "ready"; workspace: Workspace };
 
 export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
   const meQuery = useMe();
   const listQuery = useWorkspaces();
-  const activeId = meQuery.data?.activeWorkspaceId;
+  const activeId = meQuery.data?.activeWorkspaceId ?? undefined;
   const workspace = listQuery.data?.find((w) => w.id === activeId);
   const loaded = meQuery.data !== undefined && listQuery.data !== undefined;
-  const absent = loaded && workspace === undefined;
+  const absent = loaded && activeId !== undefined && workspace === undefined;
   const fetching = meQuery.isFetching || listQuery.isFetching;
   const refetchedFor = useRef<string | null>(null);
   const { refetch: refetchMe } = meQuery;
@@ -91,37 +94,18 @@ export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
     void Promise.all([refetchMe(), refetchList()]);
   };
   if (workspace) return { state: "ready", workspace, retry };
+  if (meQuery.data && meQuery.data.activeWorkspaceId === null) return { state: "none", retry };
   if (!loaded || fetching || refetchedFor.current !== activeId) return { state: "loading", retry };
   return { state: "missing", retry };
 }
 
-export function useCreateWorkspace() {
+/** A workspace mutation: run `fn`, then refetch the workspace list (and Me, when `rePoint`, as a delete can move the active one). */
+function useWorkspaceMutation<V, R>(fn: (v: V) => Promise<R>, rePoint = false) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      apiFetch<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: workspacesKey }),
-  });
-}
-
-export function useRenameWorkspace() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (v: { id: string; name: string }) =>
-      apiFetch<Workspace>(`/api/workspaces/${encodeURIComponent(v.id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name: v.name }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: workspacesKey }),
-  });
-}
-
-export function useDeleteWorkspace() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<void>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    mutationFn: fn,
     onSuccess: async () => {
+      if (!rePoint) return qc.invalidateQueries({ queryKey: workspacesKey });
       // The server re-points a deleted active workspace, so both lists are stale.
       await Promise.all([
         qc.invalidateQueries({ queryKey: workspacesKey }),
@@ -130,6 +114,29 @@ export function useDeleteWorkspace() {
       await invalidateWorkspaceScoped(qc);
     },
   });
+}
+
+export function useCreateWorkspace() {
+  return useWorkspaceMutation((name: string) =>
+    apiFetch<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
+  );
+}
+
+export function useRenameWorkspace() {
+  return useWorkspaceMutation((v: { id: string; name: string }) =>
+    apiFetch<Workspace>(`/api/workspaces/${encodeURIComponent(v.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: v.name }),
+    }),
+  );
+}
+
+export function useDeleteWorkspace() {
+  return useWorkspaceMutation(
+    (id: string) =>
+      apiFetch<void>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    true,
+  );
 }
 
 /** Switch the active workspace, then refetch everything that was scoped to the old one. */

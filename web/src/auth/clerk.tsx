@@ -31,15 +31,16 @@ function useClerkAppearance() {
 }
 
 function useClerkSession(): SessionApi {
-  const { isLoaded, isSignedIn, getToken, signOut } = useAuth();
+  const { isLoaded, isSignedIn, userId, getToken, signOut } = useAuth();
   return useMemo(
     () => ({
       isLoaded,
       isSignedIn: isSignedIn === true,
+      userId: isSignedIn ? (userId ?? null) : null,
       getToken: async () => (isSignedIn ? await getToken() : null),
       signOut: async () => signOut(),
     }),
-    [isLoaded, isSignedIn, getToken, signOut],
+    [isLoaded, isSignedIn, userId, getToken, signOut],
   );
 }
 

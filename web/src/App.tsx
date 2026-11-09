@@ -1,6 +1,7 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { BrowserRouter } from "react-router-dom";
+import { createQueryClient } from "./api/queryClient";
 import { AuthProvider } from "./auth/AuthProvider";
 import type { AuthAdapter } from "./auth/adapter";
 import { AuthMisconfiguredScreen } from "./auth/screens";
@@ -9,10 +10,7 @@ import { ThemeProvider } from "./theme/ThemeProvider";
 
 /** Root: server-state client, theme, router, identity provider. `auth` is the adapter, or why there is none. */
 export function App({ auth }: { auth: AuthAdapter | { error: string } }) {
-  const [client] = useState(
-    () =>
-      new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }),
-  );
+  const [client] = useState(() => createQueryClient(1));
   return (
     <QueryClientProvider client={client}>
       <ThemeProvider>

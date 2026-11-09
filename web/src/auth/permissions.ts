@@ -1,18 +1,49 @@
-import type { Me } from "../contract/generated";
+import {
+  type Permission,
+  type PermissionSnapshot,
+  type ResourceType,
+  TAXONOMY,
+} from "../access/plan03-types";
+
+function parse(permission: Permission): { resource: ResourceType; action: string } | undefined {
+  const [resource, action] = permission.split(":");
+  if (!resource || !action || !(resource in TAXONOMY)) return undefined;
+  const actions: readonly string[] = TAXONOMY[resource as ResourceType].actions;
+  if (!actions.includes(action)) return undefined;
+  return { resource: resource as ResourceType, action };
+}
 
 /**
- * Capabilities the UI gates on. Plan 03 replaces the table below with grants from the server.
- * Ruling: any member may create a workspace; rename and delete are admin-only. This mirrors the
- * permission table in internal/contract/routes.go.
+ * The one place a grant is read. Components ask for a permission, never for a role.
+ *
+ * Admin allows everything. Otherwise a grant must match: org-scoped resources match a grant with
+ * a null workspace; workspace-scoped ones match a grant for `workspaceId` or an org default (null,
+ * every workspace). A workspace-scoped permission with no `workspaceId` is false here: the
+ * `usePermission` hook fills in the active workspace. An unknown or missing snapshot is false.
  */
-export type Permission = "invitations.manage" | "workspaces.create" | "workspaces.manage";
+export function hasPermission(
+  snapshot: PermissionSnapshot | undefined,
+  permission: Permission,
+  workspaceId?: string | null,
+): boolean {
+  if (!snapshot) return false;
+  if (snapshot.admin) return true;
+  const p = parse(permission);
+  if (!p) return false;
+  const { scope } = TAXONOMY[p.resource];
+  if (scope === "workspace" && !workspaceId) return false;
+  return snapshot.grants.some(
+    (g) =>
+      g.resourceType === p.resource &&
+      g.action === p.action &&
+      (g.workspaceId === null || (scope === "workspace" && g.workspaceId === workspaceId)),
+  );
+}
 
-const ADMIN_ONLY: readonly Permission[] = ["invitations.manage", "workspaces.manage"];
-const ANY_MEMBER: readonly Permission[] = ["workspaces.create"];
-
-/** The one place a role is read. Components ask for a permission, never for a role. */
-export function hasPermission(me: Me | undefined, permission: Permission): boolean {
-  if (!me) return false;
-  if (ANY_MEMBER.includes(permission)) return me.role === "admin" || me.role === "member";
-  return me.role === "admin" && ADMIN_ONLY.includes(permission);
+/**
+ * The gateway's PermAdmin routes (role changes, group writes, org defaults): no grant confers
+ * them. The snapshot carries `admin`, so the UI still never reads a role.
+ */
+export function isAdminSnapshot(snapshot: PermissionSnapshot | undefined): boolean {
+  return snapshot?.admin === true;
 }

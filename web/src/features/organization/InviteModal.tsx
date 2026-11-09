@@ -1,25 +1,29 @@
 import { Alert, Button, Form, Input, Modal, Select } from "antd";
-import { ApiError } from "../../api/errors";
+import { ACCESS_ERROR_TEXT } from "../../api/access";
+import { describeApiError } from "../../api/errors";
 import { IDENTITY_ERRORS, useInvite } from "../../api/identity";
+import { useIsAdmin } from "../../auth/usePermission";
 import type { Role } from "../../contract/generated";
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: "member", label: "Member" },
-  { value: "admin", label: "Admin" },
-];
-
 function inviteErrorText(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.code === IDENTITY_ERRORS.duplicateInvitation) {
-      return "That address already has a pending invitation. Resend or revoke it below.";
-    }
-    if (e.status === 422) return e.problems[0] ?? e.message;
-  }
-  return "Could not send the invitation. Try again.";
+  return describeApiError(e, {
+    byCode: {
+      ...ACCESS_ERROR_TEXT,
+      [IDENTITY_ERRORS.duplicateInvitation]:
+        "That address already has a pending invitation. Resend or revoke it below.",
+    },
+    fallback: "Could not send the invitation. Try again.",
+  });
 }
 
 /** Email and role in; the server creates the invitation and emails the link. */
 export function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  // The escalation guard: only an admin may invite another admin (403 "admin required" otherwise).
+  const canGrantAdmin = useIsAdmin();
+  const roles: { value: Role; label: string; disabled?: boolean }[] = [
+    { value: "member", label: "Member" },
+    { value: "admin", label: "Admin", disabled: !canGrantAdmin },
+  ];
   const invite = useInvite();
   const [form] = Form.useForm<{ email: string; role: Role }>();
   const close = () => {
@@ -63,7 +67,7 @@ export function InviteModal({ open, onClose }: { open: boolean; onClose: () => v
           <Input autoComplete="off" />
         </Form.Item>
         <Form.Item label="Role" name="role">
-          <Select options={ROLES} aria-label="Role" />
+          <Select options={roles} aria-label="Role" />
         </Form.Item>
       </Form>
     </Modal>

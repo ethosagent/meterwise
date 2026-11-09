@@ -27,3 +27,6 @@ web/dist/
 
 # Web build output
 web/coverage/
+
+# Any node_modules (a stray root one holds the vitest cache)
+node_modules/

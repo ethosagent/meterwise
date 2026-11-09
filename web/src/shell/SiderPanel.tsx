@@ -1,23 +1,36 @@
 import { Layout, Menu, theme } from "antd";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { usePermissionSnapshot } from "../api/access";
+import { hasPermission } from "../auth/permissions";
 import { useUi } from "../state/ui";
 import { SIDER_COLLAPSED_WIDTH, SIDER_WIDTH } from "../theme/theme";
 import { Brand } from "./Brand";
-import { MAIN_PAGES, pageByPath, SETTINGS_ICON, SETTINGS_LABEL, SETTINGS_PAGES } from "./nav";
+import {
+  MAIN_PAGES,
+  type NavPage,
+  pageByPath,
+  SETTINGS_ICON,
+  SETTINGS_LABEL,
+  SETTINGS_PAGES,
+} from "./nav";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 const SETTINGS_KEY = "settings";
 
-const MENU_ITEMS = [
-  ...MAIN_PAGES.map((p) => ({ key: p.path, icon: p.icon, label: p.label })),
-  {
-    key: SETTINGS_KEY,
-    icon: SETTINGS_ICON,
-    label: SETTINGS_LABEL,
-    children: SETTINGS_PAGES.map((p) => ({ key: p.path, icon: p.icon, label: p.label })),
-  },
-];
+/** Destinations the caller may open: a page that names a permission is hidden without it. */
+function menuItems(allowed: (p: NavPage) => boolean) {
+  const item = (p: NavPage) => ({ key: p.path, icon: p.icon, label: p.label });
+  return [
+    ...MAIN_PAGES.filter(allowed).map(item),
+    {
+      key: SETTINGS_KEY,
+      icon: SETTINGS_ICON,
+      label: SETTINGS_LABEL,
+      children: SETTINGS_PAGES.filter(allowed).map(item),
+    },
+  ];
+}
 
 /** Collapsible sidebar: brand, workspace switcher, navigation. Its tokens come from the nested dark provider. */
 export function SiderPanel() {
@@ -26,6 +39,8 @@ export function SiderPanel() {
   const { pathname } = useLocation();
   const collapsed = useUi((s) => s.siderCollapsed);
   const setCollapsed = useUi((s) => s.setSiderCollapsed);
+  const snapshot = usePermissionSnapshot().data;
+  const items = menuItems((p) => !p.permission || hasPermission(snapshot, p.permission));
   const page = pageByPath(pathname);
   const inSettings = page?.group !== undefined;
   const [openKeys, setOpenKeys] = useState<string[]>(inSettings ? [SETTINGS_KEY] : []);
@@ -56,7 +71,7 @@ export function SiderPanel() {
         selectedKeys={page ? [page.path] : []}
         openKeys={openKeys}
         onOpenChange={setOpenKeys}
-        items={MENU_ITEMS}
+        items={items}
         onClick={({ key }) => navigate(key)}
         style={{ borderInlineEnd: 0, paddingInline: token.paddingXXS }}
       />

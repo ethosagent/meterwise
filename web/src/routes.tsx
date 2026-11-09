@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useMe } from "./api/identity";
 import { AcceptInviteRoute, AuthGate, LoginRoute } from "./auth/AuthGate";
 import { AccessManagementPage } from "./features/access-management/Page";
 import { MonitorsPage } from "./features/monitors/Page";
@@ -10,6 +11,7 @@ import { SessionsPage } from "./features/sessions/Page";
 import { SetupPage } from "./features/setup/Page";
 import { WorkspacePage } from "./features/workspace/Page";
 import { NotFound } from "./shell/NotFound";
+import { NoWorkspaceAccess } from "./shell/NoWorkspaceAccess";
 import { ALL_PAGES, DEFAULT_PATH, type NavKey, pageByKey } from "./shell/nav";
 import { Shell } from "./shell/Shell";
 
@@ -25,6 +27,21 @@ const PAGE_ELEMENTS: Record<NavKey, ReactElement> = {
   access: <AccessManagementPage />,
 };
 
+/** Pages about the active workspace; the rest (profile, organization, access) work without one. */
+const WORKSPACE_PAGES: readonly NavKey[] = [
+  "overview",
+  "sessions",
+  "monitors",
+  "setup",
+  "workspace",
+];
+
+/** With no readable workspace (Me.activeWorkspaceId is null) a workspace page is an explanation, not an error. */
+function WorkspaceGate({ children }: { children: ReactElement }) {
+  const me = useMe().data;
+  return me && me.activeWorkspaceId === null ? <NoWorkspaceAccess /> : children;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -35,7 +52,17 @@ export function AppRoutes() {
           <Route index element={<Navigate to={DEFAULT_PATH} replace />} />
           <Route path="/settings" element={<Navigate to={pageByKey("profile").path} replace />} />
           {ALL_PAGES.map((p) => (
-            <Route key={p.key} path={p.path} element={PAGE_ELEMENTS[p.key]} />
+            <Route
+              key={p.key}
+              path={p.path}
+              element={
+                WORKSPACE_PAGES.includes(p.key) ? (
+                  <WorkspaceGate>{PAGE_ELEMENTS[p.key]}</WorkspaceGate>
+                ) : (
+                  PAGE_ELEMENTS[p.key]
+                )
+              }
+            />
           ))}
           <Route path="*" element={<NotFound />} />
         </Route>

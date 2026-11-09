@@ -1,8 +1,8 @@
 import { AppstoreOutlined, DownOutlined } from "@ant-design/icons";
 import { App, Menu, Popover, Tooltip, Typography, theme } from "antd";
 import { useState } from "react";
-import { useActiveWorkspace, useMe, useSwitchWorkspace, useWorkspaces } from "../api/identity";
-import { hasPermission } from "../auth/permissions";
+import { useActiveWorkspace, useSwitchWorkspace, useWorkspaces } from "../api/identity";
+import { useCanCreateWorkspace } from "../auth/usePermission";
 import { useUi } from "../state/ui";
 import { SIDER_WIDTH } from "../theme/theme";
 
@@ -12,15 +12,20 @@ const CREATE_KEY = "__create";
 export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const me = useMe().data;
   const workspaces = useWorkspaces().data ?? [];
   const activeState = useActiveWorkspace();
   const active = activeState.state === "ready" ? activeState.workspace : undefined;
   const switchTo = useSwitchWorkspace();
   const openCreate = useUi((s) => s.setCreateWorkspaceOpen);
   const [open, setOpen] = useState(false);
-  const name = active?.name ?? (activeState.state === "missing" ? "Workspace unavailable" : "");
-  const canCreate = hasPermission(me, "workspaces.create");
+  const name =
+    active?.name ??
+    (activeState.state === "missing"
+      ? "Workspace unavailable"
+      : activeState.state === "none"
+        ? "No workspace access"
+        : "");
+  const canCreate = useCanCreateWorkspace();
 
   const trigger = (
     <button
