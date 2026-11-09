@@ -131,7 +131,7 @@ func underDirs(rel string, dirs []string) bool {
 // stack plus the pinned dev toolchain. Adding a package needs an ADR.
 var webAllow = []string{
 	"react", "react-dom", "react-router", "react-router-dom", "antd", "@ant-design/icons",
-	"@tanstack/react-query", "zustand", "recharts",
+	"@tanstack/react-query", "zustand", "recharts", "@clerk/react",
 	"@types/react", "@types/react-dom", "@types/node", "@vitejs/plugin-react",
 	"vite", "vitest", "@vitest/coverage-v8", "typescript", "@biomejs/biome", "jsdom",
 	"@testing-library/react", "@testing-library/dom", "@testing-library/jest-dom", "@testing-library/user-event",
