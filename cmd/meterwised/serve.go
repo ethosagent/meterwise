@@ -72,6 +72,10 @@ func cmdServe(ctx context.Context, e *env, args []string) int {
 // boot wires telemetry, the store, the data plane and the control plane and
 // binds the three listeners. Every failure is a typed error with no secrets.
 func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps dataplane.Deps) (*instance, *contract.Error) {
+	principals := api.PrincipalResolver(api.StubPrincipalResolver{OrgID: store.OrgID(), UserID: devUserID})
+	if cerr := requireDevForStub(cfg.Env, principals); cerr != nil {
+		return nil, cerr
+	}
 	rt := &instance{cfg: cfg, log: log, servers: map[string]*http.Server{}, lns: map[string]net.Listener{}}
 	tp, shutdown, err := startTelemetry(ctx, cfg)
 	if err != nil {
@@ -91,7 +95,7 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 		return nil, contract.NewError(contract.CodeInternal, "cannot build the data plane: "+err.Error())
 	}
 	apiHandler, err := api.New(api.Deps{
-		Log: log, DB: rt.db, Principals: api.StubPrincipalResolver{OrgID: store.OrgID(), UserID: devUserID},
+		Log: log, DB: rt.db, Principals: principals,
 		Prefs: api.NewMemoryPreferences(), Web: webFS(cfg.WebDir, log), Tracer: tp,
 		AppName: cfg.AppName, ProxyPublicHost: cfg.ProxyPublicHost, Version: contract.Version{Version: version, Commit: commit},
 	})
@@ -107,6 +111,19 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 		return nil, cerr
 	}
 	return rt, nil
+}
+
+// requireDevForStub refuses to run the stub principal resolver, which signs every
+// request in as an org admin, in any environment but dev. It runs before anything is
+// opened, so a misconfigured prod process never binds a listener. Plan 02 swaps the
+// resolver, after which this guard passes for the real one.
+func requireDevForStub(appEnv string, res api.PrincipalResolver) *contract.Error {
+	if _, stub := res.(api.StubPrincipalResolver); stub && appEnv != "dev" {
+		return contract.NewError(contract.CodeConfigInvalid,
+			"the stub principal resolver signs every request in as an admin and runs only with "+config.EnvAppEnv+"=dev",
+			config.EnvAppEnv+"="+appEnv+" needs a real principal resolver (Plan 02)")
+	}
+	return nil
 }
 
 // listen binds every listener and reports all that fail, not just the first.
@@ -167,7 +184,9 @@ func (rt *instance) close(ctx context.Context) {
 		_ = ln.Close()
 	}
 	if rt.proxy != nil {
-		_ = rt.proxy.Close(cctx)
+		if err := rt.proxy.Close(cctx); err != nil {
+			rt.log.Warn("proxy close", "err", err)
+		}
 	}
 	if rt.db != nil {
 		rt.db.Close()

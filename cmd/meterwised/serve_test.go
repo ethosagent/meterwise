@@ -19,6 +19,7 @@ import (
 	"github.com/ethosagent/tollgate"
 	"github.com/ethosagent/tollgate/testkit"
 
+	"github.com/ethosagent/meterwise/internal/api"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
@@ -254,5 +255,39 @@ func TestMigrateAppliesTheBaselineThenReportsNothingToDo(t *testing.T) {
 	}
 	if code, out, _ = exec(t, kv, "migrate", "status"); code != 0 || !strings.Contains(out, "applied") {
 		t.Fatalf("status text: %d %q", code, out)
+	}
+}
+
+// okResolver stands in for Plan 02's real resolver.
+type okResolver struct{}
+
+func (okResolver) Resolve(*http.Request) (contract.Principal, error) {
+	return contract.Principal{}, nil
+}
+
+func TestServeRefusesTheStubPrincipalOutsideDev(t *testing.T) {
+	for _, appEnv := range []string{"prod", "test"} {
+		kv := baseEnv(t, "postgres://u:p@127.0.0.1:1/none?sslmode=disable")
+		kv["APP_ENV"] = appEnv
+		// The guard runs before the database is opened, so an unreachable DSN proves
+		// the refusal came first (otherwise the code would be "unavailable").
+		code, out, _ := exec(t, kv, "serve", "-json")
+		r := decode(t, out)
+		if code != 1 || r.Error.Code != contract.CodeConfigInvalid || !strings.Contains(r.Error.Message, "stub principal") {
+			t.Fatalf("APP_ENV=%s: %d %s", appEnv, code, out)
+		}
+	}
+}
+
+func TestRequireDevForStubAllowsDevAndARealResolver(t *testing.T) {
+	stub := api.StubPrincipalResolver{}
+	if err := requireDevForStub("dev", stub); err != nil {
+		t.Fatalf("dev stub refused: %v", err)
+	}
+	if err := requireDevForStub("prod", okResolver{}); err != nil {
+		t.Fatalf("real resolver refused in prod: %v", err)
+	}
+	if err := requireDevForStub("prod", stub); err == nil {
+		t.Fatal("stub allowed in prod")
 	}
 }
