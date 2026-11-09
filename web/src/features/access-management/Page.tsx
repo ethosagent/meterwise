@@ -3,14 +3,16 @@ import { useIsAdmin, usePermission } from "../../auth/usePermission";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { InvitationsTable } from "../organization/InvitationsTable";
+import { AuditLogTab } from "./AuditLogTab";
 import { GroupsTab } from "./GroupsTab";
 import { OrgDefaultsTab } from "./OrgDefaultsTab";
 import { UsersTab } from "./UsersTab";
 
-/** Settings > Access management: Groups, Users, Defaults, Invitations. Each tab appears only when its reads would not 403. */
+/** Settings > Access management: Groups, Users, Defaults, Invitations, Audit log. Each tab appears only when its reads would not 403. */
 export function AccessManagementPage() {
   const canRead = usePermission("member:read");
   const canManage = usePermission("member:manage");
+  const canAudit = usePermission("audit_log:read");
   const isAdmin = useIsAdmin();
   const tabs = [
     ...(canRead
@@ -29,6 +31,7 @@ export function AccessManagementPage() {
           },
         ]
       : []),
+    ...(canAudit ? [{ key: "audit", label: "Audit log", children: <AuditLogTab /> }] : []),
   ];
   return (
     <section aria-labelledby="page-title">
