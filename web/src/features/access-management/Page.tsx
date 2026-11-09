@@ -21,7 +21,13 @@ export function AccessManagementPage() {
         ]
       : []),
     ...(canManage
-      ? [{ key: "invitations", label: "Invitations", children: <InvitationsTable /> }]
+      ? [
+          {
+            key: "invitations",
+            label: "Invitations",
+            children: <InvitationsTable isAdmin={isAdmin} />,
+          },
+        ]
       : []),
   ];
   return (

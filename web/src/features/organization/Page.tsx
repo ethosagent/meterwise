@@ -27,7 +27,7 @@ export function OrganizationPage() {
           {canRead ? (
             <MembersTable canManage={canManage} isAdmin={isAdmin} />
           ) : (
-            <InvitationsTable />
+            <InvitationsTable isAdmin={isAdmin} />
           )}
         </div>
       ) : null}

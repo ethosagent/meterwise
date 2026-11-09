@@ -12,8 +12,11 @@ const STATUS_COLOR: Record<Invitation["status"], string> = {
   expired: "warning",
 };
 
-/** Admin-only table of invitations with Resend and Revoke. The page only mounts it for admins. */
-export function InvitationsTable() {
+/**
+ * Table of invitations with Resend and Revoke, for anyone with member:manage. Only an admin may touch an admin
+ * invitation (the escalation guard answers 403 otherwise), so those two actions are disabled for everyone else.
+ */
+export function InvitationsTable({ isAdmin }: { isAdmin: boolean }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const list = useInvitations(true);
@@ -67,6 +70,7 @@ export function InvitationsTable() {
                 <>
                   <Button
                     type="link"
+                    disabled={inv.role === "admin" && !isAdmin}
                     loading={resend.isPending && resend.variables === inv.id}
                     onClick={() =>
                       resend.mutate(inv.id, {
@@ -87,7 +91,7 @@ export function InvitationsTable() {
                       })
                     }
                   >
-                    <Button type="link" danger>
+                    <Button type="link" danger disabled={inv.role === "admin" && !isAdmin}>
                       Revoke
                     </Button>
                   </Popconfirm>

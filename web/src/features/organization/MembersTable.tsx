@@ -124,10 +124,13 @@ export function MembersTable({ canManage, isAdmin }: Props) {
               if (r.kind === "invite") {
                 const inv = r.invitation;
                 if (!canManage) return null;
+                // Only an admin may touch an admin invitation; the escalation guard would answer 403.
+                const locked = inv.role === "admin" && !isAdmin;
                 return (
                   <>
                     <Button
                       type="link"
+                      disabled={locked}
                       loading={resend.isPending && resend.variables === inv.id}
                       onClick={() =>
                         resend.mutate(inv.id, {
@@ -148,7 +151,7 @@ export function MembersTable({ canManage, isAdmin }: Props) {
                         })
                       }
                     >
-                      <Button type="link" danger>
+                      <Button type="link" danger disabled={locked}>
                         Revoke
                       </Button>
                     </Popconfirm>

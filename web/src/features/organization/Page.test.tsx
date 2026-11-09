@@ -164,4 +164,25 @@ describe("OrganizationPage (member)", () => {
     const admin = await screen.findByText("Admin", OPTION);
     expect(admin.closest(".ant-select-item")).toHaveAttribute("aria-disabled", "true");
   });
+
+  it("a non-admin cannot resend or revoke an admin invitation (the gateway would answer 403)", async () => {
+    mockApi({
+      me: MEMBER_ME,
+      invitations: [{ ...PENDING, id: "inv_a", email: "boss@acme.test", role: "admin" }, PENDING],
+      access: { snapshot: { admin: false, grants: [READ, MANAGE] } },
+    });
+    renderAt(<OrganizationPage />, PATH);
+    const adminRow = (await screen.findByText("boss@acme.test")).closest("tr") as HTMLElement;
+    const memberRow = screen.getByText("cy@acme.test").closest("tr") as HTMLElement;
+    expect(within(adminRow).getByRole("button", { name: "Resend" })).toBeDisabled();
+    expect(within(adminRow).getByRole("button", { name: "Revoke" })).toBeDisabled();
+    expect(within(memberRow).getByRole("button", { name: "Resend" })).toBeEnabled();
+    expect(within(memberRow).getByRole("button", { name: "Revoke" })).toBeEnabled();
+  });
+
+  it("an admin can resend an admin invitation", async () => {
+    mockApi({ invitations: [{ ...PENDING, role: "admin" }] });
+    renderAt(<OrganizationPage />, PATH);
+    expect(await screen.findByRole("button", { name: "Resend" })).toBeEnabled();
+  });
 });

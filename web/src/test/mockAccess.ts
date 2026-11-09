@@ -1,4 +1,4 @@
-import type { ResourceType } from "../access/taxonomy";
+import { type ResourceType, TAXONOMY } from "../access/taxonomy";
 import type { WireErrorBody } from "../api/errors";
 import type { Grant, Group, Member, PermissionSnapshot } from "../contract/generated";
 
@@ -66,7 +66,7 @@ export interface AccessMock {
   snapshot: PermissionSnapshot;
   orgDefaults: Grant[];
   setSnapshot: (s: PermissionSnapshot) => void;
-  /** The gateway's rule, written independently of the production hasPermission. */
+  /** The gateway's rule (taxonomy scope included), written independently of the production hasPermission. */
   can: (resource: ResourceType, action: string, workspaceId?: string) => boolean;
   isAdmin: () => boolean;
   route: (method: string, path: string, body: Record<string, unknown>) => Response | undefined;
@@ -84,14 +84,19 @@ export function createAccessMock(admin: boolean, init: AccessInit = {}): AccessM
     setSnapshot: (s) => {
       m.snapshot = s;
     },
-    can: (resource, action, workspaceId) =>
-      m.snapshot.admin ||
-      m.snapshot.grants.some(
+    can: (resource, action, workspaceId) => {
+      if (m.snapshot.admin) return true;
+      const spec = TAXONOMY[resource];
+      if (!(spec.actions as readonly string[]).includes(action)) return false;
+      return m.snapshot.grants.some(
         (g) =>
           g.resourceType === resource &&
           g.action === action &&
-          (g.workspaceId === null || g.workspaceId === workspaceId),
-      ),
+          // The taxonomy's scope rule: an org resource needs an org-wide grant, a workspace resource
+          // matches an org-wide grant or one pinned to that workspace.
+          (g.workspaceId === null || (spec.scope === "workspace" && g.workspaceId === workspaceId)),
+      );
+    },
     isAdmin: () => m.snapshot.admin,
     route: (method, path, body) => handle(m, method, path, body),
   };
