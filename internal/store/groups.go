@@ -188,11 +188,7 @@ func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, g
 			return err
 		}
 		for _, gr := range grants {
-			ws := ""
-			if gr.WorkspaceID != nil {
-				ws = *gr.WorkspaceID
-			}
-			if err := q.GrantToGroup(ctx, sqlc.GrantToGroupParams{GroupID: groupID, OrgID: orgID, WorkspaceID: ws, ResourceType: gr.ResourceType, Action: gr.Action}); err != nil {
+			if err := q.GrantToGroup(ctx, sqlc.GrantToGroupParams{GroupID: groupID, OrgID: orgID, WorkspaceID: derefID(gr.WorkspaceID), ResourceType: gr.ResourceType, Action: gr.Action}); err != nil {
 				return err
 			}
 		}

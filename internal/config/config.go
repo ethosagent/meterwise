@@ -202,6 +202,11 @@ func (c Config) validateIdentity(p *problems) {
 
 // validOrigin reports whether s is a scheme://host[:port] origin naming one concrete
 // host. A wildcard host, a fragment or a stray colon would widen or blur the azp match.
+// hostRune reports whether r may appear in a host name or IP literal.
+func hostRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == ':'
+}
+
 func validOrigin(s string) bool {
 	u, err := url.Parse(s)
 	if err != nil || !hasScheme(s, "http", "https") || (u.Path != "" && u.Path != "/") ||
@@ -213,7 +218,7 @@ func validOrigin(s string) bool {
 		return false
 	}
 	for _, r := range host {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == ':') {
+		if !hostRune(r) {
 			return false
 		}
 	}

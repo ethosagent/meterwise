@@ -51,16 +51,7 @@ func (s *Store) OrgDefaults(ctx context.Context, orgID string) ([]contract.Grant
 func (s *Store) ReplaceOrgDefaults(ctx context.Context, orgID string, grants []contract.Grant) ([]contract.Grant, error) {
 	err := s.inTx(ctx, func(q *sqlc.Queries) error {
 		for _, g := range grants {
-			if g.WorkspaceID == nil {
-				continue
-			}
-			if !validID(*g.WorkspaceID) {
-				return contract.NewError(contract.CodeValidationFailed, "request validation failed", "grants: unknown workspace "+*g.WorkspaceID)
-			}
-			if _, err := q.GetWorkspace(ctx, sqlc.GetWorkspaceParams{OrgID: orgID, ID: *g.WorkspaceID}); err != nil {
-				if isNotFound(err) {
-					return contract.NewError(contract.CodeValidationFailed, "request validation failed", "grants: unknown workspace "+*g.WorkspaceID)
-				}
+			if err := requireOrgWorkspace(ctx, q, orgID, g.WorkspaceID); err != nil {
 				return err
 			}
 		}
@@ -68,11 +59,8 @@ func (s *Store) ReplaceOrgDefaults(ctx context.Context, orgID string, grants []c
 			return err
 		}
 		for _, g := range grants {
-			ws := ""
-			if g.WorkspaceID != nil {
-				ws = *g.WorkspaceID
-			}
-			if err := q.InsertOrgDefault(ctx, sqlc.InsertOrgDefaultParams{OrgID: orgID, WorkspaceID: ws, ResourceType: g.ResourceType, Action: g.Action}); err != nil {
+			p := sqlc.InsertOrgDefaultParams{OrgID: orgID, WorkspaceID: derefID(g.WorkspaceID), ResourceType: g.ResourceType, Action: g.Action}
+			if err := q.InsertOrgDefault(ctx, p); err != nil {
 				return err
 			}
 		}
@@ -82,4 +70,30 @@ func (s *Store) ReplaceOrgDefaults(ctx context.Context, orgID string, grants []c
 		return nil, queryErr(err)
 	}
 	return s.OrgDefaults(ctx, orgID)
+}
+
+// derefID is the workspace id of a grant, "" for an org-wide one (how the queries spell NULL).
+func derefID(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
+}
+
+// requireOrgWorkspace is nil for an org-wide grant or a workspace of the org, else a 422.
+func requireOrgWorkspace(ctx context.Context, q *sqlc.Queries, orgID string, id *string) error {
+	if id == nil {
+		return nil
+	}
+	bad := contract.NewError(contract.CodeValidationFailed, "request validation failed", "grants: unknown workspace "+*id)
+	if !validID(*id) {
+		return bad
+	}
+	if _, err := q.GetWorkspace(ctx, sqlc.GetWorkspaceParams{OrgID: orgID, ID: *id}); err != nil {
+		if isNotFound(err) {
+			return bad
+		}
+		return err
+	}
+	return nil
 }
