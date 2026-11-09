@@ -39,7 +39,7 @@ var roleHelpers = map[string]bool{
 // Any comparison with the constant "admin" or "member" is flagged too. Passing a role on, storing
 // it, converting it for a DTO and calling its Valid method are not decisions.
 func scanInlineRoleChecks(files map[string]string) []Violation {
-	ld := &roleLoader{files: files, pkgs: map[string]*types.Package{}, busy: map[string]bool{}}
+	ld := &roleLoader{files: files, pkgs: map[string]*types.Package{}, busy: map[string]bool{}, sum: map[string]paramSummary{}}
 	var dirs []string
 	byDir := map[string][]string{}
 	for rel := range files {
@@ -70,6 +70,7 @@ type roleLoader struct {
 	files map[string]string
 	pkgs  map[string]*types.Package
 	busy  map[string]bool // packages being checked: an import cycle (H2 and H0 break it on purpose) ends here
+	sum   map[string]paramSummary
 }
 
 func (l *roleLoader) Import(ip string) (*types.Package, error) {
@@ -105,6 +106,7 @@ func (l *roleLoader) Import(ip string) (*types.Package, error) {
 	conf := types.Config{Importer: l, Error: func(error) {}, IgnoreFuncBodies: true}
 	p, _ := conf.Check(ip, fset, parsed, nil)
 	l.pkgs[ip] = p
+	l.sum[ip] = compareSummaries(parsed)
 	return p, nil
 }
 
@@ -128,8 +130,9 @@ func (l *roleLoader) scanDir(dir string, rels []string) []Violation {
 	}
 	conf := types.Config{Importer: l, Error: func(error) {}}
 	_, _ = conf.Check(module+"/"+dir, fset, parsed, info)
+	l.sum[module+"/"+dir] = compareSummaries(parsed)
 	for _, f := range parsed {
-		w := &roleWalker{info: info, taint: map[types.Object]bool{}}
+		w := &roleWalker{info: info, taint: map[types.Object]bool{}, lits: map[types.Object]*ast.FuncLit{}, sums: func(p string) paramSummary { return l.sum[p] }}
 		w.run(f)
 		if len(w.found) == 0 {
 			continue
@@ -152,44 +155,19 @@ type roleFinding struct {
 
 type roleWalker struct {
 	info  *types.Info
-	taint map[types.Object]bool // locals assigned from a role-derived value
+	taint map[types.Object]bool // locals, fields and channels that received a role-derived value
+	lits  map[types.Object]*ast.FuncLit
+	sums  func(pkg string) paramSummary
 	found []roleFinding
 }
 
 func (w *roleWalker) run(f *ast.File) {
-	// Two passes so a local copied from a copy is tainted before its first comparison is seen.
-	for range 2 {
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch n := n.(type) {
-			case *ast.AssignStmt:
-				if len(n.Lhs) == len(n.Rhs) {
-					for i := range n.Lhs {
-						w.mark(n.Lhs[i], n.Rhs[i])
-					}
-				}
-			case *ast.ValueSpec:
-				if len(n.Names) == len(n.Values) {
-					for i := range n.Names {
-						w.mark(n.Names[i], n.Values[i])
-					}
-				}
-			}
-			return true
-		})
+	// Passes so a value copied through a local, a field, a channel or a closure is tainted before
+	// its comparison is seen.
+	for range flowPasses {
+		ast.Inspect(f, func(n ast.Node) bool { w.flow(n); return true })
 	}
 	ast.Inspect(f, w.visit)
-}
-
-func (w *roleWalker) mark(lhs, rhs ast.Expr) {
-	id, ok := lhs.(*ast.Ident)
-	if !ok || !w.derived(rhs) {
-		return
-	}
-	if o := w.info.Defs[id]; o != nil {
-		w.taint[o] = true
-	} else if o := w.info.Uses[id]; o != nil {
-		w.taint[o] = true
-	}
 }
 
 func (w *roleWalker) add(n ast.Node, what string) {
@@ -205,6 +183,8 @@ func (w *roleWalker) visit(n ast.Node) bool {
 				w.add(n, "a comparison of a role")
 			} else if w.roleWord(n.X) || w.roleWord(n.Y) {
 				w.add(n, `a comparison with "admin" or "member"`)
+			} else if holdsRole(w.info.TypeOf(n.X), map[types.Type]bool{}) || holdsRole(w.info.TypeOf(n.Y), map[types.Type]bool{}) {
+				w.add(n, "a comparison of a struct holding a role")
 			}
 		}
 	case *ast.SwitchStmt:
@@ -230,6 +210,7 @@ func (w *roleWalker) visit(n ast.Node) bool {
 }
 
 func (w *roleWalker) visitCall(c *ast.CallExpr) {
+	w.calleeFlow(c)
 	sel, ok := c.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -308,6 +289,10 @@ func (w *roleWalker) derived(e ast.Expr) bool {
 		return w.derived(e.X)
 	case *ast.IndexExpr:
 		return w.derived(e.X)
+	case *ast.SelectorExpr:
+		return w.roleField(e) || w.taint[w.info.Uses[e.Sel]]
+	case *ast.CompositeLit:
+		return w.derivedElems(e)
 	case *ast.SliceExpr:
 		return w.derived(e.X)
 	case *ast.BinaryExpr:
