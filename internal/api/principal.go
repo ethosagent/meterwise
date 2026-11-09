@@ -8,13 +8,13 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
-	"github.com/ethosagent/meterwise/internal/store"
 )
 
 // PrincipalResolver turns an HTTP request into the Session of the caller. It is
-// the only way a caller enters a request. A typed *contract.Error is answered as
-// is, a store failure is 503 unavailable, and any other error means "not
-// authenticated" (401): the gateway fails closed.
+// the only way a caller enters a request. Every error goes through the same
+// mapper as the handlers (apiError): a typed *contract.Error is answered as is,
+// an unreachable database is 503, and anything else is a logged 500. Only a
+// typed unauthenticated answers 401, so a bug in Resolve is never a silent 401.
 type PrincipalResolver interface {
 	Resolve(r *http.Request) (contract.Session, error)
 }
@@ -88,11 +88,11 @@ func PrincipalFrom(ctx context.Context) (contract.Principal, bool) {
 // never look at the role. PermSelf needs only a valid, undeleted user; anything
 // else needs an active membership (403 not_invited otherwise) and a role that
 // contract.Allows (403 forbidden).
-func gateway(res PrincipalResolver, perm contract.Permission, next http.Handler) http.Handler {
+func (s *server) gateway(res PrincipalResolver, perm contract.Permission, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, err := res.Resolve(r)
 		if err != nil {
-			writeError(w, resolveError(err))
+			s.fail(w, r, err)
 			return
 		}
 		if perm != contract.PermSelf {
@@ -107,15 +107,4 @@ func gateway(res PrincipalResolver, perm contract.Permission, next http.Handler)
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, sess)))
 	})
-}
-
-func resolveError(err error) *contract.Error {
-	var typed *contract.Error
-	switch {
-	case errors.As(err, &typed):
-		return typed
-	case store.ClassOf(err) != "":
-		return contract.NewError(contract.CodeUnavailable, "a dependency is not reachable right now; retry")
-	}
-	return contract.NewError(contract.CodeUnauthenticated, "authentication required")
 }

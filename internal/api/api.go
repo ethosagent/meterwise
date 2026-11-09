@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/store"
 )
 
 const (
@@ -113,7 +114,7 @@ func (s *server) handle(method, pattern string, h http.HandlerFunc) {
 	}
 	var handler http.Handler = h
 	if !row.Public {
-		handler = gateway(s.Principals, row.Permission, handler)
+		handler = s.gateway(s.Principals, row.Permission, handler)
 	}
 	s.registered[key] = true
 	s.mux.Handle(key, handler)
@@ -181,10 +182,25 @@ func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, prefs)
 }
 
+// apiError is the one mapping from an error to what a client sees: a typed
+// *contract.Error as is, an unreachable database as 503 unavailable (retry),
+// any other store failure or unknown error as 500 internal. Nothing else may
+// decide a status, so the gateway and the handlers cannot disagree.
+func apiError(err error) *contract.Error {
+	var typed *contract.Error
+	if errors.As(err, &typed) {
+		return typed
+	}
+	if store.ClassOf(err) == store.ClassUnreachable {
+		return contract.NewError(contract.CodeUnavailable, "a dependency is not reachable right now; retry")
+	}
+	return contract.AsError(err)
+}
+
 // fail answers the typed error for err. Only a 5xx is logged (with its request id):
 // a 4xx is the caller's mistake and already carries its code.
 func (s *server) fail(w http.ResponseWriter, r *http.Request, err error) {
-	e := contract.AsError(err)
+	e := apiError(err)
 	if e.Status() >= http.StatusInternalServerError {
 		s.Log.LogAttrs(r.Context(), slog.LevelError, "handler error",
 			slog.String("request_id", RequestIDFrom(r.Context())), slog.String("err", err.Error()))

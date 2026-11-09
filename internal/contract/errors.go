@@ -55,7 +55,7 @@ var errorSpecs = []ErrorSpec{
 	{CodeNotInvited, http.StatusForbidden, "The identity is valid but holds no active membership and no pending invitation."},
 	{CodeWorkspaceLimit, http.StatusConflict, "The organization already has MAX_WORKSPACES workspaces."},
 	{CodeDefaultWorkspace, http.StatusConflict, "The default workspace cannot be deleted."},
-	{CodeDuplicateInvitation, http.StatusConflict, "A pending invitation or an active membership already exists for that email."},
+	{CodeDuplicateInvitation, http.StatusConflict, "A pending invitation already exists for that email."},
 	{CodeValidationFailed, http.StatusUnprocessableEntity, "A request field failed validation; details lists the fields."},
 }
 

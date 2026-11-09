@@ -164,8 +164,8 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "POST", pattern: "/api/webhooks/clerk", permission: "", public: true },
   { method: "GET", pattern: "/api/workspaces", permission: "member", public: false },
   { method: "POST", pattern: "/api/workspaces", permission: "member", public: false },
-  { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "member", public: false },
-  { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "member", public: false },
+  { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "admin", public: false },
+  { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "admin", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/switch", permission: "member", public: false },
   { method: "GET", pattern: "/healthz", permission: "", public: true },
 ];

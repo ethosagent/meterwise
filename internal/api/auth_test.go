@@ -196,6 +196,48 @@ func TestMemberCannotUseAdminRoutesButAdminCan(t *testing.T) {
 	}
 }
 
+// Ruling: create is open to members; rename and delete are admin-only (Plan 03 replaces this with grants).
+func TestMembersCreateWorkspacesButCannotRenameOrDeleteThem(t *testing.T) {
+	s := newStack(t)
+	admin := s.signInAs(t, "user_admin", "admin@example.test", contract.RoleAdmin)
+	member := s.signInAs(t, "user_member", "member@example.test", contract.RoleMember)
+
+	code, b := s.call(t, "POST", "/api/workspaces", member, `{"name":"Member made"}`)
+	if code != 201 {
+		t.Fatalf("member create: %d %s", code, b)
+	}
+	ws := decodeAs[contract.WorkspaceView](t, b)
+	if code, b := s.call(t, "POST", "/api/workspaces/"+ws.ID+"/switch", member, ""); code != 200 {
+		t.Fatalf("member switch: %d %s", code, b)
+	}
+	code, b = s.call(t, "PATCH", "/api/workspaces/"+ws.ID, member, `{"name":"Renamed by member"}`)
+	wantErr(t, code, b, 403, contract.CodeForbidden)
+	code, b = s.call(t, "DELETE", "/api/workspaces/"+ws.ID, member, "")
+	wantErr(t, code, b, 403, contract.CodeForbidden)
+
+	// the forbidden calls changed nothing: the workspace still exists under its name
+	_, lb := s.call(t, "GET", "/api/workspaces", admin, "")
+	found := false
+	for _, w := range decodeAs[contract.WorkspaceList](t, lb).Items {
+		if w.ID == ws.ID {
+			found = true
+			if w.Name != "Member made" {
+				t.Fatalf("a forbidden rename took effect: %q", w.Name)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("a forbidden delete took effect")
+	}
+	// the admin still can
+	if code, b := s.call(t, "PATCH", "/api/workspaces/"+ws.ID, admin, `{"name":"Renamed"}`); code != 200 {
+		t.Fatalf("admin rename: %d %s", code, b)
+	}
+	if code, b := s.call(t, "DELETE", "/api/workspaces/"+ws.ID, admin, ""); code != 204 {
+		t.Fatalf("admin delete: %d %s", code, b)
+	}
+}
+
 func TestPreferencesAndMeShareTheStoredPreferences(t *testing.T) {
 	s := newStack(t)
 	tok := s.signInAs(t, "user_admin", "admin@example.test", contract.RoleAdmin)

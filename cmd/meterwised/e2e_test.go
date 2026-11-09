@@ -133,8 +133,13 @@ func TestEndToEndInviteFirstLoginMembershipWorkspaceSwitchDelete(t *testing.T) {
 	if got := decodeInto[contract.Me](t, b).ActiveWorkspaceID; got != defaultWS {
 		t.Fatalf("founder active = %s, want the default %s", got, defaultWS)
 	}
+	// ruling: create is open to members; rename and delete are admin-only
+	st, b = e.do("PATCH", "/api/workspaces/"+ws.ID, member, `{"name":"Hijacked"}`)
+	e.want(403, st, b, "member rename")
 	st, b = e.do("DELETE", "/api/workspaces/"+ws.ID, member, "")
-	e.want(204, st, b, "delete workspace")
+	e.want(403, st, b, "member delete")
+	st, b = e.do("DELETE", "/api/workspaces/"+ws.ID, founder, "")
+	e.want(204, st, b, "admin deletes the workspace")
 	st, b = e.do("DELETE", "/api/workspaces/"+defaultWS, founder, "")
 	e.want(409, st, b, "delete default workspace")
 	_, b = e.do("GET", "/api/me", member, "")

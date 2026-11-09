@@ -52,6 +52,8 @@ type Clerk struct {
 	keys      map[string]*clerk.JSONWebKey
 	fetchedAt time.Time
 	lastTry   time.Time
+	fetchFail bool          // the most recent JWKS fetch failed
+	inflight  chan struct{} // closed when the fetch in progress ends; nil when none
 }
 
 var _ contract.IdentityProvider = (*Clerk)(nil)
@@ -133,23 +135,50 @@ func (c *Clerk) Verify(ctx context.Context, bearer string) (contract.Identity, e
 
 // key returns the signing key for kid, refreshing the JWKS when it is stale or
 // the kid is unknown (rate-limited, so a flood of forged kids cannot hammer Clerk).
+// The mutex is never held across the network call: one caller fetches, the others
+// wait on it (or use a cached key straight away). An unknown kid while the last
+// fetch failed is CodeUnavailable, not unauthenticated: a rotated key cannot be
+// told apart from a forged one until the JWKS answers, and a retry may succeed.
 func (c *Clerk) key(ctx context.Context, kid string) (*clerk.JSONWebKey, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	now := c.cfg.Now()
 	if k, ok := c.keys[kid]; ok && now.Sub(c.fetchedAt) < jwksMaxAge {
+		c.mu.Unlock()
 		return k, nil
 	}
-	if now.Sub(c.lastTry) >= jwksRefetchGap {
-		c.lastTry = now
-		if keys, err := c.fetchKeys(ctx); err == nil {
-			c.keys, c.fetchedAt = keys, now
-		} else if len(c.keys) == 0 {
+	switch {
+	case c.inflight != nil:
+		done := c.inflight
+		c.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
 			return nil, contract.NewError(contract.CodeUnavailable, "the identity provider's keys are unavailable")
 		}
+		c.mu.Lock()
+	case now.Sub(c.lastTry) >= jwksRefetchGap:
+		done := make(chan struct{})
+		c.inflight, c.lastTry = done, now
+		c.mu.Unlock()
+		// The fetch outlives this caller's cancellation: others wait on it.
+		keys, err := c.fetchKeys(context.WithoutCancel(ctx))
+		c.mu.Lock()
+		c.inflight = nil
+		close(done)
+		if err == nil {
+			c.keys, c.fetchedAt, c.fetchFail = keys, now, false
+		} else {
+			c.fetchFail = true
+		}
 	}
-	if k, ok := c.keys[kid]; ok {
+	k, ok := c.keys[kid]
+	failed := c.fetchFail
+	c.mu.Unlock()
+	switch {
+	case ok:
 		return k, nil
+	case failed:
+		return nil, contract.NewError(contract.CodeUnavailable, "the identity provider's keys are unavailable")
 	}
 	return nil, unauthenticated()
 }

@@ -810,7 +810,7 @@
           }
         ],
         "summary": "Delete a workspace (never the default)",
-        "x-permission": "member"
+        "x-permission": "admin"
       },
       "patch": {
         "operationId": "patchApiWorkspacesId",
@@ -852,7 +852,7 @@
           }
         ],
         "summary": "Rename a workspace or change its settings",
-        "x-permission": "member"
+        "x-permission": "admin"
       }
     },
     "/api/workspaces/{id}/switch": {

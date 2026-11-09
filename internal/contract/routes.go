@@ -50,10 +50,12 @@ var routes = []Route{
 	{Method: "PATCH", Pattern: "/api/me/preferences", Permission: PermSelf, Summary: "Change the caller's UI preferences", Request: "PreferencesPatch", Response: "Preferences"},
 	{Method: "GET", Pattern: "/api/me", Permission: PermSelf, Summary: "The caller, role, active workspace and preferences; 403 not_invited without a membership", Response: "Me"},
 	{Method: "POST", Pattern: "/api/auth/complete-signup", Permission: PermSelf, Summary: "Turn a pending invitation for the caller's verified email into a membership", Response: "Me"},
+	// Ruling (Plan 02 integration): any member may create a workspace; rename and delete are
+	// admin-only. Plan 03 replaces these rows with grants.
 	{Method: "GET", Pattern: "/api/workspaces", Permission: PermMember, Summary: "List the organization's workspaces", Response: "WorkspaceList"},
 	{Method: "POST", Pattern: "/api/workspaces", Permission: PermMember, Summary: "Create a workspace and its proxy URL", Request: "CreateWorkspaceRequest", Response: "Workspace", Status: 201},
-	{Method: "PATCH", Pattern: "/api/workspaces/{id}", Permission: PermMember, Summary: "Rename a workspace or change its settings", Request: "UpdateWorkspaceRequest", Response: "Workspace"},
-	{Method: "DELETE", Pattern: "/api/workspaces/{id}", Permission: PermMember, Summary: "Delete a workspace (never the default)", Status: 204},
+	{Method: "PATCH", Pattern: "/api/workspaces/{id}", Permission: PermAdmin, Summary: "Rename a workspace or change its settings", Request: "UpdateWorkspaceRequest", Response: "Workspace"},
+	{Method: "DELETE", Pattern: "/api/workspaces/{id}", Permission: PermAdmin, Summary: "Delete a workspace (never the default)", Status: 204},
 	{Method: "POST", Pattern: "/api/workspaces/{id}/switch", Permission: PermMember, Summary: "Make a workspace the caller's active one", Response: "SwitchWorkspaceResponse"},
 	{Method: "GET", Pattern: "/api/invitations", Permission: PermAdmin, Summary: "List invitations", Response: "InvitationList"},
 	{Method: "POST", Pattern: "/api/invitations", Permission: PermAdmin, Summary: "Invite an email into the organization", Request: "CreateInvitationRequest", Response: "Invitation", Status: 201},

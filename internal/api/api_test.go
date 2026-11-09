@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/api"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/nonet"
+	"github.com/ethosagent/meterwise/internal/store"
 )
 
 func TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }
@@ -246,13 +248,49 @@ func TestPreferencesRejectBadBodiesWithTypedErrors(t *testing.T) {
 
 func TestUnauthenticatedGets401WithTheRegistryStatus(t *testing.T) {
 	f := newFixture(t, nil)
-	f.res.err = errors.New("nope")
+	f.res.err = contract.NewError(contract.CodeUnauthenticated, "invalid or expired token")
 	for _, m := range []string{"GET", "PATCH"} {
 		resp, b := f.do(t, m, "/api/me/preferences", `{}`)
 		e := decodeErr(t, b)
 		if resp.StatusCode != 401 || e.Code != contract.CodeUnauthenticated {
 			t.Errorf("%s: %d %s", m, resp.StatusCode, b)
 		}
+	}
+}
+
+// One mapper decides every status: an unexpected Resolve error is a logged 500 (never a silent
+// 401), an unreachable database is 503, and the same store error maps the same way from a handler.
+func TestResolveFailuresShareTheHandlersErrorMapper(t *testing.T) {
+	unreachable := &store.Error{Class: store.ClassUnreachable, Message: "store: database unreachable"}
+	queryFailed := &store.Error{Class: store.ClassPool, Message: "store: query failed (SQLSTATE 42P01)"}
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		code   contract.Code
+		logged bool
+	}{
+		{"unexpected error", errors.New("boom: password=hunter2"), 500, contract.CodeInternal, true},
+		{"store query failure", queryFailed, 500, contract.CodeInternal, true},
+		{"database unreachable", unreachable, 503, contract.CodeUnavailable, true},
+		{"identity provider unavailable", contract.NewError(contract.CodeUnavailable, "keys unavailable"), 503, contract.CodeUnavailable, true},
+		{"wrapped typed 401", fmt.Errorf("verify: %w", contract.NewError(contract.CodeUnauthenticated, "invalid or expired token")), 401, contract.CodeUnauthenticated, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, nil)
+			f.res.err = tc.err
+			resp, b := f.do(t, "GET", "/api/me/preferences", "")
+			if e := decodeErr(t, b); resp.StatusCode != tc.status || e.Code != tc.code {
+				t.Fatalf("%d %s", resp.StatusCode, b)
+			}
+			if strings.Contains(string(b), "hunter2") {
+				t.Fatalf("the error leaked into the body: %s", b)
+			}
+			if got := strings.Contains(f.logs.String(), `"handler error"`); got != tc.logged {
+				t.Fatalf("logged=%v, want %v; logs: %s", got, tc.logged, f.logs.String())
+			}
+		})
 	}
 }
 

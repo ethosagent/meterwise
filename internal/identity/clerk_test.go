@@ -2,7 +2,9 @@ package identity_test
 
 import (
 	"context"
+	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -145,5 +147,92 @@ func TestInvitationsNeedASecretKey(t *testing.T) {
 func TestNewClerkRequiresIssuerAndJWKS(t *testing.T) {
 	if _, err := identity.NewClerk(identity.ClerkConfig{}); err == nil {
 		t.Fatal("empty config accepted")
+	}
+}
+
+func TestARotatedKidWithJWKSUnreachableIsUnavailableNotUnauthenticated(t *testing.T) {
+	now := time.Now()
+	mock, c := newPair(t, func(cfg *identity.ClerkConfig) { cfg.Now = func() time.Time { return now } })
+	if _, err := c.Verify(context.Background(), mock.Token(clerkmock.Claims{Subject: "u", Email: "a@b.test"})); err != nil {
+		t.Fatalf("warm the cache: %v", err)
+	}
+	rotated := mock.Token(clerkmock.Claims{Subject: "u", Email: "a@b.test", KeyID: "ins_rotated"})
+	now = now.Add(11 * time.Second)
+	mock.SetJWKSDown(true)
+	if _, err := c.Verify(context.Background(), rotated); contract.AsError(err).Code != contract.CodeUnavailable {
+		t.Fatalf("rotated kid, JWKS down: %v, want unavailable", err)
+	}
+	// inside the refetch gap the outage is remembered rather than turning into a 401
+	if _, err := c.Verify(context.Background(), rotated); contract.AsError(err).Code != contract.CodeUnavailable {
+		t.Fatalf("rotated kid inside the gap: %v, want unavailable", err)
+	}
+	// a cached key keeps working through the outage
+	if _, err := c.Verify(context.Background(), mock.Token(clerkmock.Claims{Subject: "u", Email: "a@b.test"})); err != nil {
+		t.Fatalf("cached key during the outage: %v", err)
+	}
+	// once the JWKS answers, a kid that is still unknown is a real rejection
+	mock.SetJWKSDown(false)
+	now = now.Add(11 * time.Second)
+	if _, err := c.Verify(context.Background(), rotated); contract.AsError(err).Code != contract.CodeUnauthenticated {
+		t.Fatalf("unknown kid, JWKS up: %v, want unauthenticated", err)
+	}
+}
+
+// gate blocks every JWKS round trip until released, counting the ones that arrive.
+type gate struct {
+	mu      sync.Mutex
+	hold    bool
+	arrived chan struct{}
+	release chan struct{}
+	next    http.RoundTripper
+}
+
+func (g *gate) RoundTrip(r *http.Request) (*http.Response, error) {
+	g.mu.Lock()
+	hold := g.hold
+	g.mu.Unlock()
+	if hold {
+		g.arrived <- struct{}{}
+		<-g.release
+	}
+	return g.next.RoundTrip(r)
+}
+
+func TestAJWKSFetchDoesNotBlockVerificationsWithACachedKey(t *testing.T) {
+	now := time.Now()
+	g := &gate{arrived: make(chan struct{}, 4), release: make(chan struct{}), next: http.DefaultTransport}
+	mock, c := newPair(t, func(cfg *identity.ClerkConfig) {
+		cfg.Now = func() time.Time { return now }
+		cfg.HTTPClient = &http.Client{Transport: g, Timeout: 5 * time.Second}
+	})
+	good := mock.Token(clerkmock.Claims{Subject: "u", Email: "a@b.test"})
+	if _, err := c.Verify(context.Background(), good); err != nil {
+		t.Fatalf("warm the cache: %v", err)
+	}
+	now = now.Add(11 * time.Second)
+	g.mu.Lock()
+	g.hold = true
+	g.mu.Unlock()
+
+	slow := make(chan error, 1)
+	go func() {
+		_, err := c.Verify(context.Background(), mock.Token(clerkmock.Claims{Subject: "u", KeyID: "ins_rotated"}))
+		slow <- err
+	}()
+	<-g.arrived // the unknown-kid caller is now inside the JWKS fetch
+
+	fast := make(chan error, 1)
+	go func() { _, err := c.Verify(context.Background(), good); fast <- err }()
+	select {
+	case err := <-fast:
+		if err != nil {
+			t.Fatalf("cached-key verification: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a verification with a cached key waited for the JWKS fetch (mutex held across the network call)")
+	}
+	close(g.release)
+	if err := <-slow; contract.AsError(err).Code != contract.CodeUnauthenticated {
+		t.Fatalf("slow caller: %v, want unauthenticated", err)
 	}
 }
