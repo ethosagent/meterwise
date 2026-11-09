@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/api"
@@ -130,4 +131,19 @@ func (m *memAudit) Append(_ context.Context, e contract.AuditEvent) error {
 
 func (m *memAudit) List(context.Context, contract.AuditQuery) (contract.AuditPage, error) {
 	return contract.AuditPage{}, nil
+}
+
+// emptyLedger answers every ledger read with nothing, for tests of everything but the ledger.
+type emptyLedger struct{}
+
+func (emptyLedger) ListSessions(context.Context, contract.SessionQuery) (contract.SessionPage, error) {
+	return contract.SessionPage{}, nil
+}
+
+func (emptyLedger) Session(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, error) {
+	return contract.SessionRecord{}, nil, nil
+}
+
+func (emptyLedger) Stats(context.Context, string, time.Time, time.Time) (contract.Stats, error) {
+	return contract.Stats{}, nil
 }

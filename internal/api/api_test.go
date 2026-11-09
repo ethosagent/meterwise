@@ -46,6 +46,7 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		Authz:      allowAuthz{},
 		Access:     noAccess{},
 		Audit:      &memAudit{},
+		Ledger:     emptyLedger{},
 		Web: fstest.MapFS{
 			"index.html":          {Data: []byte("<html>app</html>")},
 			"assets/app-1.js":     {Data: []byte("console.log(1)")},
@@ -111,7 +112,11 @@ func TestNewRequiresDependenciesAndMatchesTheRouteTable(t *testing.T) {
 		if r.Method != "GET" {
 			continue
 		}
-		resp, _ := f.do(t, r.Method, r.Pattern, "")
+		path := r.Pattern
+		if r.WorkspaceQuery != "" {
+			path += "?" + r.WorkspaceQuery + "=ws-1"
+		}
+		resp, _ := f.do(t, r.Method, path, "")
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("%s %s: status %d", r.Method, r.Pattern, resp.StatusCode)
 		}

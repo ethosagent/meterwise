@@ -34,11 +34,13 @@ type Deps struct {
 	DB              Pinger
 	Principals      PrincipalResolver
 	Tenancy         Tenancy
-	Authz           Authz           // the gateway's authorization (access.Authorizer)
-	Access          Access          // groups, group members and org defaults (access.Service)
-	Audit           AuditLog        // the audit log (audit.Sink)
-	Webhooks        WebhookVerifier // nil answers the Clerk webhook with not_available
-	Web             fs.FS           // built web app; nil serves a typed 404 at "/"
+	Authz           Authz            // the gateway's authorization (access.Authorizer)
+	Access          Access           // groups, group members and org defaults (access.Service)
+	Audit           AuditLog         // the audit log (audit.Sink)
+	Ledger          Ledger           // session and stats reads (*store.Store); nil answers those routes with not_available
+	Now             func() time.Time // the clock for the stats window; nil is time.Now
+	Webhooks        WebhookVerifier  // nil answers the Clerk webhook with not_available
+	Web             fs.FS            // built web app; nil serves a typed 404 at "/"
 	Tracer          trace.TracerProvider
 	AppName         string
 	ProxyPublicHost string
@@ -70,6 +72,7 @@ func New(d Deps) (http.Handler, error) {
 	s.registerTenancy()
 	s.registerAccess()
 	s.registerWorkspaceURL()
+	s.registerLedger()
 	for _, r := range contract.Routes() {
 		if !s.registered[r.Method+" "+r.Pattern] {
 			s.problems = append(s.problems, fmt.Errorf("api: route %s %s is in the contract table but has no handler", r.Method, r.Pattern))
