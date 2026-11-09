@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/api"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
@@ -64,7 +65,7 @@ func newStack(t *testing.T) *stack {
 	logs := &bytes.Buffer{}
 	h, err := api.New(api.Deps{
 		Log: slog.New(slog.NewJSONHandler(logs, nil)), DB: db,
-		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Webhooks: wh,
+		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Authz: access.NewAuthorizer(db), Access: access.NewService(db), Webhooks: wh,
 		AppName: "Acme", ProxyPublicHost: "proxy.test", Version: contract.Version{Version: "t"},
 	})
 	if err != nil {
@@ -157,4 +158,12 @@ func wantErr(t *testing.T, status int, body []byte, wantStatus int, code contrac
 	if status != wantStatus || e.Code != code {
 		t.Fatalf("got %d %s, want %d %s", status, body, wantStatus, code)
 	}
+}
+
+// activeOf is the active workspace id of a Me, "" when it is null.
+func activeOf(me contract.Me) string {
+	if me.ActiveWorkspaceID == nil {
+		return ""
+	}
+	return *me.ActiveWorkspaceID
 }

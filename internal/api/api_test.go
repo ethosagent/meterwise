@@ -20,6 +20,7 @@ import (
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/api"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/nonet"
@@ -71,6 +72,10 @@ func (m *memTenancy) ListWorkspaces(context.Context, contract.Principal) ([]cont
 	return nil, nil
 }
 
+func (m *memTenancy) ListMembers(context.Context, contract.Principal) ([]contract.Member, error) {
+	return nil, nil
+}
+
 func (m *memTenancy) ListInvitations(context.Context, contract.Principal) ([]contract.Invitation, error) {
 	return nil, nil
 }
@@ -93,6 +98,34 @@ func (m *memTenancy) UpdatePreferences(_ context.Context, id string, patch contr
 	return p, nil
 }
 
+// allowAuthz admits every caller; the gateway's decisions are tested against the real Authorizer
+// in the stack tests.
+type allowAuthz struct{}
+
+func (allowAuthz) Authorize(context.Context, contract.Principal, contract.Permission, string) (access.Result, error) {
+	return access.Result{Allowed: true, Reason: "admin"}, nil
+}
+
+func (allowAuthz) Filter(_ context.Context, _ contract.Principal, _ contract.Permission, ids []string) ([]string, error) {
+	return ids, nil
+}
+
+func (allowAuthz) Snapshot(context.Context, contract.Principal) (contract.PermissionSnapshot, error) {
+	return contract.PermissionSnapshot{Admin: true, Grants: []contract.Grant{}}, nil
+}
+
+// noAccess stands in for the access service: reads answer empty, writes panic on the nil
+// embedded interface (the preference and route-table tests never write through it).
+type noAccess struct{ api.Access }
+
+func (noAccess) ListGroups(context.Context) ([]contract.Group, error)          { return nil, nil }
+func (noAccess) Group(context.Context, string) (contract.Group, error)         { return contract.Group{}, nil }
+func (noAccess) GroupGrants(context.Context, string) ([]contract.Grant, error) { return nil, nil }
+func (noAccess) GroupMembers(context.Context, string) ([]contract.Member, error) {
+	return nil, nil
+}
+func (noAccess) OrgDefaults(context.Context) ([]contract.Grant, error) { return nil, nil }
+
 type fixture struct {
 	srv   *httptest.Server
 	res   *countingResolver
@@ -109,6 +142,8 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		DB:         pinger{},
 		Principals: f.res,
 		Tenancy:    newMemTenancy(),
+		Authz:      allowAuthz{},
+		Access:     noAccess{},
 		Web: fstest.MapFS{
 			"index.html":          {Data: []byte("<html>app</html>")},
 			"assets/app-1.js":     {Data: []byte("console.log(1)")},
@@ -302,7 +337,7 @@ func TestAnAbandonedRequestIsNotLoggedAsAServerError(t *testing.T) {
 	f.res.err = &store.Error{Class: store.ClassUnreachable, Message: "store: database unreachable"}
 	h, err := api.New(api.Deps{
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), DB: pinger{}, Principals: f.res, Tenancy: newMemTenancy(),
-		Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
+		Authz: allowAuthz{}, Access: noAccess{}, Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
 	})
 	if err != nil {
 		t.Fatal(err)

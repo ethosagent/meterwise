@@ -170,6 +170,9 @@ red arch "H8 package with tests but no nonet TestMain" "H8 " m_h8
 red arch "D1 package in no layer" "D1 " m_d1
 red arch "P1 package without doc comment" "P1 " m_p1
 red arch "H10 production code imports the Clerk twin" "H10 " m_h10
+m_h11() { gofile internal/api/zz_selftest.go <<<'package api
+func inlineRoleCheck(role string) bool { return role == "admin" }'; }
+red arch "H11 a handler decides access by comparing a role" "H11 " m_h11
 green arch "clean tree" "all gates passed" nop
 
 # ---- test: failing test, coverage floor, visible skip, CI fail-closed

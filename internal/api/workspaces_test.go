@@ -44,7 +44,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("switch: %d %s", code, b)
 	}
 	_, b = s.call(t, "GET", "/api/me", tok, "")
-	if got := decodeAs[contract.Me](t, b).ActiveWorkspaceID; got != ws.ID {
+	if got := activeOf(decodeAs[contract.Me](t, b)); got != ws.ID {
 		t.Fatalf("active workspace %s, want %s", got, ws.ID)
 	}
 
@@ -53,7 +53,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 		t.Fatalf("delete: %d %s", code, b)
 	}
 	_, b = s.call(t, "GET", "/api/me", tok, "")
-	if got := decodeAs[contract.Me](t, b).ActiveWorkspaceID; got != defID {
+	if got := activeOf(decodeAs[contract.Me](t, b)); got != defID {
 		t.Fatalf("after deleting the active workspace, active = %s, want default %s", got, defID)
 	}
 	code, b = s.call(t, "DELETE", "/api/workspaces/"+ws.ID, tok, "")

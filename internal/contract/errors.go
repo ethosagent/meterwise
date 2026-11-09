@@ -31,6 +31,9 @@ const (
 	CodeDefaultWorkspace    Code = "default_workspace"
 	CodeDuplicateInvitation Code = "duplicate_invitation"
 	CodeValidationFailed    Code = "validation_failed"
+	CodeLastAdmin           Code = "last_admin"
+	CodeAlreadyMember       Code = "already_member"
+	CodeGroupNameTaken      Code = "group_name_taken"
 )
 
 // ErrorSpec is the registry entry for one code.
@@ -57,6 +60,9 @@ var errorSpecs = []ErrorSpec{
 	{CodeDefaultWorkspace, http.StatusConflict, "The default workspace cannot be deleted."},
 	{CodeDuplicateInvitation, http.StatusConflict, "A pending invitation already exists for that email."},
 	{CodeValidationFailed, http.StatusUnprocessableEntity, "A request field failed validation; details lists the fields."},
+	{CodeLastAdmin, http.StatusConflict, "The change would leave the organization without an active admin."},
+	{CodeAlreadyMember, http.StatusConflict, "The email already belongs to an active member."},
+	{CodeGroupNameTaken, http.StatusConflict, "A group with that name already exists."},
 }
 
 // Errors returns the registry sorted by code. The slice is a copy.
@@ -82,6 +88,9 @@ type Error struct {
 	Code    Code     `json:"code"`
 	Message string   `json:"message"`
 	Details []string `json:"details,omitempty"`
+	// Reason is the machine-readable why of a 403 ("no matching grant", "admin required"); it
+	// travels as details.reason. Empty for every other error.
+	Reason string `json:"-"`
 }
 
 // Error implements error.
@@ -123,5 +132,13 @@ func (e *Error) Body() ErrorBody {
 	if len(e.Details) > 0 {
 		d["problems"] = append([]string(nil), e.Details...)
 	}
+	if e.Reason != "" {
+		d["reason"] = e.Reason
+	}
 	return ErrorBody{Code: e.Code, Message: e.Message, Details: d}
+}
+
+// Forbidden builds the 403 forbidden error with a reason (details.reason).
+func Forbidden(message, reason string) *Error {
+	return &Error{Code: CodeForbidden, Message: message, Reason: reason}
 }

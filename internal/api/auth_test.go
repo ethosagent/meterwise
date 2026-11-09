@@ -34,7 +34,7 @@ func TestInvitedUserFirstLoginCreatesMembershipAndLandsInTheDefaultWorkspace(t *
 	}
 	me := decodeAs[contract.Me](t, b)
 	_, defaults := s.defaultWorkspace(t, tok)
-	if me.Role != contract.RoleAdmin || me.OrgID == "" || me.User.Email != "admin@example.test" || me.ActiveWorkspaceID != defaults {
+	if me.Role != contract.RoleAdmin || me.OrgID == "" || me.User.Email != "admin@example.test" || activeOf(me) != defaults {
 		t.Fatalf("me = %+v, want admin landing in default workspace %s", me, defaults)
 	}
 	if code, b = s.call(t, "GET", "/api/me", tok, ""); code != 200 {

@@ -50,7 +50,10 @@ func (s *Store) SoftDeleteUser(ctx context.Context, orgID, clerkUserID string) e
 		if _, err := q.SoftDeleteUser(ctx, sqlc.SoftDeleteUserParams{OrgID: orgID, ClerkUserID: clerkUserID}); err != nil && !isNotFound(err) {
 			return err
 		}
-		return q.RemoveMembershipsForClerkUser(ctx, sqlc.RemoveMembershipsForClerkUserParams{OrgID: orgID, ClerkUserID: clerkUserID})
+		if err := q.RemoveMembershipsForClerkUser(ctx, sqlc.RemoveMembershipsForClerkUserParams{OrgID: orgID, ClerkUserID: clerkUserID}); err != nil {
+			return err
+		}
+		return q.DeleteGroupUsersOfClerkUser(ctx, sqlc.DeleteGroupUsersOfClerkUserParams{OrgID: orgID, ClerkUserID: clerkUserID})
 	}))
 }
 

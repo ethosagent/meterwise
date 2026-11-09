@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
 	"github.com/ethosagent/meterwise/internal/store"
@@ -314,8 +315,13 @@ func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role co
 	if err != nil {
 		return contract.Invitation{}, err
 	}
-	if role != contract.RoleAdmin && role != contract.RoleMember {
+	if !role.Valid() {
 		return contract.Invitation{}, invalid("role", "must be admin or member")
+	}
+	if member, err := s.st.ActiveMemberWithEmail(ctx, s.org, email); err != nil {
+		return contract.Invitation{}, err
+	} else if member {
+		return contract.Invitation{}, contract.NewError(contract.CodeAlreadyMember, "that email already belongs to an active member")
 	}
 	now := s.cfg.Now()
 	if _, err := s.st.OpenInvitation(ctx, s.org, email, now); err == nil {
@@ -336,8 +342,12 @@ func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role co
 	return inv, nil
 }
 
-// CreateInvitation invites an email as the calling admin.
+// CreateInvitation invites an email as the caller. Only an admin may invite an admin
+// (access.MayAssignRole); the route's member:manage grant alone is not enough for that.
 func (s *Service) CreateInvitation(ctx context.Context, p contract.Principal, email string, role contract.Role) (contract.Invitation, error) {
+	if err := access.MayAssignRole(p.Role, role); err != nil {
+		return contract.Invitation{}, err
+	}
 	return s.invite(ctx, p.UserID, email, role)
 }
 
@@ -359,7 +369,7 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contrac
 		}
 		switch i.StatusAt(now) {
 		case contract.InvitationPending:
-			if i.Role != contract.RoleAdmin {
+			if !access.IsAdmin(i.Role) {
 				return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
 					"an open invitation for that email has role "+string(i.Role)+"; revoke it in Settings, then run bootstrap-admin again")
 			}
@@ -388,6 +398,9 @@ func (s *Service) ResendInvitation(ctx context.Context, p contract.Principal, id
 	if err != nil {
 		return contract.Invitation{}, err
 	}
+	if err := access.MayAssignRole(p.Role, inv.Role); err != nil {
+		return contract.Invitation{}, err
+	}
 	now := s.cfg.Now()
 	if st := inv.StatusAt(now); st == contract.InvitationAccepted || st == contract.InvitationRevoked {
 		return contract.Invitation{}, contract.NewError(contract.CodeNotFound, "not found")
@@ -410,6 +423,13 @@ func (s *Service) ResendInvitation(ctx context.Context, p contract.Principal, id
 // RevokeInvitation revokes an open invitation. The database row decides access
 // (complete-signup reads it), so a provider hiccup cannot leave the invitation usable.
 func (s *Service) RevokeInvitation(ctx context.Context, p contract.Principal, id string) error {
+	inv, err := s.st.Invitation(ctx, p.OrgID, id)
+	if err != nil {
+		return err
+	}
+	if err := access.MayAssignRole(p.Role, inv.Role); err != nil {
+		return err
+	}
 	clerkID, err := s.st.RevokeInvitation(ctx, p.OrgID, id, s.cfg.Now())
 	if err != nil {
 		return err

@@ -211,6 +211,8 @@ func TestSeededRepositoryGoesRedEndToEnd(t *testing.T) {
 		"internal/config/nested/go.mod": "module nested\n",
 		// H10: production code imports the Clerk twin
 		"cmd/meterwised/main.go": "// Command meterwised is the binary.\npackage main\nimport _ \"" + module + "/internal/identity/clerkmock\"\nfunc main() {}\n",
+		// H11: an inline role check outside the role owners
+		"internal/api/gate.go": "package api\nfunc ok(p struct{ Role string }) bool { return p.Role == \"admin\" }\n",
 		// H5: web
 		"web/src/a.ts":     "import _ from 'lodash'\n",
 		"web/package.json": `{"dependencies":{"moment":"2"}}`,

@@ -23,7 +23,7 @@ func gen(t *testing.T, root string, args ...string) (int, string, string) {
 
 func TestGenerateThenCheckIsClean(t *testing.T) {
 	root := t.TempDir()
-	if code, out, errs := gen(t, root); code != 0 || strings.Count(out, "wrote ") != 3 {
+	if code, out, errs := gen(t, root); code != 0 || strings.Count(out, "wrote ") != 4 {
 		t.Fatalf("generate: %d %q %q", code, out, errs)
 	}
 	if code, _, errs := gen(t, root, "-check"); code != 0 {
@@ -301,5 +301,31 @@ func TestFirstDiffLine(t *testing.T) {
 	}
 	if got := firstDiffLine([]byte("a"), []byte("a\nb")); got != 2 {
 		t.Errorf("got %d", got)
+	}
+}
+
+func TestTaxonomyTwinIsGeneratedFormattedAndChecked(t *testing.T) {
+	root := t.TempDir()
+	gen(t, root)
+	p := filepath.Join(root, "web/src/access/taxonomy.ts")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"@generated", `workspace: { scope: "workspace", actions: ["read", "write", "manage"] },`, `"member:manage",`, "export const PERMISSIONS = ["} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("taxonomy twin lacks %q", want)
+		}
+	}
+	for n, line := range strings.Split(string(b), "\n") {
+		if len(line) > 100 {
+			t.Errorf("line %d is %d columns; biome would reformat it", n+1, len(line))
+		}
+	}
+	if err := os.WriteFile(p, append(b, "export const sneaky = 1;\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errs := gen(t, root, "-check", "taxonomy"); code == 0 || !strings.Contains(errs, "taxonomy.ts") {
+		t.Fatalf("a hand edit of the taxonomy twin passed -check: %d %q", code, errs)
 	}
 }

@@ -8,6 +8,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Group struct {
+	ID        pgtype.UUID
+	OrgID     pgtype.UUID
+	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
+type GroupPermission struct {
+	GroupID      pgtype.UUID
+	PermissionID pgtype.UUID
+	OrgID        pgtype.UUID
+	CreatedAt    pgtype.Timestamptz
+}
+
+type GroupUser struct {
+	GroupID   pgtype.UUID
+	UserID    pgtype.UUID
+	OrgID     pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+}
+
+type GroupWorkspace struct {
+	GroupID     pgtype.UUID
+	WorkspaceID pgtype.UUID
+	OrgID       pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
+}
+
 type Invitation struct {
 	ID                pgtype.UUID
 	OrgID             pgtype.UUID
@@ -34,6 +62,25 @@ type Organization struct {
 	ID        pgtype.UUID
 	Name      string
 	CreatedAt pgtype.Timestamptz
+}
+
+type OrganizationPermission struct {
+	ID           pgtype.UUID
+	OrgID        pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	ResourceType string
+	Action       string
+	CreatedAt    pgtype.Timestamptz
+}
+
+type ResourcePermission struct {
+	ID           pgtype.UUID
+	OrgID        pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	ResourceType string
+	ResourceID   pgtype.Text
+	Action       string
+	CreatedAt    pgtype.Timestamptz
 }
 
 type User struct {

@@ -14,6 +14,7 @@ import (
 	"github.com/ethosagent/tollgate"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/api"
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -132,7 +133,7 @@ func (rt *instance) apiHandler(id identitySetup, tp trace.TracerProvider) (http.
 		principals = api.ClerkPrincipalResolver{Provider: id.provider, Sessions: rt.svc}
 	}
 	return api.New(api.Deps{
-		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Webhooks: id.webhooks,
+		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Authz: access.NewAuthorizer(rt.db), Access: access.NewService(rt.db), Webhooks: id.webhooks,
 		Web: webFS(rt.cfg.WebDir, rt.log), Tracer: tp,
 		AppName: rt.cfg.AppName, ProxyPublicHost: rt.cfg.ProxyPublicHost, Version: contract.Version{Version: version, Commit: commit},
 	})

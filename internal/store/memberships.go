@@ -61,6 +61,10 @@ func (s *Store) AcceptOpenInvitation(ctx context.Context, orgID, userID, email s
 		if qerr = q.UpsertActiveMembership(ctx, sqlc.UpsertActiveMembershipParams{OrgID: orgID, UserID: userID, Role: inv.Role}); qerr != nil {
 			return qerr
 		}
+		// A returning member starts with no groups, whatever a racing add left behind.
+		if qerr = q.DeleteGroupUsersOfUser(ctx, sqlc.DeleteGroupUsersOfUserParams{OrgID: orgID, UserID: userID}); qerr != nil {
+			return qerr
+		}
 		role, ok = contract.Role(inv.Role), true
 		return nil
 	})
@@ -90,7 +94,10 @@ func (s *Store) ReactivateRemovedAdmin(ctx context.Context, orgID, email string)
 			return err
 		}
 		found = true
-		return q.UpsertActiveMembership(ctx, sqlc.UpsertActiveMembershipParams{OrgID: orgID, UserID: id, Role: string(contract.RoleAdmin)})
+		if err := q.UpsertActiveMembership(ctx, sqlc.UpsertActiveMembershipParams{OrgID: orgID, UserID: id, Role: string(contract.RoleAdmin)}); err != nil {
+			return err
+		}
+		return q.DeleteGroupUsersOfUser(ctx, sqlc.DeleteGroupUsersOfUserParams{OrgID: orgID, UserID: id})
 	})
 	return found, queryErr(err)
 }

@@ -75,7 +75,7 @@ type Me struct {
 	User              MeUser      `json:"user"`
 	OrgID             string      `json:"orgId"`
 	Role              Role        `json:"role"`
-	ActiveWorkspaceID string      `json:"activeWorkspaceId"`
+	ActiveWorkspaceID *string     `json:"activeWorkspaceId"` // null when the caller can read no workspace
 	Preferences       Preferences `json:"preferences"`
 }
 
@@ -134,6 +134,77 @@ type CreateInvitationRequest struct {
 	Role  Role   `json:"role"`
 }
 
+// Grant is one permission: a resource type and action, on one workspace or (null) on every
+// workspace / the org. Whether the resource type is workspace- or org-scoped is fixed by the
+// taxonomy, not by the grant.
+type Grant struct {
+	WorkspaceID  *string `json:"workspaceId"`
+	ResourceType string  `json:"resourceType"`
+	Action       string  `json:"action"`
+}
+
+// GrantList is the grants body of the group and org-default endpoints, request and response.
+type GrantList struct {
+	Grants []Grant `json:"grants"`
+}
+
+// PermissionSnapshot is GET /api/me/permissions: Admin true (and no grants) for an admin,
+// otherwise the flattened union of the caller's group grants and the org defaults.
+type PermissionSnapshot struct {
+	Admin  bool    `json:"admin"`
+	Grants []Grant `json:"grants"`
+}
+
+// Member is an active membership as the API shows it.
+type Member struct {
+	UserID    string   `json:"userId"`
+	Email     string   `json:"email"`
+	Name      string   `json:"name"`
+	AvatarURL string   `json:"avatarUrl"`
+	Role      Role     `json:"role"`
+	GroupIDs  []string `json:"groupIds"`
+	JoinedAt  string   `json:"joinedAt"`
+}
+
+// MemberList is a list of members.
+type MemberList struct {
+	Items []Member `json:"items"`
+}
+
+// UpdateMemberRequest is the PATCH /api/members/{userId} body.
+type UpdateMemberRequest struct {
+	Role Role `json:"role"`
+}
+
+// Group is a set of members with grants on the workspaces it is attached to.
+type Group struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	MemberCount  int      `json:"memberCount"`
+	WorkspaceIDs []string `json:"workspaceIds"`
+	CreatedAt    string   `json:"createdAt"`
+}
+
+// GroupList is the GET /api/groups response.
+type GroupList struct {
+	Items []Group `json:"items"`
+}
+
+// GroupRequest is the POST and PATCH /api/groups body.
+type GroupRequest struct {
+	Name string `json:"name"`
+}
+
+// AttachWorkspaceRequest is the POST /api/groups/{id}/workspaces body.
+type AttachWorkspaceRequest struct {
+	WorkspaceID string `json:"workspaceId"`
+}
+
+// AddGroupMemberRequest is the POST /api/groups/{id}/members body.
+type AddGroupMemberRequest struct {
+	UserID string `json:"userId"`
+}
+
 // DTO is a named API type; the generators walk its fields by reflection.
 type DTO struct {
 	Name string
@@ -160,5 +231,16 @@ func DTOs() []DTO {
 		{"Invitation", reflect.TypeFor[InvitationView]()},
 		{"InvitationList", reflect.TypeFor[InvitationList]()},
 		{"CreateInvitationRequest", reflect.TypeFor[CreateInvitationRequest]()},
+		{"Grant", reflect.TypeFor[Grant]()},
+		{"GrantList", reflect.TypeFor[GrantList]()},
+		{"PermissionSnapshot", reflect.TypeFor[PermissionSnapshot]()},
+		{"Member", reflect.TypeFor[Member]()},
+		{"MemberList", reflect.TypeFor[MemberList]()},
+		{"UpdateMemberRequest", reflect.TypeFor[UpdateMemberRequest]()},
+		{"Group", reflect.TypeFor[Group]()},
+		{"GroupList", reflect.TypeFor[GroupList]()},
+		{"GroupRequest", reflect.TypeFor[GroupRequest]()},
+		{"AttachWorkspaceRequest", reflect.TypeFor[AttachWorkspaceRequest]()},
+		{"AddGroupMemberRequest", reflect.TypeFor[AddGroupMemberRequest]()},
 	}
 }

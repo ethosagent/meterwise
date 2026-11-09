@@ -14,6 +14,9 @@ const (
 	RoleMember Role = "member"
 )
 
+// Valid reports whether r is one of the two roles.
+func (r Role) Valid() bool { return r == RoleAdmin || r == RoleMember }
+
 // Roles lists the valid roles in a fixed order.
 func Roles() []Role { return []Role{RoleAdmin, RoleMember} }
 

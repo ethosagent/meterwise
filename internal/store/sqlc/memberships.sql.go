@@ -7,7 +7,79 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const activeMemberEmailExists = `-- name: ActiveMemberEmailExists :one
+SELECT EXISTS (
+    SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id
+    WHERE m.org_id = $1::text::uuid AND m.status = 'active' AND u.deleted_at IS NULL AND u.email = $2
+)::boolean AS exists
+`
+
+type ActiveMemberEmailExistsParams struct {
+	OrgID string
+	Email string
+}
+
+// Only a conflict check for invitations (already_member); never an authorisation.
+func (q *Queries) ActiveMemberEmailExists(ctx context.Context, arg ActiveMemberEmailExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, activeMemberEmailExists, arg.OrgID, arg.Email)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const countActiveAdmins = `-- name: CountActiveAdmins :one
+SELECT count(*)::int AS n FROM memberships
+WHERE org_id = $1::text::uuid AND role = 'admin' AND status = 'active'
+`
+
+func (q *Queries) CountActiveAdmins(ctx context.Context, orgID string) (int32, error) {
+	row := q.db.QueryRow(ctx, countActiveAdmins, orgID)
+	var n int32
+	err := row.Scan(&n)
+	return n, err
+}
+
+const getMember = `-- name: GetMember :one
+SELECT u.id::text AS user_id, u.email, u.name, u.avatar_url, m.role, m.created_at AS joined_at,
+       COALESCE((SELECT array_agg(gu.group_id::text ORDER BY gu.group_id) FROM group_users gu WHERE gu.user_id = u.id AND gu.org_id = m.org_id), '{}')::text[] AS group_ids
+FROM memberships m JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id
+WHERE m.org_id = $1::text::uuid AND m.user_id = $2::text::uuid
+  AND m.status = 'active' AND u.deleted_at IS NULL
+`
+
+type GetMemberParams struct {
+	OrgID  string
+	UserID string
+}
+
+type GetMemberRow struct {
+	UserID    string
+	Email     string
+	Name      string
+	AvatarUrl string
+	Role      string
+	JoinedAt  pgtype.Timestamptz
+	GroupIds  []string
+}
+
+func (q *Queries) GetMember(ctx context.Context, arg GetMemberParams) (GetMemberRow, error) {
+	row := q.db.QueryRow(ctx, getMember, arg.OrgID, arg.UserID)
+	var i GetMemberRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Email,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.Role,
+		&i.JoinedAt,
+		&i.GroupIds,
+	)
+	return i, err
+}
 
 const getMembership = `-- name: GetMembership :one
 SELECT role, status FROM memberships
@@ -54,6 +126,97 @@ func (q *Queries) GetRemovedAdminByEmail(ctx context.Context, arg GetRemovedAdmi
 	return id, err
 }
 
+const getUserEmail = `-- name: GetUserEmail :one
+SELECT email FROM users WHERE org_id = $1::text::uuid AND id = $2::text::uuid
+`
+
+type GetUserEmailParams struct {
+	OrgID string
+	ID    string
+}
+
+func (q *Queries) GetUserEmail(ctx context.Context, arg GetUserEmailParams) (string, error) {
+	row := q.db.QueryRow(ctx, getUserEmail, arg.OrgID, arg.ID)
+	var email string
+	err := row.Scan(&email)
+	return email, err
+}
+
+const listMembers = `-- name: ListMembers :many
+SELECT u.id::text AS user_id, u.email, u.name, u.avatar_url, m.role, m.created_at AS joined_at,
+       COALESCE((SELECT array_agg(gu.group_id::text ORDER BY gu.group_id) FROM group_users gu WHERE gu.user_id = u.id AND gu.org_id = m.org_id), '{}')::text[] AS group_ids
+FROM memberships m JOIN users u ON u.id = m.user_id AND u.org_id = m.org_id
+WHERE m.org_id = $1::text::uuid AND m.status = 'active' AND u.deleted_at IS NULL
+ORDER BY u.email, u.id
+`
+
+type ListMembersRow struct {
+	UserID    string
+	Email     string
+	Name      string
+	AvatarUrl string
+	Role      string
+	JoinedAt  pgtype.Timestamptz
+	GroupIds  []string
+}
+
+func (q *Queries) ListMembers(ctx context.Context, orgID string) ([]ListMembersRow, error) {
+	rows, err := q.db.Query(ctx, listMembers, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembersRow
+	for rows.Next() {
+		var i ListMembersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Email,
+			&i.Name,
+			&i.AvatarUrl,
+			&i.Role,
+			&i.JoinedAt,
+			&i.GroupIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockActiveMembershipShared = `-- name: LockActiveMembershipShared :one
+SELECT role FROM memberships
+WHERE org_id = $1::text::uuid AND user_id = $2::text::uuid AND status = 'active'
+FOR SHARE
+`
+
+type LockActiveMembershipSharedParams struct {
+	OrgID  string
+	UserID string
+}
+
+// Holds the membership row so a concurrent removal waits for the statement that relies on it.
+func (q *Queries) LockActiveMembershipShared(ctx context.Context, arg LockActiveMembershipSharedParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockActiveMembershipShared, arg.OrgID, arg.UserID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
+}
+
+const lockAdmins = `-- name: LockAdmins :exec
+SELECT pg_advisory_xact_lock(hashtext('admins:' || $1::text))
+`
+
+// Serialises every change that could remove an admin, so the last-admin check cannot race.
+func (q *Queries) LockAdmins(ctx context.Context, orgID string) error {
+	_, err := q.db.Exec(ctx, lockAdmins, orgID)
+	return err
+}
+
 const removeMembershipsForClerkUser = `-- name: RemoveMembershipsForClerkUser :exec
 UPDATE memberships SET status = 'removed', updated_at = now()
 WHERE org_id = $1::text::uuid
@@ -68,6 +231,25 @@ type RemoveMembershipsForClerkUserParams struct {
 func (q *Queries) RemoveMembershipsForClerkUser(ctx context.Context, arg RemoveMembershipsForClerkUserParams) error {
 	_, err := q.db.Exec(ctx, removeMembershipsForClerkUser, arg.OrgID, arg.ClerkUserID)
 	return err
+}
+
+const setActiveMemberRole = `-- name: SetActiveMemberRole :execrows
+UPDATE memberships SET role = $1, updated_at = now()
+WHERE org_id = $2::text::uuid AND user_id = $3::text::uuid AND status = 'active'
+`
+
+type SetActiveMemberRoleParams struct {
+	Role   string
+	OrgID  string
+	UserID string
+}
+
+func (q *Queries) SetActiveMemberRole(ctx context.Context, arg SetActiveMemberRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setActiveMemberRole, arg.Role, arg.OrgID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setMembershipStatus = `-- name: SetMembershipStatus :execrows
@@ -92,7 +274,8 @@ func (q *Queries) SetMembershipStatus(ctx context.Context, arg SetMembershipStat
 const upsertActiveMembership = `-- name: UpsertActiveMembership :exec
 INSERT INTO memberships (org_id, user_id, role)
 VALUES ($1::text::uuid, $2::text::uuid, $3)
-ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role, status = 'active', updated_at = now()
+ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role, status = 'active', updated_at = now(),
+    created_at = CASE WHEN memberships.status = 'active' THEN memberships.created_at ELSE now() END
 `
 
 type UpsertActiveMembershipParams struct {
