@@ -1,14 +1,22 @@
 import { vi } from "vitest";
-import type { WireErrorBody } from "../api/errors";
+import type { Me } from "../access/plan03-types";
 import type {
   AppConfig,
   Invitation,
-  Me,
   Preferences,
   PreferencesPatch,
   Role,
   Workspace,
 } from "../contract/generated";
+import {
+  type AccessInit,
+  type AccessMock,
+  createAccessMock,
+  errorResponse,
+  jsonResponse as json,
+} from "./mockAccess";
+
+export { errorResponse };
 
 export const TEST_CONFIG: AppConfig = { appName: "Acme Meter", proxyPublicHost: "proxy.acme.test" };
 
@@ -54,6 +62,8 @@ export interface MockApi {
   calls: Call[];
   /** Every call whose method and path match. */
   callsTo: (method: string, path: string | RegExp) => Call[];
+  /** The Plan 03 in-memory server: snapshot, members, groups. */
+  access: AccessMock;
   /** From now on every authenticated route answers 401 (the session ended). */
   expireSession: () => void;
 }
@@ -74,18 +84,8 @@ interface Options {
   maxWorkspaces?: number;
   /** Workspaces the list only includes from its second fetch on (a stale list that a refetch repairs). */
   revealOnRefetch?: Workspace[];
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-export function errorResponse(status: number, code: string, message: string): Response {
-  const body: WireErrorBody = { code, message, details: {} };
-  return json(body, status);
+  /** Plan 03 state: the caller's permission snapshot (default by role), members, groups. */
+  access?: AccessInit;
 }
 
 /** Stubs global fetch with the Plan 01 and Plan 02 endpoints, backed by a small in-memory server. */
@@ -100,6 +100,7 @@ export function mockApi(opts: Options = {}): MockApi {
   const patches: unknown[] = [];
   const calls: Call[] = [];
 
+  const access = createAccessMock(me?.role === "admin", opts.access);
   const notInvited = () => errorResponse(403, "not_invited", "no invitation");
   const notFound = () => errorResponse(404, "not_found", "no such thing");
 
@@ -128,11 +129,14 @@ export function mockApi(opts: Options = {}): MockApi {
     }
     if (path === "/api/me") return me ? json(me) : notInvited();
     if (!me) return notInvited();
+    const granted = access.route(method, path, body);
+    if (granted) return granted;
     const ws = /^\/api\/workspaces\/([^/]+)(\/switch)?$/.exec(path);
     if (path === "/api/workspaces" && method === "GET") {
       listFetches++;
       const late = listFetches > 1 ? (opts.revealOnRefetch ?? []) : [];
-      return json({ items: [...workspaces, ...late] });
+      const all = [...workspaces, ...late].filter((w) => access.can("workspace", "read", w.id));
+      return json({ items: all });
     }
     if (path === "/api/workspaces" && method === "POST") {
       if (workspaces.length >= (opts.maxWorkspaces ?? 20)) {
@@ -145,9 +149,10 @@ export function mockApi(opts: Options = {}): MockApi {
     if (ws) {
       const target = workspaces.find((w) => w.id === ws[1]);
       if (!target) return notFound();
-      // Mirrors internal/contract/routes.go: members may create and switch, not rename or delete.
-      if ((method === "PATCH" || method === "DELETE") && me.role !== "admin") {
-        return errorResponse(403, "forbidden", "admins only");
+      // The interface file: PATCH needs workspace:write, DELETE workspace:manage, switch workspace:read.
+      const need = method === "PATCH" ? "write" : method === "DELETE" ? "manage" : "read";
+      if (!access.can("workspace", need, target.id)) {
+        return errorResponse(403, "forbidden", "not allowed", { reason: "no matching grant" });
       }
       if (ws[2] && method === "POST") {
         me = { ...me, activeWorkspaceId: target.id };
@@ -168,10 +173,18 @@ export function mockApi(opts: Options = {}): MockApi {
       }
     }
     if (path.startsWith("/api/invitations")) {
-      if (me.role !== "admin") return errorResponse(403, "forbidden", "admins only");
+      if (!access.can("member", "manage")) {
+        return errorResponse(403, "forbidden", "not allowed", { reason: "no matching grant" });
+      }
       const inv = /^\/api\/invitations\/([^/]+)(\/resend)?$/.exec(path);
       if (path === "/api/invitations" && method === "GET") return json({ items: invitations });
       if (path === "/api/invitations" && method === "POST") {
+        if (body.role === "admin" && !access.isAdmin()) {
+          return errorResponse(403, "forbidden", "not allowed", { reason: "admin required" });
+        }
+        if (access.members.some((x) => x.email === body.email)) {
+          return errorResponse(409, "already_member", "already a member");
+        }
         if (invitations.some((i) => i.email === body.email && i.status === "pending")) {
           return errorResponse(409, "duplicate_invitation", "already invited");
         }
@@ -214,6 +227,7 @@ export function mockApi(opts: Options = {}): MockApi {
   return {
     fetch: fn,
     patches,
+    access,
     calls,
     callsTo: (method, path) =>
       calls.filter(

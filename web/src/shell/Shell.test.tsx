@@ -12,7 +12,7 @@ import { ALL_PAGES } from "./nav";
 
 const renderApp = (path: string) => renderAt(<AppRoutes />, path);
 /** Pages with real content; every other destination is still the empty stub. */
-const BUILT = new Set(["workspace", "organization"]);
+const BUILT = new Set(["workspace", "organization", "access"]);
 const NAMES = TEST_WORKSPACES.map((w) => w.name);
 
 beforeEach(() => {
@@ -45,9 +45,11 @@ describe("Shell navigation", () => {
     for (const label of ["Overview", "Sessions", "Monitors", "Setup", "Settings"]) {
       expect(within(nav).getByText(label)).toBeInTheDocument();
     }
-    for (const label of ["Profile", "Workspace", "Organization", "Access management"]) {
+    for (const label of ["Profile", "Workspace", "Organization"]) {
       expect(within(nav).getByText(label)).toBeInTheDocument();
     }
+    // Access management follows the snapshot: an admin has member:read, so it appears once loaded.
+    expect(await within(nav).findByText("Access management")).toBeInTheDocument();
   });
 
   it("renders the right head on every route, and an Empty body on the unbuilt ones", async () => {

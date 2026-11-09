@@ -12,14 +12,10 @@ import {
   theme,
 } from "antd";
 import { useEffect } from "react";
-import {
-  useActiveWorkspace,
-  useDeleteWorkspace,
-  useMe,
-  useRenameWorkspace,
-} from "../../api/identity";
-import { hasPermission } from "../../auth/permissions";
+import { useActiveWorkspace, useDeleteWorkspace, useRenameWorkspace } from "../../api/identity";
+import { usePermission } from "../../auth/usePermission";
 import type { Workspace } from "../../contract/generated";
+import { NoWorkspaceAccess } from "../../shell/NoWorkspaceAccess";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { ProxyUrl } from "./ProxyUrl";
@@ -107,16 +103,17 @@ function DangerZone({ ws }: { ws: Workspace }) {
 
 /** Settings > Workspace: name, proxy URL and the danger zone for the active workspace. */
 export function WorkspacePage() {
-  const me = useMe().data;
   const active = useActiveWorkspace();
-  const canManage = hasPermission(me, "workspaces.manage");
+  const wsId = active.state === "ready" ? active.workspace.id : null;
+  const canRename = usePermission("workspace:write", wsId);
+  const canDelete = usePermission("workspace:manage", wsId);
   return (
     <section aria-labelledby="page-title">
       <PageHead page={pageByKey("workspace")} />
       {active.state === "ready" ? (
         <>
-          <General ws={active.workspace} canManage={canManage} />
-          {canManage ? <DangerZone ws={active.workspace} /> : null}
+          <General ws={active.workspace} canManage={canRename} />
+          {canDelete ? <DangerZone ws={active.workspace} /> : null}
         </>
       ) : active.state === "missing" ? (
         <Alert
@@ -126,6 +123,8 @@ export function WorkspacePage() {
           description="It may have been deleted in another session. Nothing is shown here rather than the wrong workspace."
           action={<Button onClick={active.retry}>Try again</Button>}
         />
+      ) : active.state === "none" ? (
+        <NoWorkspaceAccess />
       ) : (
         <Skeleton active />
       )}

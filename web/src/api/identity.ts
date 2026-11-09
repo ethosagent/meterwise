@@ -1,6 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import type { ErrorCode, Invitation, Me, Role, Workspace } from "../contract/generated";
+import type { Me } from "../access/plan03-types";
+import type { ErrorCode, Invitation, Role, Workspace } from "../contract/generated";
 import { apiFetch } from "./client";
 import { ApiError } from "./errors";
 
@@ -62,19 +63,21 @@ export function useWorkspaces() {
  * The active workspace, never a stand-in for it. "missing" means the id in Me is not in the
  * workspace list even after one refetch of both: show an error, not the default workspace's name
  * or proxy URL (the URL is the workspace, so a wrong one routes an agent to the wrong place).
+ * "none" means the server says the caller can read no workspace (activeWorkspaceId is null).
  */
 export type ActiveWorkspace =
   | { state: "loading" }
+  | { state: "none" }
   | { state: "missing" }
   | { state: "ready"; workspace: Workspace };
 
 export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
   const meQuery = useMe();
   const listQuery = useWorkspaces();
-  const activeId = meQuery.data?.activeWorkspaceId;
+  const activeId = meQuery.data?.activeWorkspaceId ?? undefined;
   const workspace = listQuery.data?.find((w) => w.id === activeId);
   const loaded = meQuery.data !== undefined && listQuery.data !== undefined;
-  const absent = loaded && workspace === undefined;
+  const absent = loaded && activeId !== undefined && workspace === undefined;
   const fetching = meQuery.isFetching || listQuery.isFetching;
   const refetchedFor = useRef<string | null>(null);
   const { refetch: refetchMe } = meQuery;
@@ -91,6 +94,7 @@ export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
     void Promise.all([refetchMe(), refetchList()]);
   };
   if (workspace) return { state: "ready", workspace, retry };
+  if (meQuery.data && meQuery.data.activeWorkspaceId === null) return { state: "none", retry };
   if (!loaded || fetching || refetchedFor.current !== activeId) return { state: "loading", retry };
   return { state: "missing", retry };
 }

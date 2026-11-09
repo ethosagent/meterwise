@@ -1,8 +1,9 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import type { ComponentType, ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect } from "vitest";
+import { createQueryClient } from "../api/queryClient";
 import { AuthProvider } from "../auth/AuthProvider";
 import { mockAdapter, useMockAuth } from "../auth/mock";
 import { useSession } from "../auth/session";
@@ -11,7 +12,7 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { mockApi } from "./mockApi";
 
 export function testQueryClient(): QueryClient {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return createQueryClient(false);
 }
 
 interface RenderOptions {

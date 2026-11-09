@@ -1,15 +1,17 @@
 import { Card, Descriptions, theme } from "antd";
 import { useConfig } from "../../api/config";
-import { useMe } from "../../api/identity";
-import { hasPermission } from "../../auth/permissions";
+import { useIsAdmin, usePermission } from "../../auth/usePermission";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
 import { InvitationsTable } from "./InvitationsTable";
+import { MembersTable } from "./MembersTable";
 
-/** Settings > Organization: the one organization's name, and invitations for admins. */
+/** Settings > Organization: the organization's name, and its members for anyone who may read them. */
 export function OrganizationPage() {
   const { token } = theme.useToken();
-  const me = useMe().data;
+  const canRead = usePermission("member:read");
+  const canManage = usePermission("member:manage");
+  const isAdmin = useIsAdmin();
   // The organization is named after the deployment (the seed uses APP_NAME), and the API has no org endpoint yet.
   const name = useConfig().data?.appName ?? "";
   return (
@@ -20,9 +22,13 @@ export function OrganizationPage() {
           <Descriptions.Item label="Name">{name}</Descriptions.Item>
         </Descriptions>
       </Card>
-      {hasPermission(me, "invitations.manage") ? (
+      {canRead || canManage ? (
         <div style={{ marginTop: token.marginLG }}>
-          <InvitationsTable />
+          {canRead ? (
+            <MembersTable canManage={canManage} isAdmin={isAdmin} />
+          ) : (
+            <InvitationsTable />
+          )}
         </div>
       ) : null}
     </section>

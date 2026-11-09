@@ -1,11 +1,14 @@
 # organization
 
-**Settings / Organization** (`/settings/organization`).
+**Settings / Organization**, route `/settings/organization`.
 
-- Shows: the organization name (the deployment's `appName`; the API has no organization endpoint yet),
-  and for admins the **Invitations** table: `＋ Invite member` (email, role admin or member), Resend and
-  Revoke on pending rows. A `409 duplicate_invitation` is explained in the dialog.
-- Out of scope: the Members table (Plan 03).
-- Endpoints: `GET|POST /api/invitations`, `POST /api/invitations/{id}/resend`, `DELETE /api/invitations/{id}`.
-- Permission: `invitations.manage`. A member sees the name only and the page never requests invitations.
-- Tests: `Page.test.tsx` (admin flows, member view) against `test/mockApi.ts`.
+- Shows: the organization name (the deployment's `APP_NAME`), and a **Members** table for anyone with `member:read`.
+- Members table: active members plus pending invitations (tag "Pending invite", Resend and Revoke), `Invite member`,
+  a role Select (admin | member) and Remove.
+- Endpoints: `GET /api/members`, `PATCH|DELETE /api/members/{userId}`, `GET|POST /api/invitations`,
+  `POST /api/invitations/{id}/resend`, `DELETE /api/invitations/{id}`.
+- Permissions: table needs `member:read`; invite, resend and revoke need `member:manage`; role change and Remove are
+  admin-only (PermAdmin). Only an admin may pick the admin role in the invite dialog (escalation guard).
+  With `member:manage` but not `member:read` the page shows the invitations table instead.
+- Errors: `last_admin`, `already_member` and `duplicate_invitation` have their own messages (`describeApiError`).
+- Test: `Page.test.tsx` (admin, read-only member, manage-only member).
