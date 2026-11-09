@@ -165,11 +165,41 @@ func TestRoutesAreDocumentedAndAuthorised(t *testing.T) {
 		if r.Response != "" && !names[r.Response] {
 			t.Errorf("%s %s: response DTO %q not registered", r.Method, r.Pattern, r.Response)
 		}
+		if r.Request != "" && !names[r.Request] {
+			t.Errorf("%s %s: request DTO %q not registered", r.Method, r.Pattern, r.Request)
+		}
+		if r.WorkspaceParam != "" && !strings.Contains(r.Pattern, "{"+r.WorkspaceParam+"}") {
+			t.Errorf("%s %s: WorkspaceParam %q is not a path parameter of the pattern", r.Method, r.Pattern, r.WorkspaceParam)
+		}
 	}
 	if _, ok := contract.PermissionFor("GET", "/healthz"); !ok {
 		t.Fatal("healthz route missing")
 	}
 	if _, ok := contract.PermissionFor("POST", "/healthz"); ok {
 		t.Fatal("unexpected route")
+	}
+}
+
+func TestForbiddenCarriesItsReasonAsDetails(t *testing.T) {
+	e := contract.Forbidden("nope", "no matching grant")
+	b := e.Body()
+	if e.Status() != http.StatusForbidden || b.Code != contract.CodeForbidden || b.Details["reason"] != "no matching grant" {
+		t.Fatalf("%+v", b)
+	}
+	if got := contract.NewError(contract.CodeForbidden, "x").Body().Details; len(got) != 0 {
+		t.Fatalf("a reasonless error must keep empty details, got %v", got)
+	}
+	for code, status := range map[contract.Code]int{contract.CodeLastAdmin: 409, contract.CodeAlreadyMember: 409, contract.CodeGroupNameTaken: 409} {
+		if s, ok := contract.Spec(code); !ok || s.Status != status {
+			t.Errorf("%s: %+v %v", code, s, ok)
+		}
+	}
+}
+
+func TestRoleValid(t *testing.T) {
+	for r, want := range map[contract.Role]bool{contract.RoleAdmin: true, contract.RoleMember: true, "": false, "owner": false, "Admin": false} {
+		if r.Valid() != want {
+			t.Errorf("%q.Valid() = %v", r, !want)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -143,12 +144,7 @@ func (c *Clerk) authorizedParty(azp string) bool {
 	if len(c.cfg.AuthorizedParties) == 0 {
 		return true
 	}
-	for _, p := range c.cfg.AuthorizedParties {
-		if azp != "" && azp == p {
-			return true
-		}
-	}
-	return false
+	return azp != "" && slices.Contains(c.cfg.AuthorizedParties, azp)
 }
 
 // key returns the signing key for kid, refreshing the JWKS when it is stale or

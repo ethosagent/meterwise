@@ -71,6 +71,11 @@ func (s *StubPrincipalResolver) Resolve(r *http.Request) (contract.Session, erro
 
 type sessionKey struct{}
 
+// withSession attaches the session the gateway resolved; the only writer of the context key.
+func withSession(ctx context.Context, s contract.Session) context.Context {
+	return context.WithValue(ctx, sessionKey{}, s)
+}
+
 // SessionFrom returns the session the gateway attached; ok is false on a public route.
 func SessionFrom(ctx context.Context) (contract.Session, bool) {
 	s, ok := ctx.Value(sessionKey{}).(contract.Session)
@@ -81,30 +86,4 @@ func SessionFrom(ctx context.Context) (contract.Session, bool) {
 func PrincipalFrom(ctx context.Context) (contract.Principal, bool) {
 	s, ok := SessionFrom(ctx)
 	return s.Principal, ok && s.Member
-}
-
-// gateway is the one place a session is attached and the one role check of
-// Plan 02 (replaced by RBAC in Plan 03): the route's permission decides, handlers
-// never look at the role. PermSelf needs only a valid, undeleted user; anything
-// else needs an active membership (403 not_invited otherwise) and a role that
-// contract.Allows (403 forbidden).
-func (s *server) gateway(res PrincipalResolver, perm contract.Permission, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sess, err := res.Resolve(r)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		if perm != contract.PermSelf {
-			if !sess.Member {
-				writeError(w, contract.NewError(contract.CodeNotInvited, "this account has not been invited to the organization"))
-				return
-			}
-			if !contract.Allows(sess.Principal.Role, perm) {
-				writeError(w, contract.NewError(contract.CodeForbidden, "your role cannot do this"))
-				return
-			}
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, sess)))
-	})
 }

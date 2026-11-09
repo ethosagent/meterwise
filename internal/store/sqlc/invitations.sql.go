@@ -243,6 +243,39 @@ func (q *Queries) RevokeInvitation(ctx context.Context, arg RevokeInvitationPara
 	return clerk_invitation_id, err
 }
 
+const revokeOpenInvitationsForEmail = `-- name: RevokeOpenInvitationsForEmail :many
+UPDATE invitations SET revoked_at = $1::timestamptz
+WHERE org_id = $2::text::uuid AND email = $3
+  AND accepted_at IS NULL AND revoked_at IS NULL
+RETURNING COALESCE(clerk_invitation_id, '')::text AS clerk_invitation_id
+`
+
+type RevokeOpenInvitationsForEmailParams struct {
+	Now   pgtype.Timestamptz
+	OrgID string
+	Email string
+}
+
+func (q *Queries) RevokeOpenInvitationsForEmail(ctx context.Context, arg RevokeOpenInvitationsForEmailParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, revokeOpenInvitationsForEmail, arg.Now, arg.OrgID, arg.Email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var clerk_invitation_id string
+		if err := rows.Scan(&clerk_invitation_id); err != nil {
+			return nil, err
+		}
+		items = append(items, clerk_invitation_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const supersedeExpiredInvitations = `-- name: SupersedeExpiredInvitations :exec
 UPDATE invitations SET revoked_at = $1::timestamptz
 WHERE org_id = $2::text::uuid AND email = $3

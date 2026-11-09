@@ -78,6 +78,49 @@ func (q *Queries) MergePreferences(ctx context.Context, arg MergePreferencesPara
 	return preferences, err
 }
 
+const resolveUser = `-- name: ResolveUser :one
+SELECT u.id::text AS id, u.clerk_user_id, u.email, u.name, u.avatar_url,
+       (u.deleted_at IS NOT NULL)::boolean AS deleted,
+       COALESCE(m.role, '')::text AS role, COALESCE(m.status, '')::text AS status
+FROM users u
+LEFT JOIN memberships m ON m.org_id = u.org_id AND m.user_id = u.id
+WHERE u.org_id = $1::text::uuid AND u.clerk_user_id = $2
+`
+
+type ResolveUserParams struct {
+	OrgID       string
+	ClerkUserID string
+}
+
+type ResolveUserRow struct {
+	ID          string
+	ClerkUserID string
+	Email       string
+	Name        string
+	AvatarUrl   string
+	Deleted     bool
+	Role        string
+	Status      string
+}
+
+// The hot path of every request: the user and the membership in one read. role and
+// status are empty when the user has never been a member.
+func (q *Queries) ResolveUser(ctx context.Context, arg ResolveUserParams) (ResolveUserRow, error) {
+	row := q.db.QueryRow(ctx, resolveUser, arg.OrgID, arg.ClerkUserID)
+	var i ResolveUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.ClerkUserID,
+		&i.Email,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.Deleted,
+		&i.Role,
+		&i.Status,
+	)
+	return i, err
+}
+
 const softDeleteUser = `-- name: SoftDeleteUser :one
 UPDATE users SET deleted_at = now()
 WHERE org_id = $1::text::uuid AND clerk_user_id = $2 AND deleted_at IS NULL

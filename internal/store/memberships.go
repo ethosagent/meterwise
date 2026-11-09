@@ -61,6 +61,10 @@ func (s *Store) AcceptOpenInvitation(ctx context.Context, orgID, userID, email s
 		if qerr = q.UpsertActiveMembership(ctx, sqlc.UpsertActiveMembershipParams{OrgID: orgID, UserID: userID, Role: inv.Role}); qerr != nil {
 			return qerr
 		}
+		// A returning member starts with no groups, whatever a racing add left behind.
+		if qerr = q.DeleteGroupUsersOfUser(ctx, sqlc.DeleteGroupUsersOfUserParams{OrgID: orgID, UserID: userID}); qerr != nil {
+			return qerr
+		}
 		role, ok = contract.Role(inv.Role), true
 		return nil
 	})
@@ -73,4 +77,27 @@ func (s *Store) UpsertActiveMembership(ctx context.Context, orgID, userID string
 		return errNotFound
 	}
 	return queryErr(s.q.UpsertActiveMembership(ctx, sqlc.UpsertActiveMembershipParams{OrgID: orgID, UserID: userID, Role: string(role)}))
+}
+
+// ReactivateRemovedAdmin makes the removed admin whose mirrored email is email an
+// active admin again and reports whether there was one. email must be normalised.
+// It exists for the operator's bootstrap-admin command, the one way back in when
+// every admin has been removed; requests are never authorised by users.email.
+func (s *Store) ReactivateRemovedAdmin(ctx context.Context, orgID, email string) (bool, error) {
+	found := false
+	err := s.inTx(ctx, func(q *sqlc.Queries) error {
+		id, err := q.GetRemovedAdminByEmail(ctx, sqlc.GetRemovedAdminByEmailParams{OrgID: orgID, Email: email})
+		if err != nil {
+			if isNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		found = true
+		if err := q.UpsertActiveMembership(ctx, sqlc.UpsertActiveMembershipParams{OrgID: orgID, UserID: id, Role: string(contract.RoleAdmin)}); err != nil {
+			return err
+		}
+		return q.DeleteGroupUsersOfUser(ctx, sqlc.DeleteGroupUsersOfUserParams{OrgID: orgID, UserID: id})
+	})
+	return found, queryErr(err)
 }

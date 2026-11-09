@@ -84,6 +84,9 @@ func tsInterface(d contract.DTO) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("%s.%s: %w", d.Name, f.Name, err)
 		}
+		if f.Type.Kind() == reflect.Pointer && !optional {
+			ty += " | null" // a pointer without omitempty is sent as null
+		}
 		q := ""
 		if optional {
 			q = "?"
@@ -130,10 +133,14 @@ func genContractTS() ([]byte, error) {
 		}
 		b.WriteString(s + "\n")
 	}
-	b.WriteString("export interface RouteSpec {\n  method: string;\n  pattern: string;\n  permission: string;\n  public: boolean;\n}\n\n")
+	b.WriteString("export interface RouteSpec {\n  method: string;\n  pattern: string;\n  permission: string;\n  workspaceParam?: string;\n  public: boolean;\n}\n\n")
 	b.WriteString("export const ROUTES: readonly RouteSpec[] = [\n")
 	for _, r := range contract.Routes() {
-		fmt.Fprintf(&b, "  { method: %q, pattern: %q, permission: %q, public: %t },\n", r.Method, r.Pattern, string(r.Permission), r.Public)
+		ws := ""
+		if r.WorkspaceParam != "" {
+			ws = fmt.Sprintf(" workspaceParam: %q,", r.WorkspaceParam)
+		}
+		fmt.Fprintf(&b, "  { method: %q, pattern: %q, permission: %q,%s public: %t },\n", r.Method, r.Pattern, string(r.Permission), ws, r.Public)
 	}
 	b.WriteString("];\n")
 	return []byte(b.String()), nil

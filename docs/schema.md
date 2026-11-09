@@ -85,3 +85,74 @@ Owner: `invitations` (created in `0006_invitations.sql`)
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0006_invitations.sql |
 | `accepted_at` | `timestamptz` | 0006_invitations.sql |
 | `revoked_at` | `timestamptz` | 0006_invitations.sql |
+
+## resource_permissions
+
+Owner: `resource_permissions` (created in `0007_resource_permissions.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | 0007_resource_permissions.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0007_resource_permissions.sql |
+| `workspace_id` | `uuid REFERENCES workspaces (id) ON DELETE CASCADE` | 0007_resource_permissions.sql |
+| `resource_type` | `text NOT NULL CHECK (resource_type <> '')` | 0007_resource_permissions.sql |
+| `resource_id` | `text` | 0007_resource_permissions.sql |
+| `action` | `text NOT NULL CHECK (action <> '')` | 0007_resource_permissions.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0007_resource_permissions.sql |
+
+## groups
+
+Owner: `groups` (created in `0008_groups.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | 0008_groups.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0008_groups.sql |
+| `name` | `text NOT NULL CHECK (length(name) BETWEEN 1 AND 80 AND name = btrim(name))` | 0008_groups.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0008_groups.sql |
+
+## group_workspaces
+
+Owner: `groups` (created in `0008_groups.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `group_id` | `uuid NOT NULL REFERENCES groups (id) ON DELETE CASCADE` | 0008_groups.sql |
+| `workspace_id` | `uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE` | 0008_groups.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0008_groups.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0008_groups.sql |
+
+## group_users
+
+Owner: `groups` (created in `0008_groups.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `group_id` | `uuid NOT NULL REFERENCES groups (id) ON DELETE CASCADE` | 0008_groups.sql |
+| `user_id` | `uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE` | 0008_groups.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0008_groups.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0008_groups.sql |
+
+## group_permissions
+
+Owner: `groups` (created in `0008_groups.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `group_id` | `uuid NOT NULL REFERENCES groups (id) ON DELETE CASCADE` | 0008_groups.sql |
+| `permission_id` | `uuid NOT NULL REFERENCES resource_permissions (id) ON DELETE CASCADE` | 0008_groups.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0008_groups.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0008_groups.sql |
+
+## organization_permissions
+
+Owner: `organization_permissions` (created in `0009_organization_permissions.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `uuid PRIMARY KEY DEFAULT gen_random_uuid()` | 0009_organization_permissions.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0009_organization_permissions.sql |
+| `workspace_id` | `uuid REFERENCES workspaces (id) ON DELETE CASCADE` | 0009_organization_permissions.sql |
+| `resource_type` | `text NOT NULL CHECK (resource_type <> '')` | 0009_organization_permissions.sql |
+| `action` | `text NOT NULL CHECK (action <> '')` | 0009_organization_permissions.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0009_organization_permissions.sql |

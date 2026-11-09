@@ -14,6 +14,9 @@ const (
 	RoleMember Role = "member"
 )
 
+// Valid reports whether r is one of the two roles.
+func (r Role) Valid() bool { return r == RoleAdmin || r == RoleMember }
+
 // Roles lists the valid roles in a fixed order.
 func Roles() []Role { return []Role{RoleAdmin, RoleMember} }
 
@@ -21,6 +24,26 @@ func Roles() []Role { return []Role{RoleAdmin, RoleMember} }
 func InvitationStatuses() []InvitationStatus {
 	return []InvitationStatus{InvitationPending, InvitationAccepted, InvitationRevoked, InvitationExpired}
 }
+
+// Profile is a user's stored UI state: preferences and the active workspace id
+// ("" when unset). The id is as stored and may name a workspace that is gone or
+// that the user can no longer read; resolving it is the caller's job.
+type Profile struct {
+	Preferences       Preferences
+	ActiveWorkspaceID string
+}
+
+// GrantRow is one granted permission as stored: GroupID is "" for an org default, WorkspaceID is ""
+// for "every workspace" (and for org-scoped resources).
+type GrantRow struct {
+	GroupID      string
+	WorkspaceID  string
+	ResourceType string
+	Action       string
+}
+
+// GrantSpec is a resource type and action; the taxonomy (package access) decides which exist.
+type GrantSpec struct{ ResourceType, Action string }
 
 // Identity is what an IdentityProvider proves about a bearer token. Email and
 // EmailVerified come from the session token's claims; an invitation is matched

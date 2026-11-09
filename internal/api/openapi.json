@@ -1,6 +1,17 @@
 {
   "components": {
     "schemas": {
+      "AddGroupMemberRequest": {
+        "properties": {
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "type": "object"
+      },
       "AppConfig": {
         "properties": {
           "appName": {
@@ -13,6 +24,17 @@
         "required": [
           "appName",
           "proxyPublicHost"
+        ],
+        "type": "object"
+      },
+      "AttachWorkspaceRequest": {
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspaceId"
         ],
         "type": "object"
       },
@@ -50,14 +72,17 @@
         "properties": {
           "code": {
             "enum": [
+              "already_member",
               "config_invalid",
               "conflict",
               "default_workspace",
               "duplicate_invitation",
               "forbidden",
               "gone",
+              "group_name_taken",
               "internal",
               "invalid_request",
+              "last_admin",
               "not_available",
               "not_found",
               "not_invited",
@@ -81,6 +106,101 @@
           "code",
           "message",
           "details"
+        ],
+        "type": "object"
+      },
+      "Grant": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "workspaceId",
+          "resourceType",
+          "action"
+        ],
+        "type": "object"
+      },
+      "GrantList": {
+        "properties": {
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "grants"
+        ],
+        "type": "object"
+      },
+      "Group": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "memberCount": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "workspaceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "memberCount",
+          "workspaceIds",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "GroupList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Group"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "GroupRequest": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -157,7 +277,14 @@
       "Me": {
         "properties": {
           "activeWorkspaceId": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "orgId": {
             "type": "string"
@@ -208,6 +335,80 @@
         ],
         "type": "object"
       },
+      "Member": {
+        "properties": {
+          "avatarUrl": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "groupIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "joinedAt": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "name",
+          "avatarUrl",
+          "role",
+          "groupIds",
+          "joinedAt"
+        ],
+        "type": "object"
+      },
+      "MemberList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PermissionSnapshot": {
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "admin",
+          "grants"
+        ],
+        "type": "object"
+      },
       "Preferences": {
         "properties": {
           "reducedMotion": {
@@ -253,6 +454,21 @@
         },
         "required": [
           "activeWorkspaceId"
+        ],
+        "type": "object"
+      },
+      "UpdateMemberRequest": {
+        "properties": {
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
         ],
         "type": "object"
       },
@@ -412,6 +628,433 @@
         "summary": "App name and public proxy host for the shell"
       }
     },
+    "/api/groups": {
+      "get": {
+        "operationId": "getApiGroups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List groups",
+        "x-permission": "member:read"
+      },
+      "post": {
+        "operationId": "postApiGroups",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a group; 409 group_name_taken",
+        "x-permission": "admin"
+      }
+    },
+    "/api/groups/{id}": {
+      "delete": {
+        "operationId": "deleteApiGroupsId",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete a group and everything it grants",
+        "x-permission": "admin"
+      },
+      "get": {
+        "operationId": "getApiGroupsId",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read a group",
+        "x-permission": "member:read"
+      },
+      "patch": {
+        "operationId": "patchApiGroupsId",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rename a group; 409 group_name_taken",
+        "x-permission": "admin"
+      }
+    },
+    "/api/groups/{id}/members": {
+      "get": {
+        "operationId": "getApiGroupsIdMembers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "A group's members",
+        "x-permission": "member:read"
+      },
+      "post": {
+        "operationId": "postApiGroupsIdMembers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGroupMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Add an active member to a group; idempotent",
+        "x-permission": "admin"
+      }
+    },
+    "/api/groups/{id}/members/{userId}": {
+      "delete": {
+        "operationId": "deleteApiGroupsIdMembersUserId",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a member from a group",
+        "x-permission": "admin"
+      }
+    },
+    "/api/groups/{id}/permissions": {
+      "get": {
+        "operationId": "getApiGroupsIdPermissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "A group's grants",
+        "x-permission": "member:read"
+      },
+      "put": {
+        "operationId": "putApiGroupsIdPermissions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantList"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Replace a group's grants in one transaction",
+        "x-permission": "admin"
+      }
+    },
+    "/api/groups/{id}/workspaces": {
+      "post": {
+        "operationId": "postApiGroupsIdWorkspaces",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachWorkspaceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Attach a group to a workspace (seeds read grants); idempotent",
+        "x-permission": "admin"
+      }
+    },
+    "/api/groups/{id}/workspaces/{wsId}": {
+      "delete": {
+        "operationId": "deleteApiGroupsIdWorkspacesWsId",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Detach a group from a workspace and drop its grants there",
+        "x-permission": "admin"
+      }
+    },
     "/api/invitations": {
       "get": {
         "operationId": "getApiInvitations",
@@ -443,7 +1086,7 @@
           }
         ],
         "summary": "List invitations",
-        "x-permission": "admin"
+        "x-permission": "member:manage"
       },
       "post": {
         "operationId": "postApiInvitations",
@@ -484,8 +1127,8 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Invite an email into the organization",
-        "x-permission": "admin"
+        "summary": "Invite an email into the organization; 409 already_member for an active member; role admin needs an admin",
+        "x-permission": "member:manage"
       }
     },
     "/api/invitations/{id}": {
@@ -512,7 +1155,7 @@
           }
         ],
         "summary": "Revoke an invitation",
-        "x-permission": "admin"
+        "x-permission": "member:manage"
       }
     },
     "/api/invitations/{id}/resend": {
@@ -546,7 +1189,7 @@
           }
         ],
         "summary": "Replace a pending invitation with a fresh one",
-        "x-permission": "admin"
+        "x-permission": "member:manage"
       }
     },
     "/api/me": {
@@ -580,6 +1223,40 @@
           }
         ],
         "summary": "The caller, role, active workspace and preferences; 403 not_invited without a membership",
+        "x-permission": "self"
+      }
+    },
+    "/api/me/permissions": {
+      "get": {
+        "operationId": "getApiMePermissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionSnapshot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The caller's permission snapshot: admin, or the flattened grants",
         "x-permission": "self"
       }
     },
@@ -657,6 +1334,185 @@
         ],
         "summary": "Change the caller's UI preferences",
         "x-permission": "self"
+      }
+    },
+    "/api/members": {
+      "get": {
+        "operationId": "getApiMembers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the active members",
+        "x-permission": "member:read"
+      }
+    },
+    "/api/members/{userId}": {
+      "delete": {
+        "operationId": "deleteApiMembersUserId",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a member; 409 last_admin when it would leave no admin",
+        "x-permission": "admin"
+      },
+      "patch": {
+        "operationId": "patchApiMembersUserId",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change a member's role; 409 last_admin when it would leave no admin",
+        "x-permission": "admin"
+      }
+    },
+    "/api/organization/permissions": {
+      "get": {
+        "operationId": "getApiOrganizationPermissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The org defaults every member gets",
+        "x-permission": "member:read"
+      },
+      "put": {
+        "operationId": "putApiOrganizationPermissions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantList"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Replace the org defaults in one transaction",
+        "x-permission": "admin"
       }
     },
     "/api/v1/version": {
@@ -740,7 +1596,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "List the organization's workspaces",
+        "summary": "List the workspaces the caller can read (workspace:read)",
         "x-permission": "member"
       },
       "post": {
@@ -810,7 +1666,8 @@
           }
         ],
         "summary": "Delete a workspace (never the default)",
-        "x-permission": "admin"
+        "x-permission": "workspace:manage",
+        "x-workspace-param": "id"
       },
       "patch": {
         "operationId": "patchApiWorkspacesId",
@@ -852,7 +1709,8 @@
           }
         ],
         "summary": "Rename a workspace or change its settings",
-        "x-permission": "admin"
+        "x-permission": "workspace:write",
+        "x-workspace-param": "id"
       }
     },
     "/api/workspaces/{id}/switch": {
@@ -886,7 +1744,8 @@
           }
         ],
         "summary": "Make a workspace the caller's active one",
-        "x-permission": "member"
+        "x-permission": "workspace:read",
+        "x-workspace-param": "id"
       }
     },
     "/healthz": {

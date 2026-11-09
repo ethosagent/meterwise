@@ -17,6 +17,7 @@ import (
 )
 
 type rig struct {
+	db   *store.Store
 	svc  *tenancy.Service
 	mock *clerkmock.Server
 	clk  *clock
@@ -57,7 +58,7 @@ func newRigLogged(t *testing.T, maxWS int) (rig, *syncLog) {
 	if err := svc.EnsureDefaults(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	return rig{svc: svc, mock: mock, clk: clk}, logs
+	return rig{db: db, svc: svc, mock: mock, clk: clk}, logs
 }
 
 // syncLog is a goroutine-safe log sink.
@@ -246,9 +247,22 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 	sess, _ := r.svc.Resolve(ctx, contract.Identity{Subject: "user_1"})
 	p := sess.Principal
 
-	_, def, err := r.svc.Profile(ctx, u.User.ID)
-	if err != nil || def == "" {
-		t.Fatalf("profile default: %q %v", def, err)
+	all := func(string) bool { return true }
+	activeNow := func() string {
+		t.Helper()
+		prof, err := r.svc.Profile(ctx, u.User.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		list, err := r.svc.ListWorkspaces(ctx, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tenancy.ActiveWorkspace(prof.ActiveWorkspaceID, list, all)
+	}
+	def := activeNow()
+	if def == "" {
+		t.Fatal("an unset active workspace must fall back to the default")
 	}
 	ws, err := r.svc.CreateWorkspace(ctx, p, "  Alpha ")
 	if err != nil || ws.Name != "Alpha" || len(ws.PublicID) != 22 {
@@ -267,7 +281,7 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 	if got, err := r.svc.SwitchWorkspace(ctx, p, ws.ID); err != nil || got != ws.ID {
 		t.Fatalf("switch: %q %v", got, err)
 	}
-	if _, active, _ := r.svc.Profile(ctx, u.User.ID); active != ws.ID {
+	if active := activeNow(); active != ws.ID {
 		t.Fatalf("switch not persisted: %q", active)
 	}
 	if _, err := r.svc.SwitchWorkspace(ctx, p, "00000000-0000-0000-0000-000000000042"); errCode(err) != contract.CodeNotFound {
@@ -293,7 +307,7 @@ func TestWorkspaceLifecycleAndSwitching(t *testing.T) {
 	if err := r.svc.DeleteWorkspace(ctx, p, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, active, _ := r.svc.Profile(ctx, u.User.ID); active != def {
+	if active := activeNow(); active != def {
 		t.Fatalf("a deleted active workspace must fall back to the default, got %q", active)
 	}
 	if err := r.svc.DeleteWorkspace(ctx, p, ws.ID); errCode(err) != contract.CodeNotFound {
@@ -309,8 +323,8 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	if err != nil || got.Theme != dark || !got.ReducedMotion {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if got, _ = r.svc.Preferences(ctx, s.User.ID); got.Theme != dark {
-		t.Fatalf("%+v", got)
+	if prof, _ := r.svc.Profile(ctx, s.User.ID); prof.Preferences.Theme != dark {
+		t.Fatalf("%+v", prof)
 	}
 }
 

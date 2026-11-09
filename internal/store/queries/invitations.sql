@@ -44,3 +44,9 @@ RETURNING COALESCE(clerk_invitation_id, '') AS clerk_invitation_id;
 UPDATE invitations SET clerk_invitation_id = sqlc.narg(clerk_invitation_id), expires_at = sqlc.arg(expires_at)::timestamptz
 WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
   AND accepted_at IS NULL AND revoked_at IS NULL;
+
+-- name: RevokeOpenInvitationsForEmail :many
+UPDATE invitations SET revoked_at = sqlc.arg(now)::timestamptz
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND email = sqlc.arg(email)
+  AND accepted_at IS NULL AND revoked_at IS NULL
+RETURNING COALESCE(clerk_invitation_id, '')::text AS clerk_invitation_id;

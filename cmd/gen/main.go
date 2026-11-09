@@ -23,6 +23,7 @@ func targets() []target {
 	return []target{
 		{"contract-ts", "web/src/contract/generated.ts", func(string) ([]byte, error) { return genContractTS() }},
 		{"openapi", "internal/api/openapi.json", func(string) ([]byte, error) { return genOpenAPI() }},
+		{"taxonomy", taxonomyPath, func(string) ([]byte, error) { return genTaxonomyTS() }},
 		{"schema", "docs/schema.md", func(root string) ([]byte, error) {
 			ms, _, err := loadMigrations(os.DirFS(root), migrationsDir)
 			if err != nil {
@@ -63,7 +64,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		failed = runTarget(*root, t, *check, stdout, stderr) || failed
 	}
 	if !ran {
-		fmt.Fprintf(stderr, "gen: unknown target %q (all|contract-ts|openapi|schema|migrations)\n", what)
+		fmt.Fprintf(stderr, "gen: unknown target %q (all|contract-ts|openapi|taxonomy|schema|migrations)\n", what)
 		return 2
 	}
 	if failed {

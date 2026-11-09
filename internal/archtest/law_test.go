@@ -29,7 +29,7 @@ type pkg struct {
 }
 
 // allRules lists every rule ID; seeded_test.go must seed each one.
-var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10"}
+var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10", "H11"}
 
 // rank orders the layers of rule H2: a package may import its own rank or
 // lower, never higher. contract and nonet are below everything (rank 0).

@@ -54,6 +54,7 @@ internal/archtest             standalone: standard library only, imported by nob
 | H7 | No `//go:build`, `// +build` or GOOS/GOARCH file suffix: a constraint can hide code from every gate. Allowlist per file with an ADR. |
 | H8 | Every package with tests has a `TestMain` that really calls `nonet.Run` (checked on the AST, a comment does not count): no test reaches the external network by name. |
 | H9 | One module plus `tools/`: a nested `go.mod` or any `go.work` hides packages from every gate. |
+| H11 | No inline role checks (`.Role ==`, `RoleAdmin` comparisons, `contract.Allows`) outside `contract`, `access`, `store`: access is decided by the gateway and the evaluator only. |
 
 The arch gate runs `go list` with `-mod=readonly`: it never downloads a module or rewrites `go.mod`.
 
@@ -115,7 +116,7 @@ A gate whose inputs do not exist yet prints `! SKIP <gate>: <reason>` and fails 
 | `internal/api/openapi.json` | route table and DTOs | `go run ./cmd/gen` |
 | `docs/schema.md` | `internal/store/migrations` | `go run ./cmd/gen` |
 | `internal/store/sqlc/**` | `internal/store/queries`, migrations | `sqlc generate` (pinned in `tools/`) |
-| RBAC taxonomy twin | `internal/contract/taxonomy.go` (from the access plan) | `go run ./cmd/gen` |
+| RBAC taxonomy twin | `internal/access/taxonomy.go`, twin `web/src/access/taxonomy.ts` | `go run ./cmd/gen` |
 
 They are denied to whole-file reads in `.claude/settings.json` and `read-guard.sh`; read the source instead.
 

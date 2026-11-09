@@ -13,13 +13,6 @@ import (
 // sight and refreshes non-empty profile fields afterwards. A soft-deleted user
 // stays deleted (User.Deleted is true).
 func (s *Store) UpsertUser(ctx context.Context, orgID string, id contract.Identity) (contract.User, error) {
-	// The common case (a returning user, nothing new in the claims) is one read, not a write.
-	if u, err := s.q.GetUserByClerkID(ctx, sqlc.GetUserByClerkIDParams{OrgID: orgID, ClerkUserID: id.Subject}); err == nil {
-		same := (id.Email == "" || strings.EqualFold(id.Email, u.Email)) && (id.Name == "" || id.Name == u.Name) && (id.AvatarURL == "" || id.AvatarURL == u.AvatarUrl)
-		if same {
-			return contract.User{ID: u.ID, ClerkUserID: u.ClerkUserID, Email: u.Email, Name: u.Name, AvatarURL: u.AvatarUrl, Deleted: u.Deleted}, nil
-		}
-	}
 	r, err := s.q.UpsertUser(ctx, sqlc.UpsertUserParams{
 		OrgID: orgID, ClerkUserID: id.Subject, Email: id.Email, Name: id.Name, AvatarUrl: id.AvatarURL,
 	})
@@ -27,6 +20,26 @@ func (s *Store) UpsertUser(ctx context.Context, orgID string, id contract.Identi
 		return contract.User{}, queryErr(err)
 	}
 	return contract.User{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}, nil
+}
+
+// ResolveUser is the per-request read: the mirrored user and the membership in one
+// round trip. Only when the user row is missing or the token claims differ from it
+// does it fall back to the lazy upsert (so the zero-webhook mirror still works) and
+// a second read of the membership.
+func (s *Store) ResolveUser(ctx context.Context, orgID string, id contract.Identity) (u contract.User, role contract.Role, active bool, err error) {
+	if r, rerr := s.q.ResolveUser(ctx, sqlc.ResolveUserParams{OrgID: orgID, ClerkUserID: id.Subject}); rerr == nil {
+		same := (id.Email == "" || strings.EqualFold(id.Email, r.Email)) && (id.Name == "" || id.Name == r.Name) && (id.AvatarURL == "" || id.AvatarURL == r.AvatarUrl)
+		if same {
+			u = contract.User{ID: r.ID, ClerkUserID: r.ClerkUserID, Email: r.Email, Name: r.Name, AvatarURL: r.AvatarUrl, Deleted: r.Deleted}
+			return u, contract.Role(r.Role), r.Status == "active", nil
+		}
+	}
+	u, err = s.UpsertUser(ctx, orgID, id)
+	if err != nil {
+		return contract.User{}, "", false, err
+	}
+	role, active, _, err = s.Membership(ctx, orgID, u.ID)
+	return u, role, active, err
 }
 
 // SoftDeleteUser marks the user deleted and removes their memberships in one
@@ -37,39 +50,43 @@ func (s *Store) SoftDeleteUser(ctx context.Context, orgID, clerkUserID string) e
 		if _, err := q.SoftDeleteUser(ctx, sqlc.SoftDeleteUserParams{OrgID: orgID, ClerkUserID: clerkUserID}); err != nil && !isNotFound(err) {
 			return err
 		}
-		return q.RemoveMembershipsForClerkUser(ctx, sqlc.RemoveMembershipsForClerkUserParams{OrgID: orgID, ClerkUserID: clerkUserID})
+		if err := q.RemoveMembershipsForClerkUser(ctx, sqlc.RemoveMembershipsForClerkUserParams{OrgID: orgID, ClerkUserID: clerkUserID}); err != nil {
+			return err
+		}
+		return q.DeleteGroupUsersOfClerkUser(ctx, sqlc.DeleteGroupUsersOfClerkUserParams{OrgID: orgID, ClerkUserID: clerkUserID})
 	}))
 }
 
-// Preferences returns the stored UI preferences and the active workspace id ("" when unset).
-func (s *Store) Preferences(ctx context.Context, orgID, userID string) (contract.Preferences, string, error) {
+// Profile returns the stored UI preferences and the stored active workspace id
+// ("" when unset; it may name a workspace that no longer exists).
+func (s *Store) Profile(ctx context.Context, orgID, userID string) (contract.Profile, error) {
 	if !validID(userID) {
-		return contract.Preferences{}, "", errNotFound
+		return contract.Profile{}, errNotFound
 	}
 	raw, err := s.q.GetPreferences(ctx, sqlc.GetPreferencesParams{OrgID: orgID, UserID: userID})
 	if err != nil {
-		return contract.Preferences{}, "", queryErr(err)
+		return contract.Profile{}, queryErr(err)
 	}
-	return decodePreferences(raw)
+	return decodeProfile(raw), nil
 }
 
-// MergePreferences merges patch (top-level keys) into the user's preferences and returns the result.
-func (s *Store) MergePreferences(ctx context.Context, orgID, userID string, patch map[string]any) (contract.Preferences, string, error) {
+// MergeProfile merges patch (top-level keys) into the user's stored profile and returns the result.
+func (s *Store) MergeProfile(ctx context.Context, orgID, userID string, patch map[string]any) (contract.Profile, error) {
 	if !validID(userID) {
-		return contract.Preferences{}, "", errNotFound
+		return contract.Profile{}, errNotFound
 	}
 	b, err := json.Marshal(patch)
 	if err != nil {
-		return contract.Preferences{}, "", fail(ClassPool, "store: preferences patch is not JSON")
+		return contract.Profile{}, fail(ClassPool, "store: preferences patch is not JSON")
 	}
 	raw, err := s.q.MergePreferences(ctx, sqlc.MergePreferencesParams{Patch: b, OrgID: orgID, UserID: userID})
 	if err != nil {
-		return contract.Preferences{}, "", queryErr(err)
+		return contract.Profile{}, queryErr(err)
 	}
-	return decodePreferences(raw)
+	return decodeProfile(raw), nil
 }
 
-func decodePreferences(raw []byte) (contract.Preferences, string, error) {
+func decodeProfile(raw []byte) contract.Profile {
 	var stored struct {
 		Theme             contract.Theme `json:"theme"`
 		ReducedMotion     bool           `json:"reducedMotion"`
@@ -79,7 +96,7 @@ func decodePreferences(raw []byte) (contract.Preferences, string, error) {
 	if !stored.Theme.Valid() {
 		stored.Theme = contract.ThemeSystem
 	}
-	return contract.Preferences{Theme: stored.Theme, ReducedMotion: stored.ReducedMotion}, stored.ActiveWorkspaceID, nil
+	return contract.Profile{Preferences: contract.Preferences{Theme: stored.Theme, ReducedMotion: stored.ReducedMotion}, ActiveWorkspaceID: stored.ActiveWorkspaceID}
 }
 
 // inTx runs fn in one transaction. Errors are raw (so callers can test for a
@@ -94,4 +111,20 @@ func (s *Store) inTx(ctx context.Context, fn func(*sqlc.Queries) error) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// Preferences and MergePreferences are thin views over Profile and MergeProfile, kept
+// only until internal/store/sqlc/queries_test.go (a path the edit guard denies the
+// implementer) is moved to the struct API. New code uses Profile.
+
+// Preferences returns the stored preferences and active workspace id of a user.
+func (s *Store) Preferences(ctx context.Context, orgID, userID string) (contract.Preferences, string, error) {
+	p, err := s.Profile(ctx, orgID, userID)
+	return p.Preferences, p.ActiveWorkspaceID, err
+}
+
+// MergePreferences is MergeProfile returning the legacy triple.
+func (s *Store) MergePreferences(ctx context.Context, orgID, userID string, patch map[string]any) (contract.Preferences, string, error) {
+	p, err := s.MergeProfile(ctx, orgID, userID, patch)
+	return p.Preferences, p.ActiveWorkspaceID, err
 }

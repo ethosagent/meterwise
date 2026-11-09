@@ -94,10 +94,10 @@ func TestEndToEndInviteFirstLoginMembershipWorkspaceSwitchDelete(t *testing.T) {
 	st, b = e.do("POST", "/api/auth/complete-signup", founder, "")
 	e.want(200, st, b, "founder complete-signup")
 	me := decodeInto[contract.Me](t, b)
-	if me.Role != contract.RoleAdmin || me.ActiveWorkspaceID == "" {
+	if me.Role != contract.RoleAdmin || me.ActiveWorkspaceID == nil {
 		t.Fatalf("founder me = %+v", me)
 	}
-	defaultWS := me.ActiveWorkspaceID
+	defaultWS := *me.ActiveWorkspaceID
 
 	// 4. the admin invites a member; Clerk is asked to send the email
 	st, b = e.do("POST", "/api/invitations", founder, `{"email":"Member@Example.test","role":"member"}`)
@@ -109,7 +109,7 @@ func TestEndToEndInviteFirstLoginMembershipWorkspaceSwitchDelete(t *testing.T) {
 	// 5. the member's first login creates their membership; they cannot use admin routes
 	st, b = e.do("POST", "/api/auth/complete-signup", member, "")
 	e.want(200, st, b, "member complete-signup")
-	if got := decodeInto[contract.Me](t, b); got.Role != contract.RoleMember || got.ActiveWorkspaceID != defaultWS {
+	if got := decodeInto[contract.Me](t, b); got.Role != contract.RoleMember || str(got.ActiveWorkspaceID) != defaultWS {
 		t.Fatalf("member me = %+v", got)
 	}
 	st, b = e.do("GET", "/api/invitations", member, "")
@@ -125,12 +125,12 @@ func TestEndToEndInviteFirstLoginMembershipWorkspaceSwitchDelete(t *testing.T) {
 	st, b = e.do("POST", "/api/workspaces/"+ws.ID+"/switch", member, "")
 	e.want(200, st, b, "switch")
 	_, b = e.do("GET", "/api/me", member, "")
-	if got := decodeInto[contract.Me](t, b).ActiveWorkspaceID; got != ws.ID {
+	if got := str(decodeInto[contract.Me](t, b).ActiveWorkspaceID); got != ws.ID {
 		t.Fatalf("active = %s, want %s", got, ws.ID)
 	}
 	// the founder's own active workspace is unaffected by the member's switch
 	_, b = e.do("GET", "/api/me", founder, "")
-	if got := decodeInto[contract.Me](t, b).ActiveWorkspaceID; got != defaultWS {
+	if got := str(decodeInto[contract.Me](t, b).ActiveWorkspaceID); got != defaultWS {
 		t.Fatalf("founder active = %s, want the default %s", got, defaultWS)
 	}
 	// ruling: create is open to members; rename and delete are admin-only
@@ -143,7 +143,7 @@ func TestEndToEndInviteFirstLoginMembershipWorkspaceSwitchDelete(t *testing.T) {
 	st, b = e.do("DELETE", "/api/workspaces/"+defaultWS, founder, "")
 	e.want(409, st, b, "delete default workspace")
 	_, b = e.do("GET", "/api/me", member, "")
-	if got := decodeInto[contract.Me](t, b).ActiveWorkspaceID; got != defaultWS {
+	if got := str(decodeInto[contract.Me](t, b).ActiveWorkspaceID); got != defaultWS {
 		t.Fatalf("after deleting the active workspace: %s, want default %s", got, defaultWS)
 	}
 
@@ -221,9 +221,17 @@ func TestDevBootWithoutClerkSignsInASeededAdminThroughTheRealTables(t *testing.T
 	st, b := e.do("GET", "/api/me", "", "")
 	e.want(200, st, b, "dev /api/me")
 	me := decodeInto[contract.Me](t, b)
-	if me.Role != contract.RoleAdmin || me.User.Email != "dev-admin@meterwise.local" || me.ActiveWorkspaceID == "" {
+	if me.Role != contract.RoleAdmin || me.User.Email != "dev-admin@meterwise.local" || me.ActiveWorkspaceID == nil {
 		t.Fatalf("dev me = %+v", me)
 	}
 	st, b = e.do("POST", "/api/workspaces", "", `{"name":"dev ws"}`)
 	e.want(201, st, b, "dev create workspace")
+}
+
+// str dereferences a nullable id; "" when null.
+func str(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

@@ -27,3 +27,13 @@ WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(user_id)::text::uu
 UPDATE users SET preferences = preferences || sqlc.arg(patch)::jsonb
 WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(user_id)::text::uuid
 RETURNING preferences;
+
+-- name: ResolveUser :one
+-- The hot path of every request: the user and the membership in one read. role and
+-- status are empty when the user has never been a member.
+SELECT u.id::text AS id, u.clerk_user_id, u.email, u.name, u.avatar_url,
+       (u.deleted_at IS NOT NULL)::boolean AS deleted,
+       COALESCE(m.role, '')::text AS role, COALESCE(m.status, '')::text AS status
+FROM users u
+LEFT JOIN memberships m ON m.org_id = u.org_id AND m.user_id = u.id
+WHERE u.org_id = sqlc.arg(org_id)::text::uuid AND u.clerk_user_id = sqlc.arg(clerk_user_id);

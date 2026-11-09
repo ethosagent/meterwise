@@ -34,6 +34,8 @@ type Deps struct {
 	DB              Pinger
 	Principals      PrincipalResolver
 	Tenancy         Tenancy
+	Authz           Authz           // the gateway's authorization (access.Authorizer)
+	Access          Access          // groups, group members and org defaults (access.Service)
 	Webhooks        WebhookVerifier // nil answers the Clerk webhook with not_available
 	Web             fs.FS           // built web app; nil serves a typed 404 at "/"
 	Tracer          trace.TracerProvider
@@ -53,8 +55,8 @@ type server struct {
 // recover, OTel; the principal middleware wraps each non-public route. It
 // fails when the handlers and contract.Routes disagree in either direction.
 func New(d Deps) (http.Handler, error) {
-	if d.Log == nil || d.DB == nil || d.Principals == nil || d.Tenancy == nil {
-		return nil, errors.New("api: Log, DB, Principals and Tenancy are required")
+	if d.Log == nil || d.DB == nil || d.Principals == nil || d.Tenancy == nil || d.Authz == nil || d.Access == nil {
+		return nil, errors.New("api: Log, DB, Principals, Tenancy, Authz and Access are required")
 	}
 	if d.Tracer == nil {
 		d.Tracer = otel.GetTracerProvider()
@@ -63,20 +65,9 @@ func New(d Deps) (http.Handler, error) {
 	s.handle("GET", "/healthz", s.health)
 	s.handle("GET", "/api/v1/version", s.version)
 	s.handle("GET", "/api/config", s.appConfig)
-	s.handle("GET", "/api/me/preferences", s.getPreferences)
-	s.handle("PATCH", "/api/me/preferences", s.patchPreferences)
-	s.handle("GET", "/api/me", s.getMe)
-	s.handle("POST", "/api/auth/complete-signup", s.completeSignup)
-	s.handle("GET", "/api/workspaces", s.listWorkspaces)
-	s.handle("POST", "/api/workspaces", s.createWorkspace)
-	s.handle("PATCH", "/api/workspaces/{id}", s.updateWorkspace)
-	s.handle("DELETE", "/api/workspaces/{id}", s.deleteWorkspace)
-	s.handle("POST", "/api/workspaces/{id}/switch", s.switchWorkspace)
-	s.handle("GET", "/api/invitations", s.listInvitations)
-	s.handle("POST", "/api/invitations", s.createInvitation)
-	s.handle("POST", "/api/invitations/{id}/resend", s.resendInvitation)
-	s.handle("DELETE", "/api/invitations/{id}", s.revokeInvitation)
 	s.handle("POST", "/api/webhooks/clerk", s.clerkWebhook)
+	s.registerTenancy()
+	s.registerAccess()
 	for _, r := range contract.Routes() {
 		if !s.registered[r.Method+" "+r.Pattern] {
 			s.problems = append(s.problems, fmt.Errorf("api: route %s %s is in the contract table but has no handler", r.Method, r.Pattern))
@@ -109,12 +100,12 @@ func (s *server) handle(method, pattern string, h http.HandlerFunc) {
 	key := method + " " + pattern
 	row, ok := contract.PermissionFor(method, pattern)
 	if !ok {
-		s.problems = append(s.problems, fmt.Errorf("api: handler %s has no row in the contract route table", key))
+		s.problems = append(s.problems, errNoRow(method, pattern))
 		return
 	}
 	var handler http.Handler = h
 	if !row.Public {
-		handler = s.gateway(s.Principals, row.Permission, handler)
+		handler = s.gateway(row, handler)
 	}
 	s.registered[key] = true
 	s.mux.Handle(key, handler)
@@ -139,47 +130,16 @@ func (s *server) appConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, contract.AppConfig{AppName: s.AppName, ProxyPublicHost: s.ProxyPublicHost})
 }
 
-func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
-	sess, ok := SessionFrom(r.Context())
-	if !ok {
-		writeError(w, contract.NewError(contract.CodeUnauthenticated, "authentication required"))
-		return
-	}
-	prefs, err := s.Tenancy.Preferences(r.Context(), sess.User.ID)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, prefs)
+func (s *server) getPreferences(c Call, _ none) (contract.Preferences, error) {
+	prof, err := s.Tenancy.Profile(c.Ctx, c.Session.User.ID)
+	return prof.Preferences, err
 }
 
-func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
-	sess, ok := SessionFrom(r.Context())
-	if !ok {
-		writeError(w, contract.NewError(contract.CodeUnauthenticated, "authentication required"))
-		return
-	}
-	var patch contract.PreferencesPatch
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&patch); err != nil {
-		writeError(w, contract.NewError(contract.CodeInvalidRequest, "body must be a JSON object with theme and/or reducedMotion", "body: "+decodeProblem(err)))
-		return
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		writeError(w, contract.NewError(contract.CodeInvalidRequest, "body must be a single JSON object"))
-		return
-	}
+func (s *server) patchPreferences(c Call, patch contract.PreferencesPatch) (contract.Preferences, error) {
 	if patch.Theme != nil && !patch.Theme.Valid() {
-		writeError(w, contract.NewError(contract.CodeInvalidRequest, "theme is not valid", "theme: must be one of light|dark|system"))
-		return
+		return contract.Preferences{}, contract.NewError(contract.CodeInvalidRequest, "theme is not valid", "theme: must be one of light|dark|system")
 	}
-	prefs, err := s.Tenancy.UpdatePreferences(r.Context(), sess.User.ID, patch)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, prefs)
+	return s.Tenancy.UpdatePreferences(c.Ctx, c.Session.User.ID, patch)
 }
 
 // apiError is the one mapping from an error to what a client sees: a typed

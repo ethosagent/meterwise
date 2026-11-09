@@ -74,6 +74,9 @@ func objectSchema(d contract.DTO) (map[string]any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", d.Name, f.Name, err)
 		}
+		if f.Type.Kind() == reflect.Pointer && !optional {
+			s = map[string]any{"oneOf": []any{s, map[string]any{"type": "null"}}} // sent as null
+		}
 		props[name] = s
 		if !optional {
 			required = append(required, name)
@@ -107,6 +110,9 @@ func operation(r contract.Route) map[string]any {
 	} else {
 		op["security"] = []any{map[string]any{"bearerAuth": []string{}}}
 		op["x-permission"] = string(r.Permission)
+		if r.WorkspaceParam != "" {
+			op["x-workspace-param"] = r.WorkspaceParam
+		}
 	}
 	return op
 }

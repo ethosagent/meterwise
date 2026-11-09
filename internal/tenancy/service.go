@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
 	"github.com/ethosagent/meterwise/internal/store"
@@ -75,11 +76,12 @@ func notInvited() error {
 // different address claim an invitation written for another. Internationalized addresses
 // need a proper IDN and Unicode comparison policy before they can be admitted.
 func NormalizeEmail(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if strings.IndexFunc(trimmed, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
+	// The raw value is judged: TrimSpace would strip Unicode whitespace (U+00A0, U+3000, ...)
+	// and let a different string claim an address written without it.
+	if strings.IndexFunc(raw, func(r rune) bool { return r > unicode.MaxASCII }) >= 0 {
 		return "", invalid("email", "must be a plain ASCII email address")
 	}
-	e := strings.ToLower(trimmed)
+	e := strings.ToLower(strings.TrimSpace(raw))
 	addr, err := mail.ParseAddress(e)
 	if e == "" || len(e) > maxEmailLength || err != nil || addr.Address != e || addr.Name != "" {
 		return "", invalid("email", "must be a plain email address")
@@ -101,9 +103,9 @@ func validName(raw string) (string, error) {
 // Resolve mirrors the identity into users (the lazy upsert: it works with zero
 // webhooks) and attaches the principal for an active membership. A soft-deleted
 // user is unauthenticated. Membership is read on every call, so removing it
-// takes effect on the next request.
+// takes effect on the next request. The common case is one joined read.
 func (s *Service) Resolve(ctx context.Context, id contract.Identity) (contract.Session, error) {
-	u, err := s.st.UpsertUser(ctx, s.org, id)
+	u, role, active, err := s.st.ResolveUser(ctx, s.org, id)
 	if err != nil {
 		return contract.Session{}, err
 	}
@@ -111,15 +113,17 @@ func (s *Service) Resolve(ctx context.Context, id contract.Identity) (contract.S
 		return contract.Session{}, contract.NewError(contract.CodeUnauthenticated, "invalid or expired token")
 	}
 	sess := contract.Session{Identity: id, User: u}
-	role, active, _, err := s.st.Membership(ctx, s.org, u.ID)
-	if err != nil {
-		return contract.Session{}, err
-	}
 	if active {
-		sess.Member = true
-		sess.Principal = contract.Principal{UserID: u.ID, OrgID: s.org, Email: u.Email, Role: role}
+		sess = s.asMember(sess, role)
 	}
 	return sess, nil
+}
+
+// asMember marks the session's user as an active member with role.
+func (s *Service) asMember(sess contract.Session, role contract.Role) contract.Session {
+	sess.Member = true
+	sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: role}
+	return sess
 }
 
 // CompleteSignup turns the pending invitation for the session's verified email
@@ -140,19 +144,20 @@ func (s *Service) CompleteSignup(ctx context.Context, sess contract.Session) (co
 	if err != nil {
 		return contract.Session{}, err
 	}
-	if !ok {
-		// Two tabs of the same person finish first login together: the loser finds the invitation
-		// already used, but the person is a member by then. Re-read before refusing.
-		if r, active, _, merr := s.st.Membership(ctx, s.org, sess.User.ID); merr == nil && active {
-			sess.Member = true
-			sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: r}
-			return sess, nil
-		}
+	if ok {
+		return s.asMember(sess, role), nil
+	}
+	// Two tabs of the same person finish first login together: the loser finds the invitation
+	// already used, but the person is a member by then. Re-read before refusing; a failed
+	// re-read is a failure of ours, never a verdict on the person.
+	r, active, _, err := s.st.Membership(ctx, s.org, sess.User.ID)
+	if err != nil {
+		return contract.Session{}, err
+	}
+	if !active {
 		return contract.Session{}, notInvited()
 	}
-	sess.Member = true
-	sess.Principal = contract.Principal{UserID: sess.User.ID, OrgID: s.org, Email: sess.User.Email, Role: role}
-	return sess, nil
+	return s.asMember(sess, r), nil
 }
 
 // EnsureMember makes a user an active member with role (the dev-only resolver and tests use it;
@@ -172,33 +177,29 @@ func (s *Service) DeleteWebhookUser(ctx context.Context, clerkUserID string) err
 	return s.st.SoftDeleteUser(ctx, s.org, clerkUserID)
 }
 
-// Profile returns the caller's stored preferences and the active workspace id.
-// An unset or stale (deleted) active workspace falls back to the default one.
-func (s *Service) Profile(ctx context.Context, userID string) (contract.Preferences, string, error) {
-	prefs, active, err := s.st.Preferences(ctx, s.org, userID)
-	if err != nil {
-		return contract.Preferences{}, "", err
-	}
-	list, err := s.st.ListWorkspaces(ctx, s.org)
-	if err != nil {
-		return contract.Preferences{}, "", err
-	}
-	fallback := ""
-	for _, w := range list {
-		if w.ID == active {
-			return prefs, active, nil
-		}
-		if w.IsDefault {
-			fallback = w.ID
-		}
-	}
-	return prefs, fallback, nil
+// Profile returns the caller's stored preferences and stored active workspace id.
+// ActiveWorkspace turns the latter into the workspace the caller really uses.
+func (s *Service) Profile(ctx context.Context, userID string) (contract.Profile, error) {
+	return s.st.Profile(ctx, s.org, userID)
 }
 
-// Preferences returns the user's UI preferences (the real contract-backed store).
-func (s *Service) Preferences(ctx context.Context, userID string) (contract.Preferences, error) {
-	p, _, err := s.st.Preferences(ctx, s.org, userID)
-	return p, err
+// ActiveWorkspace picks the caller's active workspace: the stored one when it still
+// exists and readable allows it, otherwise the first readable workspace of the
+// list (which arrives default first). "" means the caller can read none.
+func ActiveWorkspace(stored string, list []contract.Workspace, readable func(id string) bool) string {
+	first := ""
+	for _, w := range list {
+		if !readable(w.ID) {
+			continue
+		}
+		if w.ID == stored {
+			return stored
+		}
+		if first == "" {
+			first = w.ID
+		}
+	}
+	return first
 }
 
 // UpdatePreferences applies the fields present in patch.
@@ -210,8 +211,8 @@ func (s *Service) UpdatePreferences(ctx context.Context, userID string, patch co
 	if patch.ReducedMotion != nil {
 		m["reducedMotion"] = *patch.ReducedMotion
 	}
-	p, _, err := s.st.MergePreferences(ctx, s.org, userID, m)
-	return p, err
+	p, err := s.st.MergeProfile(ctx, s.org, userID, m)
+	return p.Preferences, err
 }
 
 // ListWorkspaces returns the org's workspaces.
@@ -219,40 +220,41 @@ func (s *Service) ListWorkspaces(ctx context.Context, p contract.Principal) ([]c
 	return s.dir.List(ctx, p)
 }
 
-// CreateWorkspace creates a workspace with a fresh CSPRNG public id, honouring MAX_WORKSPACES.
-func (s *Service) CreateWorkspace(ctx context.Context, p contract.Principal, name string) (contract.Workspace, error) {
-	n, err := validName(name)
-	if err != nil {
-		return contract.Workspace{}, err
-	}
-	for range maxIDAttempts {
-		pid, err := NewPublicID(s.cfg.Rand)
-		if err != nil {
-			return contract.Workspace{}, err
-		}
-		ws, err := s.st.CreateWorkspace(ctx, p.OrgID, n, pid, s.cfg.MaxWorkspaces)
-		if errors.Is(err, store.ErrPublicIDTaken) {
-			continue
-		}
-		return ws, err
-	}
-	return contract.Workspace{}, contract.NewError(contract.CodeInternal, "could not allocate a workspace id")
-}
-
-// EnsureDefaults creates the default workspace when the org has none. It is idempotent.
-func (s *Service) EnsureDefaults(ctx context.Context) error {
+// withPublicID draws a fresh CSPRNG public id and calls try with it, drawing again
+// when try reports a collision (store.ErrPublicIDTaken).
+func (s *Service) withPublicID(try func(publicID string) error) error {
 	for range maxIDAttempts {
 		pid, err := NewPublicID(s.cfg.Rand)
 		if err != nil {
 			return err
 		}
-		_, err = s.st.EnsureDefaultWorkspace(ctx, s.org, DefaultWorkspaceName, pid)
-		if errors.Is(err, store.ErrPublicIDTaken) {
-			continue
+		if err := try(pid); !errors.Is(err, store.ErrPublicIDTaken) {
+			return err
 		}
-		return err
 	}
 	return contract.NewError(contract.CodeInternal, "could not allocate a workspace id")
+}
+
+// CreateWorkspace creates a workspace with a fresh CSPRNG public id, honouring MAX_WORKSPACES.
+func (s *Service) CreateWorkspace(ctx context.Context, p contract.Principal, name string) (ws contract.Workspace, err error) {
+	n, err := validName(name)
+	if err != nil {
+		return contract.Workspace{}, err
+	}
+	err = s.withPublicID(func(pid string) error {
+		var cerr error
+		ws, cerr = s.st.CreateWorkspace(ctx, p.OrgID, n, pid, s.cfg.MaxWorkspaces)
+		return cerr
+	})
+	return ws, err
+}
+
+// EnsureDefaults creates the default workspace when the org has none. It is idempotent.
+func (s *Service) EnsureDefaults(ctx context.Context) error {
+	return s.withPublicID(func(pid string) error {
+		_, err := s.st.EnsureDefaultWorkspace(ctx, s.org, DefaultWorkspaceName, pid)
+		return err
+	})
 }
 
 // UpdateWorkspace renames a workspace and/or replaces its settings, then busts the directory cache.
@@ -287,7 +289,7 @@ func (s *Service) SwitchWorkspace(ctx context.Context, p contract.Principal, id 
 	if err != nil {
 		return "", err
 	}
-	if _, _, err := s.st.MergePreferences(ctx, p.OrgID, p.UserID, map[string]any{"activeWorkspaceId": ws.ID}); err != nil {
+	if _, err := s.st.MergeProfile(ctx, p.OrgID, p.UserID, map[string]any{"activeWorkspaceId": ws.ID}); err != nil {
 		return "", err
 	}
 	return ws.ID, nil
@@ -313,8 +315,13 @@ func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role co
 	if err != nil {
 		return contract.Invitation{}, err
 	}
-	if role != contract.RoleAdmin && role != contract.RoleMember {
+	if !role.Valid() {
 		return contract.Invitation{}, invalid("role", "must be admin or member")
+	}
+	if member, err := s.st.ActiveMemberWithEmail(ctx, s.org, email); err != nil {
+		return contract.Invitation{}, err
+	} else if member {
+		return contract.Invitation{}, contract.NewError(contract.CodeAlreadyMember, "that email already belongs to an active member")
 	}
 	now := s.cfg.Now()
 	if _, err := s.st.OpenInvitation(ctx, s.org, email, now); err == nil {
@@ -335,8 +342,12 @@ func (s *Service) invite(ctx context.Context, byUserID, rawEmail string, role co
 	return inv, nil
 }
 
-// CreateInvitation invites an email as the calling admin.
+// CreateInvitation invites an email as the caller. Only an admin may invite an admin
+// (access.MayAssignRole); the route's member:manage grant alone is not enough for that.
 func (s *Service) CreateInvitation(ctx context.Context, p contract.Principal, email string, role contract.Role) (contract.Invitation, error) {
+	if err := access.MayAssignRole(p.Role, role); err != nil {
+		return contract.Invitation{}, err
+	}
 	return s.invite(ctx, p.UserID, email, role)
 }
 
@@ -358,12 +369,20 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contrac
 		}
 		switch i.StatusAt(now) {
 		case contract.InvitationPending:
-			if i.Role != contract.RoleAdmin {
+			if !access.IsAdmin(i.Role) {
 				return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
 					"an open invitation for that email has role "+string(i.Role)+"; revoke it in Settings, then run bootstrap-admin again")
 			}
 			return i, false, nil
 		case contract.InvitationAccepted:
+			// A removed admin may be the only way back in: re-activate that admin.
+			back, rerr := s.st.ReactivateRemovedAdmin(ctx, s.org, e)
+			if rerr != nil {
+				return contract.Invitation{}, false, rerr
+			}
+			if back {
+				return i, false, nil
+			}
 			return contract.Invitation{}, false, contract.NewError(contract.CodeConflict,
 				"that email already accepted an invitation; invite admins from Settings > Organization")
 		}
@@ -377,6 +396,9 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email string) (inv contrac
 func (s *Service) ResendInvitation(ctx context.Context, p contract.Principal, id string) (contract.Invitation, error) {
 	inv, err := s.st.Invitation(ctx, p.OrgID, id)
 	if err != nil {
+		return contract.Invitation{}, err
+	}
+	if err := access.MayAssignRole(p.Role, inv.Role); err != nil {
 		return contract.Invitation{}, err
 	}
 	now := s.cfg.Now()
@@ -401,6 +423,13 @@ func (s *Service) ResendInvitation(ctx context.Context, p contract.Principal, id
 // RevokeInvitation revokes an open invitation. The database row decides access
 // (complete-signup reads it), so a provider hiccup cannot leave the invitation usable.
 func (s *Service) RevokeInvitation(ctx context.Context, p contract.Principal, id string) error {
+	inv, err := s.st.Invitation(ctx, p.OrgID, id)
+	if err != nil {
+		return err
+	}
+	if err := access.MayAssignRole(p.Role, inv.Role); err != nil {
+		return err
+	}
 	clerkID, err := s.st.RevokeInvitation(ctx, p.OrgID, id, s.cfg.Now())
 	if err != nil {
 		return err

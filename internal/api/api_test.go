@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -27,75 +26,6 @@ import (
 )
 
 func TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }
-
-type pinger struct{ err error }
-
-func (p pinger) Ping(context.Context) error { return p.err }
-
-type countingResolver struct {
-	calls int
-	err   error
-}
-
-func (c *countingResolver) Resolve(*http.Request) (contract.Session, error) {
-	c.calls++
-	if c.err != nil {
-		return contract.Session{}, c.err
-	}
-	p := contract.Principal{UserID: "u-1", OrgID: "o-1", Role: contract.RoleAdmin}
-	return contract.Session{User: contract.User{ID: "u-1"}, Member: true, Principal: p}, nil
-}
-
-// memTenancy is an in-memory Tenancy that only implements preferences; the other
-// methods panic on the nil embedded interface (these tests never reach them).
-type memTenancy struct {
-	api.Tenancy
-	mu            sync.Mutex
-	byID          map[string]contract.Preferences
-	gets, updates []string
-}
-
-func newMemTenancy() *memTenancy { return &memTenancy{byID: map[string]contract.Preferences{}} }
-
-func (m *memTenancy) Preferences(_ context.Context, id string) (contract.Preferences, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.gets = append(m.gets, id)
-	if p, ok := m.byID[id]; ok {
-		return p, nil
-	}
-	return api.DefaultPreferences(), nil
-}
-
-func (m *memTenancy) Profile(context.Context, string) (contract.Preferences, string, error) {
-	return api.DefaultPreferences(), "ws-1", nil
-}
-
-func (m *memTenancy) ListWorkspaces(context.Context, contract.Principal) ([]contract.Workspace, error) {
-	return nil, nil
-}
-
-func (m *memTenancy) ListInvitations(context.Context, contract.Principal) ([]contract.Invitation, error) {
-	return nil, nil
-}
-
-func (m *memTenancy) UpdatePreferences(_ context.Context, id string, patch contract.PreferencesPatch) (contract.Preferences, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.updates = append(m.updates, id)
-	p, ok := m.byID[id]
-	if !ok {
-		p = api.DefaultPreferences()
-	}
-	if patch.Theme != nil {
-		p.Theme = *patch.Theme
-	}
-	if patch.ReducedMotion != nil {
-		p.ReducedMotion = *patch.ReducedMotion
-	}
-	m.byID[id] = p
-	return p, nil
-}
 
 type fixture struct {
 	srv   *httptest.Server
@@ -113,6 +43,8 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		DB:         pinger{},
 		Principals: f.res,
 		Tenancy:    newMemTenancy(),
+		Authz:      allowAuthz{},
+		Access:     noAccess{},
 		Web: fstest.MapFS{
 			"index.html":          {Data: []byte("<html>app</html>")},
 			"assets/app-1.js":     {Data: []byte("console.log(1)")},
@@ -223,8 +155,12 @@ func TestPreferencesLifecycle(t *testing.T) {
 
 func TestPreferencesRejectBadBodiesWithTypedErrors(t *testing.T) {
 	f := newFixture(t, nil)
+	// A bad theme value is a well-formed body with a bad value (400); every malformed body
+	// is validation_failed 422 like on every other route.
+	if resp, b := f.do(t, "PATCH", "/api/me/preferences", `{"theme":"neon"}`); resp.StatusCode != http.StatusBadRequest || decodeErr(t, b).Code != contract.CodeInvalidRequest {
+		t.Fatalf("bad theme: %d %s", resp.StatusCode, b)
+	}
 	tests := map[string]string{
-		"bad theme":     `{"theme":"neon"}`,
 		"unknown field": `{"colour":"red"}`,
 		"wrong type":    `{"reducedMotion":"yes"}`,
 		"not json":      `theme=dark`,
@@ -236,7 +172,7 @@ func TestPreferencesRejectBadBodiesWithTypedErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			resp, b := f.do(t, "PATCH", "/api/me/preferences", body)
 			e := decodeErr(t, b)
-			if resp.StatusCode != http.StatusBadRequest || e.Code != contract.CodeInvalidRequest {
+			if resp.StatusCode != http.StatusUnprocessableEntity || e.Code != contract.CodeValidationFailed {
 				t.Fatalf("%d %s", resp.StatusCode, b)
 			}
 		})
@@ -302,7 +238,7 @@ func TestAnAbandonedRequestIsNotLoggedAsAServerError(t *testing.T) {
 	f.res.err = &store.Error{Class: store.ClassUnreachable, Message: "store: database unreachable"}
 	h, err := api.New(api.Deps{
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), DB: pinger{}, Principals: f.res, Tenancy: newMemTenancy(),
-		Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
+		Authz: allowAuthz{}, Access: noAccess{}, Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
 	})
 	if err != nil {
 		t.Fatal(err)
