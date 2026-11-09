@@ -4,13 +4,14 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+
+	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-// PublicIDLength is the length of a workspace public id: 22 base62 characters,
-// about 131 bits (decision D6).
-const PublicIDLength = 22
+// PublicIDLength is the length of a workspace public id (contract.PublicIDLength owns the shape).
+const PublicIDLength = contract.PublicIDLength
 
-const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+const base62 = contract.PublicIDAlphabet
 
 // maxUnbiased is the largest multiple of 62 that fits in a byte: bytes at or
 // above it are redrawn, so every character is equally likely.
