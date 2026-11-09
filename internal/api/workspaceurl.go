@@ -3,6 +3,7 @@ package api
 import (
 	"time"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
@@ -13,12 +14,8 @@ func (s *server) proxyPrefix() string { return "https://" + s.ProxyPublicHost + 
 // workspaceViews renders workspaces for the caller. The public id, the proxy URL and the allowed
 // networks are the workspace's credential and its guard: they are null unless the caller holds
 // workspace_url:read on that workspace, in every response that carries a workspace.
-func (s *server) workspaceViews(c Call, list []contract.Workspace) ([]contract.WorkspaceView, error) {
-	ids := make([]string, len(list))
-	for i, ws := range list {
-		ids[i] = ws.ID
-	}
-	ok, err := s.Authz.Filter(c.Ctx, c.Principal, contract.PermWorkspaceURLRead, ids)
+func (s *server) workspaceViews(c Call, v *access.GrantView, list []contract.Workspace) ([]contract.WorkspaceView, error) {
+	ok, err := allowedWorkspaceIDs(v, contract.PermWorkspaceURLRead, list)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +31,7 @@ func (s *server) workspaceViews(c Call, list []contract.Workspace) ([]contract.W
 }
 
 func (s *server) workspaceViewOf(c Call, ws contract.Workspace) (contract.WorkspaceView, error) {
-	v, err := s.workspaceViews(c, []contract.Workspace{ws})
+	v, err := s.workspaceViews(c, s.Authz.Scope(c.Ctx, c.Principal), []contract.Workspace{ws})
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}

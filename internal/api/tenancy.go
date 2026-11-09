@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
 	"github.com/ethosagent/meterwise/internal/tenancy"
@@ -87,7 +88,7 @@ func (s *server) me(c Call) (contract.Me, error) {
 	if err != nil {
 		return contract.Me{}, err
 	}
-	list, err := s.readableWorkspaces(c)
+	list, err := s.readableWorkspaces(c, s.Authz.Scope(c.Ctx, c.Principal))
 	if err != nil {
 		return contract.Me{}, err
 	}
@@ -102,17 +103,13 @@ func (s *server) me(c Call) (contract.Me, error) {
 	}, nil
 }
 
-// readableWorkspaces lists the org's workspaces the caller holds workspace:read on, default first.
-func (s *server) readableWorkspaces(c Call) ([]contract.Workspace, error) {
+// readableWorkspaces lists the org's workspaces the view grants workspace:read on, default first.
+func (s *server) readableWorkspaces(c Call, v *access.GrantView) ([]contract.Workspace, error) {
 	all, err := s.Tenancy.ListWorkspaces(c.Ctx, c.Principal)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, len(all))
-	for i, w := range all {
-		ids[i] = w.ID
-	}
-	ok, err := s.Authz.Filter(c.Ctx, c.Principal, contract.PermWorkspaceRead, ids)
+	ok, err := allowedWorkspaceIDs(v, contract.PermWorkspaceRead, all)
 	if err != nil {
 		return nil, err
 	}
@@ -151,11 +148,12 @@ func (s *server) mePermissions(c Call, _ none) (contract.PermissionSnapshot, err
 }
 
 func (s *server) listWorkspaces(c Call, _ none) (contract.WorkspaceList, error) {
-	list, err := s.readableWorkspaces(c)
+	v := s.Authz.Scope(c.Ctx, c.Principal) // one grant read serves both permissions below
+	list, err := s.readableWorkspaces(c, v)
 	if err != nil {
 		return contract.WorkspaceList{}, err
 	}
-	views, err := s.workspaceViews(c, list)
+	views, err := s.workspaceViews(c, v, list)
 	return contract.WorkspaceList{Items: views}, err
 }
 

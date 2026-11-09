@@ -69,14 +69,37 @@ func (a *Authorizer) Authorize(ctx context.Context, p contract.Principal, perm c
 // Filter returns the ids among workspaceIDs on which the principal holds perm, in order, with one
 // grant read at most.
 func (a *Authorizer) Filter(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceIDs []string) ([]string, error) {
-	probe := Request{Subject: subjectOf(p), Permission: perm, WorkspaceID: "probe"}
-	grants, err := a.grantsFor(ctx, p, a.Eval.NeedsGrants(probe))
-	if err != nil {
-		return nil, err
+	return a.Scope(ctx, p).Filter(perm, workspaceIDs)
+}
+
+// GrantView is one request's view of the caller's grants: the first Filter that needs them reads them
+// (one round trip), every later Filter reuses them. It is not safe for concurrent use.
+type GrantView struct {
+	a      *Authorizer
+	ctx    context.Context
+	p      contract.Principal
+	grants []Grant
+	loaded bool
+}
+
+// Scope starts a request-scoped GrantView for p; it reads nothing until Filter needs grants.
+func (a *Authorizer) Scope(ctx context.Context, p contract.Principal) *GrantView {
+	return &GrantView{a: a, ctx: ctx, p: p}
+}
+
+// Filter returns the ids among workspaceIDs on which the principal holds perm, in order.
+func (s *GrantView) Filter(perm contract.Permission, workspaceIDs []string) ([]string, error) {
+	probe := Request{Subject: subjectOf(s.p), Permission: perm, WorkspaceID: "probe"}
+	if !s.loaded && s.a.Eval.NeedsGrants(probe) {
+		grants, err := s.a.Repo.Grants(s.ctx, s.p.OrgID, s.p.UserID)
+		if err != nil {
+			return nil, err
+		}
+		s.grants, s.loaded = grants, true
 	}
 	out := make([]string, 0, len(workspaceIDs))
 	for _, id := range workspaceIDs {
-		if a.Eval.Evaluate(Request{Subject: probe.Subject, Permission: perm, WorkspaceID: id}, grants).Allowed {
+		if s.a.Eval.Evaluate(Request{Subject: probe.Subject, Permission: perm, WorkspaceID: id}, s.grants).Allowed {
 			out = append(out, id)
 		}
 	}

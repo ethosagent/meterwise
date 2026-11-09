@@ -12,7 +12,9 @@ import (
 // Authz is the authorization the gateway and a few handlers use; *access.Authorizer implements it.
 type Authz interface {
 	Authorize(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceID string) (access.Result, error)
-	Filter(ctx context.Context, p contract.Principal, perm contract.Permission, workspaceIDs []string) ([]string, error)
+	// Scope starts the request's view of the caller's grants: any number of Filter calls on it
+	// cost one grant read.
+	Scope(ctx context.Context, p contract.Principal) *access.GrantView
 	Snapshot(ctx context.Context, p contract.Principal) (contract.PermissionSnapshot, error)
 }
 
@@ -54,4 +56,14 @@ func (s *server) gateway(row contract.Route, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(withSession(r.Context(), sess)))
 	})
+}
+
+// allowedWorkspaceIDs returns the ids of the workspaces in list on which v grants perm, in list
+// order. Every handler that narrows a workspace list by permission goes through it.
+func allowedWorkspaceIDs(v *access.GrantView, perm contract.Permission, list []contract.Workspace) ([]string, error) {
+	ids := make([]string, len(list))
+	for i, w := range list {
+		ids[i] = w.ID
+	}
+	return v.Filter(perm, ids)
 }

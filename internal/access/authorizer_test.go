@@ -125,3 +125,41 @@ func TestAuthorizerTreatsAForeignOrgWorkspaceAsNotFound(t *testing.T) {
 		}
 	}
 }
+
+// A Scope answers any number of Filter calls with at most one grant read, and none for an admin.
+func TestScopeReadsGrantsOnceForAnyNumberOfFilters(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{grants: []access.Grant{{GroupID: "g1", WorkspaceID: wsA, ResourceType: "workspace", Action: "read"}}}
+	a := &access.Authorizer{Repo: repo, Workspaces: fakeWS{wsA: "o", wsB: "o"}}
+	ids := []string{wsA, wsB}
+
+	sc := a.Scope(ctx, principal("member"))
+	for range 3 {
+		got, err := sc.Filter(contract.PermWorkspaceRead, ids)
+		want, _ := a.Filter(ctx, principal("member"), contract.PermWorkspaceRead, ids)
+		if err != nil || len(got) != 1 || got[0] != wsA || len(want) != 1 {
+			t.Fatalf("read filter = %v, %v (want %v)", got, err, want)
+		}
+	}
+	if got, err := sc.Filter(contract.PermWorkspaceURLRead, ids); err != nil || len(got) != 0 {
+		t.Fatalf("url filter = %v, %v", got, err)
+	}
+	repo.calls = 0
+	sc = a.Scope(ctx, principal("member"))
+	_, _ = sc.Filter(contract.PermWorkspaceRead, ids)
+	_, _ = sc.Filter(contract.PermWorkspaceURLRead, ids)
+	if repo.calls != 1 {
+		t.Fatalf("grant reads = %d, want 1", repo.calls)
+	}
+
+	repo.calls = 0
+	adm := a.Scope(ctx, principal("admin"))
+	if got, err := adm.Filter(contract.PermWorkspaceURLRead, ids); err != nil || len(got) != 2 || repo.calls != 0 {
+		t.Fatalf("admin = %v, %v, reads %d", got, err, repo.calls)
+	}
+
+	repo.err = errors.New("db down")
+	if _, err := a.Scope(ctx, principal("member")).Filter(contract.PermWorkspaceRead, ids); err == nil {
+		t.Fatal("a failed grant read must be an error, never an empty list")
+	}
+}
