@@ -23,27 +23,50 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Listen != ":8080" || c.LogLevel != "info" || c.Env != "dev" || c.MaxWorkspaces != 20 {
+	if c.ListenProxy != ":8080" || c.ListenAPI != ":8081" || c.ListenAdmin != "127.0.0.1:9090" {
+		t.Fatalf("listen defaults wrong: %+v", c)
+	}
+	if c.AppName != "Meterwise" || c.ProxyPublicHost != "localhost:8080" || c.WebDir != "web/dist" {
+		t.Fatalf("brand defaults wrong: %+v", c)
+	}
+	if !c.PrivacyMode || c.MaxWorkspaces != 20 || c.MaxConcurrentPerWorkspace != 8 || c.LogLevel != "info" || c.Env != "dev" {
 		t.Fatalf("defaults wrong: %+v", c)
 	}
 }
 
 func TestLoadReportsEveryProblemAtOnce(t *testing.T) {
-	_, err := config.Load(env(map[string]string{
-		config.EnvListen:       "nonsense",
-		config.EnvLogLevel:     "loud",
-		config.EnvEnv:          "moon",
-		config.EnvMaxWorkspace: "0",
-		config.EnvDatabaseURL:  "mysql://x",
-	}))
+	bad := map[string]string{
+		config.EnvDatabaseURL:     "mysql://x",
+		config.EnvListenProxy:     "nonsense",
+		config.EnvListenAPI:       ":99999",
+		config.EnvListenAdmin:     "",
+		config.EnvProxyPublicHost: "https://proxy.example.com/path",
+		config.EnvAppName:         "bad\x07name",
+		config.EnvClerkIssuer:     "http://clerk.example.com",
+		config.EnvClerkJWKSURL:    "ftp://x",
+		config.EnvOTLPEndpoint:    "collector:4318",
+		config.EnvPrivacyMode:     "maybe",
+		config.EnvMaxWorkspaces:   "0",
+		config.EnvMaxConcurrent:   "-3",
+		config.EnvLogLevel:        "loud",
+		config.EnvAppEnv:          "moon",
+	}
+	_, err := config.Load(env(bad))
 	e := contract.AsError(err)
 	if e.Code != contract.CodeConfigInvalid {
 		t.Fatalf("code %s", e.Code)
 	}
-	for _, key := range []string{config.EnvListen, config.EnvLogLevel, config.EnvEnv, config.EnvMaxWorkspace, config.EnvDatabaseURL} {
+	// LISTEN_ADMIN is "" so it takes its (valid) default; every other key must be named.
+	for key := range bad {
+		if key == config.EnvListenAdmin {
+			continue
+		}
 		if !hasDetail(e.Details, key) {
 			t.Errorf("no problem reported for %s: %v", key, e.Details)
 		}
+	}
+	if len(e.Details) != len(bad)-1 {
+		t.Errorf("want %d problems, got %d: %v", len(bad)-1, len(e.Details), e.Details)
 	}
 }
 
@@ -55,10 +78,34 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 	}
 }
 
-func TestMaxWorkspacesParsed(t *testing.T) {
-	c, err := config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvMaxWorkspace: "7"}))
-	if err != nil || c.MaxWorkspaces != 7 {
-		t.Fatalf("got %+v, %v", c, err)
+func TestListenersMustDiffer(t *testing.T) {
+	_, err := config.Load(env(map[string]string{
+		config.EnvDatabaseURL: goodDB, config.EnvListenProxy: ":9000", config.EnvListenAPI: "127.0.0.1:9000",
+	}))
+	e := contract.AsError(err)
+	if len(e.Details) != 1 || !strings.Contains(e.Details[0], "already used by") {
+		t.Fatalf("details: %v", e.Details)
+	}
+	// port 0 (ephemeral) may repeat: tests use it.
+	if _, err := config.Load(env(map[string]string{
+		config.EnvDatabaseURL: goodDB, config.EnvListenProxy: "127.0.0.1:0", config.EnvListenAPI: "127.0.0.1:0", config.EnvListenAdmin: "127.0.0.1:0",
+	})); err != nil {
+		t.Fatalf("ephemeral ports: %v", err)
+	}
+}
+
+func TestValuesParsed(t *testing.T) {
+	c, err := config.Load(env(map[string]string{
+		config.EnvDatabaseURL: goodDB, config.EnvMaxWorkspaces: "7", config.EnvMaxConcurrent: "3",
+		config.EnvPrivacyMode: "false", config.EnvAppName: "  Acme Meter ", config.EnvOTLPEndpoint: "http://localhost:4318",
+		config.EnvLogLevel: "DEBUG", config.EnvAppEnv: "Prod",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.MaxWorkspaces != 7 || c.MaxConcurrentPerWorkspace != 3 || c.PrivacyMode || c.AppName != "Acme Meter" ||
+		c.OTLPEndpoint != "http://localhost:4318" || c.LogLevel != "debug" || c.Env != "prod" {
+		t.Fatalf("got %+v", c)
 	}
 }
 
