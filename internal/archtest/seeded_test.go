@@ -203,6 +203,8 @@ func TestSeededRepositoryGoesRedEndToEnd(t *testing.T) {
 		"internal/config/x_linux.go": "package config\n",
 		// H8: tests without nonet.Run
 		"internal/config/x_test.go": "package config\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+		// H9: nested module
+		"internal/config/nested/go.mod": "module nested\n",
 		// H5: web
 		"web/src/a.ts":     "import _ from 'lodash'\n",
 		"web/package.json": `{"dependencies":{"moment":"2"}}`,
@@ -290,14 +292,17 @@ func TestSeededBuildConstraintsGoRed(t *testing.T) {
 }
 
 func TestSeededMissingTestMainGoesRed(t *testing.T) {
-	const guarded = "package p\nimport (\"os\"; \"testing\"; \"x/nonet\")\nfunc TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }\n"
+	const guarded = "package p\nimport (\"os\"; \"testing\"; \"github.com/ethosagent/meterwise/internal/nonet\")\nfunc TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }\n"
 	bad := map[string]string{
 		"internal/config/a_test.go": "package p\nfunc TestA(t *testing.T) {}\n",
 		"internal/store/b_test.go":  "package p\nfunc TestMain(m *testing.M) { os.Exit(m.Run()) }\n",
+		// the name only appears in a comment, a string, or an unrelated function: not a call
+		"internal/api/c_test.go":    "package p\nimport (\"os\"; \"testing\"; \"github.com/ethosagent/meterwise/internal/nonet\")\n// TestMain would call nonet.Run(m) here\nfunc TestMain(m *testing.M) { _ = \"nonet.Run(m)\"; os.Exit(m.Run()) }\nfunc helper(m *testing.M) int { return nonet.Run(m) }\n",
+		"internal/ledger/d_test.go": "package p\nimport (\"os\"; \"testing\")\nfunc TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }\n",
 	}
 	got := scanTestMain(bad)
-	if len(got) != 2 || got[0].Rule != "H8" {
-		t.Fatalf("want two H8 findings, got %v", got)
+	if len(got) != 4 || got[0].Rule != "H8" {
+		t.Fatalf("want four H8 findings, got %v", got)
 	}
 	good := map[string]string{
 		"internal/config/a_test.go":    "package p\nfunc TestA(t *testing.T) {}\n",
@@ -307,5 +312,49 @@ func TestSeededMissingTestMainGoesRed(t *testing.T) {
 	}
 	if got := scanTestMain(good); len(got) != 0 {
 		t.Fatalf("guarded or exempt packages flagged: %v", got)
+	}
+}
+
+func TestSeededDistDirIsStillScanned(t *testing.T) {
+	// a package under a directory named dist or testdata-like names is scanned; only web/dist is skipped
+	dir := t.TempDir()
+	writeTree(t, dir, map[string]string{
+		"go.mod":                       goMod,
+		"internal/savings/dist/doc.go": "// Package dist hides behind a directory name.\npackage dist\n",
+		"internal/savings/dist/x.go":   "//go:build offline\n\npackage dist\n",
+		"web/dist/ignored.js":          "import x from 'left-pad'\n",
+	})
+	got := runOn(t, dir)
+	r := rules(got)
+	if !slices.Contains(r, "H7") {
+		t.Fatalf("a build tag under internal/savings/dist must be found, got %v", r)
+	}
+	for _, v := range got {
+		if strings.Contains(v.Msg, "web/dist") {
+			t.Fatalf("web/dist must stay skipped: %v", v)
+		}
+	}
+}
+
+func TestSeededNestedModuleGoesRed(t *testing.T) {
+	bad := map[string]string{
+		"internal/config/nested/go.mod": "module x\n",
+		"cmd/x/go.mod":                  "module y\n",
+		"go.work":                       "go 1.26\n",
+		"tools/go.work":                 "go 1.26\n",
+	}
+	if got := scanModules(bad); len(got) != 4 || got[0].Rule != "H9" {
+		t.Fatalf("want four H9 findings, got %v", got)
+	}
+	if got := scanModules(map[string]string{"go.mod": goMod, "tools/go.mod": "module t\n"}); len(got) != 0 {
+		t.Fatalf("root and tools modules are allowed: %v", got)
+	}
+}
+
+func TestSeededAliasedUpdateGoesRed(t *testing.T) {
+	for _, body := range []string{"UPDATE calls c SET n = 1", "UPDATE sessions AS s SET n = 1", "UPDATE ONLY public.\"sessions\" s SET n = 1"} {
+		if got := scanWriters(map[string]string{"internal/tenancy/a.sql": body}); len(got) != 1 {
+			t.Errorf("%q not flagged: %v", body, got)
+		}
 	}
 }

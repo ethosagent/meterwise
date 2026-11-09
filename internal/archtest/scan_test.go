@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"io/fs"
 	"os"
@@ -32,7 +35,7 @@ const ident = `(?:"?public"?\.)?"?`
 
 var writesLedger = regexp.MustCompile(`(?i)\b(INSERT\s+INTO|DELETE\s+FROM(?:\s+ONLY)?|MERGE\s+INTO(?:\s+ONLY)?|TRUNCATE(?:\s+TABLE)?(?:\s+ONLY)?|COPY)\s+` + ident + `(?:calls|sessions|monitor_events|audit_log)"?(?:[^a-z0-9_]|$)`)
 
-var writesLedgerUpdate = regexp.MustCompile(`(?i)\bUPDATE\s+(?:ONLY\s+)?` + ident + `(?:calls|sessions|monitor_events|audit_log)"?\s+SET\b`)
+var writesLedgerUpdate = regexp.MustCompile(`(?i)\bUPDATE\s+(?:ONLY\s+)?` + ident + `(?:calls|sessions|monitor_events|audit_log)"?(?:\s+(?:AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\b`)
 
 var (
 	goComments  = regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*`)
@@ -45,7 +48,7 @@ func scanWriters(files map[string]string) []Violation {
 	var out []Violation
 	for rel, body := range files {
 		ext := path.Ext(rel)
-		if (ext != ".go" && ext != ".sql") || strings.HasSuffix(rel, "_test.go") || strings.HasPrefix(rel, "internal/archtest/") {
+		if (ext != ".go" && ext != ".sql") || strings.HasSuffix(rel, "_test.go") || strings.HasPrefix(rel, "internal/archtest/") || inTestdata(rel) {
 			continue
 		}
 		if contains(writerFiles, rel) || underDirs(rel, writerDirs) {
@@ -185,6 +188,7 @@ func runOn(t *testing.T, dir string) []Violation {
 	out = append(out, scanWeb(files, files["web/package.json"])...)
 	out = append(out, scanBuildConstraints(files)...)
 	out = append(out, scanTestMain(files)...)
+	out = append(out, scanModules(files)...)
 	return out
 }
 
@@ -228,7 +232,14 @@ func readTree(t *testing.T, dir string) map[string]string {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if name == ".git" || name == "node_modules" || name == "dist" || name == ".logs" || name == "testdata" {
+			// Only these are skipped: VCS data, installed packages, gate logs and the
+			// web build output at its one real location. A dist/ or testdata/ elsewhere is scanned.
+			relDir, relErr := filepath.Rel(dir, p)
+			if relErr != nil {
+				return relErr
+			}
+			relDir = filepath.ToSlash(relDir)
+			if name == ".git" || name == "node_modules" || name == ".logs" || relDir == "web/dist" || relDir == "web/coverage" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -236,7 +247,7 @@ func readTree(t *testing.T, dir string) map[string]string {
 		switch path.Ext(name) {
 		case ".go", ".sql", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts":
 		default:
-			if name != "package.json" {
+			if name != "package.json" && name != "go.mod" && name != "go.work" {
 				return nil
 			}
 		}
@@ -273,7 +284,7 @@ var buildLine = regexp.MustCompile(`(?m)^[ \t]*//(?:go:build|[ \t]*\+build)\b`)
 func scanBuildConstraints(files map[string]string) []Violation {
 	var out []Violation
 	for rel, body := range files {
-		if path.Ext(rel) != ".go" || contains(buildConstraintAllow, rel) {
+		if path.Ext(rel) != ".go" || contains(buildConstraintAllow, rel) || inTestdata(rel) {
 			continue
 		}
 		if buildLine.MatchString(body) {
@@ -300,34 +311,100 @@ func hasPlatformSuffix(base string) bool {
 	return contains(knownOS, last)
 }
 
-var (
-	testMainRe = regexp.MustCompile(`func\s+TestMain\s*\(`)
-	nonetRunRe = regexp.MustCompile(`\bnonet\.Run\s*\(`)
-)
-
 // testMainExempt packages may have tests without nonet.Run: archtest shells out
 // to `go list` and reads files only.
 var testMainExempt = []string{"internal/archtest"}
 
+const nonetPath = module + "/internal/nonet"
+
+// inTestdata reports a path the go tool ignores (a testdata directory).
+func inTestdata(rel string) bool {
+	return strings.HasPrefix(rel, "testdata/") || strings.Contains(rel, "/testdata/")
+}
+
+// callsNonetRun reports whether a test file declares func TestMain and its body
+// really calls nonet.Run (parsed, so a comment or a string never counts).
+func callsNonetRun(rel, body string) bool {
+	f, err := parser.ParseFile(token.NewFileSet(), rel, body, 0)
+	if err != nil {
+		return false
+	}
+	local := ""
+	for _, imp := range f.Imports {
+		if strings.Trim(imp.Path.Value, "\"`") != nonetPath {
+			continue
+		}
+		local = "nonet"
+		if imp.Name != nil {
+			local = imp.Name.Name
+		}
+	}
+	if local == "" || local == "_" || local == "." {
+		return false
+	}
+	found := false
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Name.Name != "TestMain" || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Run" {
+				if x, ok := sel.X.(*ast.Ident); ok && x.Name == local {
+					found = true
+				}
+			}
+			return true
+		})
+	}
+	return found
+}
+
 // scanTestMain applies H8: every directory with a _test.go file has a TestMain
-// that calls nonet.Run, so no test can reach the external network.
+// that calls nonet.Run, so no test can reach the external network by name.
 func scanTestMain(files map[string]string) []Violation {
 	hasTests := map[string]bool{}
 	guarded := map[string]bool{}
 	for rel, body := range files {
-		if !strings.HasSuffix(rel, "_test.go") {
+		if !strings.HasSuffix(rel, "_test.go") || inTestdata(rel) {
 			continue
 		}
 		dir := path.Dir(rel)
 		hasTests[dir] = true
-		if testMainRe.MatchString(body) && nonetRunRe.MatchString(body) {
+		if callsNonetRun(rel, body) {
 			guarded[dir] = true
 		}
 	}
 	var out []Violation
 	for dir := range hasTests {
 		if !guarded[dir] && !contains(testMainExempt, dir) {
-			out = append(out, Violation{"H8", dir + " has tests but no TestMain calling nonet.Run; without it a test can reach the internet and stay green"})
+			out = append(out, Violation{"H8", dir + " has tests but no TestMain that calls nonet.Run; without it a test can reach the internet and stay green"})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
+	return out
+}
+
+// moduleAllow lists the nested modules allowed besides the root go.mod. A nested
+// module is invisible to `go test ./...` and to go list of the root, so it could
+// hide code from every gate; tools/ is the pinned dev-tool module (ADR 0005).
+var moduleAllow = []string{"tools/go.mod"}
+
+// scanModules applies H9: one module, plus the allowlisted tools module; no go.work.
+func scanModules(files map[string]string) []Violation {
+	var out []Violation
+	for rel := range files {
+		switch path.Base(rel) {
+		case "go.mod":
+			if rel != "go.mod" && !contains(moduleAllow, rel) {
+				out = append(out, Violation{"H9", rel + " is a nested module: its packages are invisible to the root gates. Remove it or allowlist it in law_test.go with an ADR"})
+			}
+		case "go.work":
+			out = append(out, Violation{"H9", rel + ": a go.work changes what every gate builds; it is not allowed"})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
