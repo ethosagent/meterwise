@@ -43,7 +43,7 @@ func (s *server) workspaceView(ws contract.Workspace, withURL bool) contract.Wor
 	if settings == nil {
 		settings = map[string]any{}
 	}
-	v := contract.WorkspaceView{ID: ws.ID, Name: ws.Name, IsDefault: ws.IsDefault, Settings: settings, CreatedAt: rfc3339(ws.CreatedAt)}
+	v := contract.WorkspaceView{ID: ws.ID, Name: ws.Name, IsDefault: ws.IsDefault, Settings: settings, CreatedAt: contract.RFC3339(ws.CreatedAt)}
 	if withURL {
 		pid, url := ws.PublicID, s.proxyURL(ws.PublicID)
 		cidrs := ws.AllowedClientCIDRs
@@ -77,7 +77,7 @@ func (s *server) resetWorkspaceURL(c Call, req contract.ResetURLRequest) (contra
 	if err != nil {
 		return contract.ResetURLResponse{}, err
 	}
-	return contract.ResetURLResponse{ProxyURL: v.ProxyURL, PreviousGraceUntil: rfc3339(res.PreviousGraceUntil)}, nil
+	return contract.ResetURLResponse{ProxyURL: v.ProxyURL, PreviousGraceUntil: contract.RFC3339(res.PreviousGraceUntil)}, nil
 }
 
 func (s *server) retirePreviousURL(c Call, _ none) (none, error) {

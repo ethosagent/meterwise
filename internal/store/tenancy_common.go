@@ -54,7 +54,7 @@ func queryErr(err error) error {
 func ts(v pgtype.Timestamptz) time.Time { return v.Time.UTC() }
 
 // rfc3339 is the wire form of a stored timestamp.
-func rfc3339(v pgtype.Timestamptz) string { return ts(v).Format(time.RFC3339) }
+func rfc3339(v pgtype.Timestamptz) string { return contract.RFC3339(ts(v)) }
 
 func tsp(v pgtype.Timestamptz) *time.Time {
 	if !v.Valid {

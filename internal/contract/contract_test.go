@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethosagent/meterwise/internal/nonet"
 
@@ -236,5 +237,13 @@ func TestMutatingRoutesDeclareAudit(t *testing.T) {
 		if _, ok := seen[a]; !ok {
 			t.Errorf("action %s is declared by no route", a)
 		}
+	}
+}
+
+func TestRFC3339IsUTCSecondPrecision(t *testing.T) {
+	zone := time.FixedZone("x", 5*3600+1800)
+	got := contract.RFC3339(time.Date(2026, 3, 4, 10, 30, 15, 999, zone))
+	if got != "2026-03-04T05:00:15Z" {
+		t.Fatalf("got %q", got)
 	}
 }

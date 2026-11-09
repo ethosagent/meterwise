@@ -67,8 +67,6 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-func rfc3339(t time.Time) string { return t.UTC().Format(time.RFC3339) }
-
 func invitationView(i contract.Invitation, now time.Time) contract.InvitationView {
 	by := i.InvitedBy
 	if by == "" {
@@ -76,7 +74,7 @@ func invitationView(i contract.Invitation, now time.Time) contract.InvitationVie
 	}
 	return contract.InvitationView{
 		ID: i.ID, Email: i.Email, Role: i.Role, Status: i.StatusAt(now), InvitedBy: by,
-		ExpiresAt: rfc3339(i.ExpiresAt), CreatedAt: rfc3339(i.CreatedAt),
+		ExpiresAt: contract.RFC3339(i.ExpiresAt), CreatedAt: contract.RFC3339(i.CreatedAt),
 	}
 }
 

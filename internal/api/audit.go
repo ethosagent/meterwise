@@ -49,7 +49,7 @@ func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 	out := contract.AuditList{Items: make([]contract.AuditEntry, 0, len(page.Items)), NextCursor: strOrNil(page.NextCursor)}
 	for _, r := range page.Items {
 		e := contract.AuditEntry{
-			ID: strconv.FormatInt(r.ID, 10), At: rfc3339(r.At), Action: r.Action, ResourceType: r.ResourceType,
+			ID: strconv.FormatInt(r.ID, 10), At: contract.RFC3339(r.At), Action: r.Action, ResourceType: r.ResourceType,
 			ResourceID: strOrNil(r.ResourceID), WorkspaceID: strOrNil(r.WorkspaceID), IP: strOrNil(r.IP), Metadata: r.Metadata,
 		}
 		if e.Metadata == nil {

@@ -55,7 +55,7 @@ func cmdBootstrapAdmin(ctx context.Context, e *env, args []string) int {
 	}
 	return ok(e, asJSON, map[string]string{
 		"invitationId": inv.ID, "email": inv.Email, "role": string(inv.Role), "status": string(inv.StatusAt(time.Now())),
-		"created": strconv.FormatBool(created), "providerInvitation": provider, "expiresAt": inv.ExpiresAt.UTC().Format(time.RFC3339),
+		"created": strconv.FormatBool(created), "providerInvitation": provider, "expiresAt": contract.RFC3339(inv.ExpiresAt),
 	})
 }
 
