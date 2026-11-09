@@ -15,14 +15,22 @@ type AuditLog interface {
 	List(ctx context.Context, q contract.AuditQuery) (contract.AuditPage, error)
 }
 
-// audit records what the caller just did. It runs after the change committed; a failure is logged
-// at ERROR by audit.Emit and never fails the request. Metadata is small and never carries a
-// workspace public id or URL.
-func (s *server) audit(c Call, action contract.AuditAction, resourceType, resourceID, workspaceID string, meta map[string]any) {
-	audit.Emit(c.Ctx, s.Log, s.Audit, contract.AuditEvent{
-		OrgID: c.Principal.OrgID, WorkspaceID: workspaceID, ActorID: c.Principal.UserID, Action: action,
-		ResourceType: resourceType, ResourceID: resourceID, IP: c.IP, Metadata: meta,
-	})
+// emitAudit records what the caller just did, as the route row declares. It runs after the change
+// committed; a failure is logged at ERROR by audit.Emit and never fails the request. Metadata is
+// small and never carries a workspace public id or URL.
+func (s *server) emitAudit(c Call, spec *contract.AuditSpec, req, resp any) {
+	in := contract.AuditInput{Path: c.Path, Principal: c.Principal, Req: req, Resp: resp}
+	e := contract.AuditEvent{
+		OrgID: c.Principal.OrgID, ActorID: c.Principal.UserID, Action: spec.Action,
+		ResourceType: spec.ResourceType, ResourceID: spec.ResourceID(in), IP: c.IP,
+	}
+	if spec.WorkspaceID != nil {
+		e.WorkspaceID = spec.WorkspaceID(in)
+	}
+	if spec.Meta != nil {
+		e.Metadata = spec.Meta(in)
+	}
+	audit.Emit(c.Ctx, s.Log, s.Audit, e)
 }
 
 func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {

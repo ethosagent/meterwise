@@ -203,3 +203,38 @@ func TestRoleValid(t *testing.T) {
 		}
 	}
 }
+
+// Every mutating route says how it is audited: an Audit spec or an explicit NoAudit. A read says
+// neither. Each audit action is declared by exactly one row.
+func TestMutatingRoutesDeclareAudit(t *testing.T) {
+	seen := map[contract.AuditAction]string{}
+	for _, r := range contract.Routes() {
+		where := r.Method + " " + r.Pattern
+		switch {
+		case r.Method == http.MethodGet:
+			if r.Audit != nil || r.NoAudit {
+				t.Errorf("%s: a read declares no audit", where)
+			}
+		case r.Audit == nil && !r.NoAudit:
+			t.Errorf("%s: mutating route declares neither Audit nor NoAudit", where)
+		case r.Audit != nil && r.NoAudit:
+			t.Errorf("%s: both Audit and NoAudit", where)
+		}
+		if r.Audit == nil {
+			continue
+		}
+		a := r.Audit
+		if !a.Action.Valid() || a.ResourceType == "" || a.ResourceID == nil {
+			t.Errorf("%s: incomplete audit spec %+v", where, a)
+		}
+		if prev, dup := seen[a.Action]; dup {
+			t.Errorf("%s: action %s already declared by %s", where, a.Action, prev)
+		}
+		seen[a.Action] = where
+	}
+	for _, a := range contract.AuditActions() {
+		if _, ok := seen[a]; !ok {
+			t.Errorf("action %s is declared by no route", a)
+		}
+	}
+}

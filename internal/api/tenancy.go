@@ -164,7 +164,6 @@ func (s *server) createWorkspace(c Call, req contract.CreateWorkspaceRequest) (c
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceCreate, "workspace", ws.ID, ws.ID, nil)
 	return s.workspaceViewOf(c, ws)
 }
 
@@ -173,14 +172,6 @@ func (s *server) updateWorkspace(c Call, req contract.UpdateWorkspaceRequest) (c
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}
-	fields := []string{}
-	if req.Name != nil {
-		fields = append(fields, "name")
-	}
-	if req.Settings != nil {
-		fields = append(fields, "settings")
-	}
-	s.audit(c, contract.AuditWorkspaceUpdate, "workspace", ws.ID, ws.ID, map[string]any{"fields": fields})
 	return s.workspaceViewOf(c, ws)
 }
 
@@ -189,7 +180,6 @@ func (s *server) deleteWorkspace(c Call, _ none) (none, error) {
 	if err := s.Tenancy.DeleteWorkspace(c.Ctx, c.Principal, id); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceDelete, "workspace", id, id, nil)
 	return none{}, nil
 }
 
@@ -205,9 +195,6 @@ func (s *server) listMembers(c Call, _ none) (contract.MemberList, error) {
 
 func (s *server) updateMember(c Call, req contract.UpdateMemberRequest) (contract.Member, error) {
 	m, err := s.Tenancy.SetMemberRole(c.Ctx, c.Principal, c.Path("userId"), req.Role)
-	if err == nil {
-		s.audit(c, contract.AuditMemberRoleChange, "member", c.Path("userId"), "", map[string]any{"role": string(req.Role)})
-	}
 	return m, err
 }
 
@@ -215,7 +202,6 @@ func (s *server) removeMember(c Call, _ none) (none, error) {
 	if err := s.Tenancy.RemoveMember(c.Ctx, c.Principal, c.Path("userId")); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditMemberRemove, "member", c.Path("userId"), "", nil)
 	return none{}, nil
 }
 
@@ -237,7 +223,6 @@ func (s *server) createInvitation(c Call, req contract.CreateInvitationRequest) 
 	if err != nil {
 		return contract.InvitationView{}, err
 	}
-	s.audit(c, contract.AuditInvitationCreate, "invitation", inv.ID, "", map[string]any{"role": string(req.Role)})
 	return invitationView(inv, time.Now()), nil
 }
 
@@ -246,7 +231,6 @@ func (s *server) resendInvitation(c Call, _ none) (contract.InvitationView, erro
 	if err != nil {
 		return contract.InvitationView{}, err
 	}
-	s.audit(c, contract.AuditInvitationResend, "invitation", inv.ID, "", nil)
 	return invitationView(inv, time.Now()), nil
 }
 
@@ -254,7 +238,6 @@ func (s *server) revokeInvitation(c Call, _ none) (none, error) {
 	if err := s.Tenancy.RevokeInvitation(c.Ctx, c.Principal, c.Path("id")); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditInvitationRevoke, "invitation", c.Path("id"), "", nil)
 	return none{}, nil
 }
 

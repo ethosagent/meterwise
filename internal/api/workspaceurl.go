@@ -6,11 +6,6 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-const (
-	defaultGraceMinutes = 10
-	maxGraceMinutes     = 24 * 60
-)
-
 func (s *server) proxyURL(publicID string) string { return s.proxyPrefix() + publicID }
 
 func (s *server) proxyPrefix() string { return "https://" + s.ProxyPublicHost + "/w/" }
@@ -68,11 +63,11 @@ func (s *server) workspaceSetup(c Call, _ none) (contract.Setup, error) {
 }
 
 func (s *server) resetWorkspaceURL(c Call, req contract.ResetURLRequest) (contract.ResetURLResponse, error) {
-	grace := defaultGraceMinutes
+	grace := contract.DefaultGraceMinutes
 	if req.GraceMinutes != nil {
 		grace = *req.GraceMinutes
 	}
-	if grace < 0 || grace > maxGraceMinutes {
+	if grace < 0 || grace > contract.MaxGraceMinutes {
 		return contract.ResetURLResponse{}, contract.Invalid("graceMinutes", "must be between 0 and 1440")
 	}
 	id := c.Path("id")
@@ -80,7 +75,6 @@ func (s *server) resetWorkspaceURL(c Call, req contract.ResetURLRequest) (contra
 	if err != nil {
 		return contract.ResetURLResponse{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceURLReset, "workspace", id, id, map[string]any{"graceMinutes": grace})
 	// Managing the URL is not reading it: only a caller who also holds workspace_url:read gets it back.
 	v, err := s.workspaceViewOf(c, res.Workspace)
 	if err != nil {
@@ -94,7 +88,6 @@ func (s *server) retirePreviousURL(c Call, _ none) (none, error) {
 	if err := s.Tenancy.RetirePreviousURL(c.Ctx, c.Principal, id); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceURLRetire, "workspace", id, id, nil)
 	return none{}, nil
 }
 
@@ -104,6 +97,5 @@ func (s *server) setAllowedCIDRs(c Call, req contract.AllowedCIDRs) (contract.Al
 	if err != nil {
 		return contract.AllowedCIDRs{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceAllowedCIDRs, "workspace", id, id, map[string]any{"count": len(got)})
 	return contract.AllowedCIDRs{CIDRs: got}, nil
 }

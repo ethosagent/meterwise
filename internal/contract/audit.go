@@ -95,3 +95,23 @@ type AuditPage struct {
 	Items      []AuditRecord
 	NextCursor string
 }
+
+// AuditInput is what a route's audit extractors see after the handler succeeded: the path
+// values, the caller, and the decoded request and response bodies (the DTO the row names; nil
+// when the row has none).
+type AuditInput struct {
+	Path      func(name string) string
+	Principal Principal
+	Req, Resp any
+}
+
+// AuditSpec declares, on the route row, the audit event a successful call emits. The one handler
+// wrapper in internal/api reads it; a handler never writes an audit row itself. WorkspaceID and
+// Meta are optional. Metadata is small and never carries a workspace public id or URL.
+type AuditSpec struct {
+	Action       AuditAction
+	ResourceType string
+	ResourceID   func(AuditInput) string
+	WorkspaceID  func(AuditInput) string
+	Meta         func(AuditInput) map[string]any
+}
