@@ -336,6 +336,12 @@ red web "explicit any" "npm run check failed" m_any
 red web "type error" "npm run typecheck failed" m_tsc
 red web "failing vitest" "npm run test failed" m_vitest
 red web "coverage below 70 %" "npm run test failed" m_webcov
+m_webcov_testdir() { mkdir -p web/src/test; { for i in $(seq 1 60); do printf 'export function t%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/test/untested.ts; }
+red web "untested file in web/src/test is not exempt from coverage" "npm run test failed" m_webcov_testdir
+m_webcov_contract() { { for i in $(seq 1 60); do printf 'export function c%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/contract/handwritten.ts; }
+red web "untested file next to generated.ts is not exempt from coverage" "npm run test failed" m_webcov_contract
+m_hex_testdir() { mkdir -p web/src/test; printf 'export const c = "#ff0000";\n' >web/src/test/extra.ts; }
+red web "hex colour in a new web/src/test file is caught by the hygiene test" "npm run test failed" m_hex_testdir
 red web "index.ts barrel" "barrels are banned" m_barrel
 red web "index.mts barrel" "barrels are banned" m_barrelmts
 red web "feature folder without README" "has no README.md" m_nofeat
