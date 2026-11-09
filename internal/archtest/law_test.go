@@ -29,7 +29,7 @@ type pkg struct {
 }
 
 // allRules lists every rule ID; seeded_test.go must seed each one.
-var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9"}
+var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10"}
 
 // rank orders the layers of rule H2: a package may import its own rank or
 // lower, never higher. contract and nonet are below everything (rank 0).
@@ -42,6 +42,15 @@ var rank = map[string]int{
 }
 
 const cmdRank = 5
+
+// clerkmockPkg is the Clerk twin. It signs tokens with a key anyone can read,
+// so production code must never link it (H10).
+const clerkmockPkg = module + "/internal/identity/clerkmock"
+
+// clerkmockUsers are the only non-test packages that may import the twin: the
+// standalone issuer for local end-to-end runs and the fixture replay tool.
+// Neither is built into the production image (the Dockerfile builds meterwised only).
+var clerkmockUsers = []string{"cmd/clerkmock-serve", "cmd/clerk-replay"}
 
 // pure are the hot-path packages of rule H3.
 var pure = []string{"history", "monitors", "savings"}
@@ -152,6 +161,9 @@ func checkImport(l, rel, imp string, inTest bool) []Violation {
 	}
 	if l == "contract" && !inTest && !isStd(imp) && imp != tollgate {
 		add("H0", "internal/contract imports the standard library and the tollgate root only")
+	}
+	if underAny(imp, clerkmockPkg) && !inTest && rel != "internal/identity/clerkmock" && !slices.Contains(clerkmockUsers, rel) {
+		add("H10", "the Clerk twin signs tokens with a published key; only tests and cmd/clerkmock-serve (and cmd/clerk-replay) may import it")
 	}
 	if isOurs(imp) {
 		checkLayering(l, imp, add)

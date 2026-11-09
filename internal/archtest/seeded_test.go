@@ -60,6 +60,10 @@ func TestSeededViolationsGoRed(t *testing.T) {
 		{"H3 savings imports database/sql", pkg{Rel: "internal/savings", Doc: "x", Imports: []string{"database/sql"}}, "H3"},
 		{"H3 savings imports another feature", pkg{Rel: "internal/savings", Doc: "x", Imports: []string{module + "/internal/audit"}}, "H3"},
 		{"H3 green: stdlib, contract, tollgate root", pkg{Rel: "internal/monitors", Doc: "x", Imports: []string{"sync", "strings", cn, tollgate}}, ""},
+		{"H10 the server imports the Clerk twin", pkg{Rel: "cmd/meterwised", Doc: "x", Imports: []string{module + "/internal/identity/clerkmock"}}, "H10"},
+		{"H10 the api imports the Clerk twin", pkg{Rel: "internal/api", Doc: "x", Imports: []string{module + "/internal/identity/clerkmock"}}, "H10"},
+		{"H10 green: a test imports the Clerk twin", pkg{Rel: "internal/api", Doc: "x", TestImports: []string{module + "/internal/identity/clerkmock"}}, ""},
+		{"H10 green: the standalone issuer imports it", pkg{Rel: "cmd/clerkmock-serve", Doc: "x", Imports: []string{module + "/internal/identity/clerkmock"}}, ""},
 		{"H6 unlisted third party", pkg{Rel: "internal/tenancy", Doc: "x", Imports: []string{"github.com/gin-gonic/gin"}}, "H6"},
 		{"H6 listed third party in the wrong layer", pkg{Rel: "internal/ledger", Doc: "x", Imports: []string{"github.com/jackc/pgx/v5"}}, "H6"},
 		{"H6 green: pgx in store", pkg{Rel: "internal/store", Doc: "x", Imports: []string{"github.com/jackc/pgx/v5/pgxpool"}}, ""},
@@ -205,6 +209,8 @@ func TestSeededRepositoryGoesRedEndToEnd(t *testing.T) {
 		"internal/config/x_test.go": "package config\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
 		// H9: nested module
 		"internal/config/nested/go.mod": "module nested\n",
+		// H10: production code imports the Clerk twin
+		"cmd/meterwised/main.go": "// Command meterwised is the binary.\npackage main\nimport _ \"" + module + "/internal/identity/clerkmock\"\nfunc main() {}\n",
 		// H5: web
 		"web/src/a.ts":     "import _ from 'lodash'\n",
 		"web/package.json": `{"dependencies":{"moment":"2"}}`,

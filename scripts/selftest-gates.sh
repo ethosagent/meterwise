@@ -95,8 +95,11 @@ m_h2() { mkdir -p internal/api; gofile internal/api/doc.go <<<'// Package api is
 package api'; gofile internal/store/x.go <<<'// Package store is the base.
 package store
 import _ "github.com/ethosagent/meterwise/internal/api"'; }
-# a package that does not exist yet (tenancy has a doc.go since Plan 02, so a.go there would be documented)
-m_p1() { gofile internal/savings/a.go <<<'package savings'; }
+# a command that can never become real (a name no plan will use): a real package's path would stop being a seed once it gets a doc.go
+m_p1() { gofile cmd/zz-selftest/main.go <<<'package main
+func main() {}'; }
+m_h10() { gofile cmd/meterwised/zz_selftest.go <<<'package main
+import _ "github.com/ethosagent/meterwise/internal/identity/clerkmock"'; }
 m_h1() { gofile internal/dataplane/doc.go <<<'// Package dataplane wires tollgate.
 package dataplane
 import _ "github.com/ethosagent/tollgate/internal/core"'; }
@@ -166,6 +169,7 @@ red arch "H7 GOOS filename suffix" "H7 " m_h7s
 red arch "H8 package with tests but no nonet TestMain" "H8 " m_h8
 red arch "D1 package in no layer" "D1 " m_d1
 red arch "P1 package without doc comment" "P1 " m_p1
+red arch "H10 production code imports the Clerk twin" "H10 " m_h10
 green arch "clean tree" "all gates passed" nop
 
 # ---- test: failing test, coverage floor, visible skip, CI fail-closed
