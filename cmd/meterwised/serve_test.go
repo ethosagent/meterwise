@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	"github.com/ethosagent/tollgate/testkit"
 
 	"github.com/ethosagent/meterwise/internal/api"
+	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
@@ -131,7 +133,7 @@ func baseEnv(t *testing.T, dsn string) map[string]string {
 	}
 	return map[string]string{
 		"DATABASE_URL": dsn, "LISTEN_PROXY": "127.0.0.1:0", "LISTEN_API": "127.0.0.1:0", "LISTEN_ADMIN": "127.0.0.1:0",
-		"APP_NAME": "Acme Meter", "PROXY_PUBLIC_HOST": "proxy.example.com", "WEB_DIR": web,
+		"APP_ENV": "dev", "APP_NAME": "Acme Meter", "PROXY_PUBLIC_HOST": "proxy.example.com", "WEB_DIR": web,
 	}
 }
 
@@ -266,9 +268,13 @@ func (okResolver) Resolve(*http.Request) (contract.Principal, error) {
 }
 
 func TestServeRefusesTheStubPrincipalOutsideDev(t *testing.T) {
-	for _, appEnv := range []string{"prod", "test"} {
+	for _, appEnv := range []string{"prod", "test", "", "unset"} {
 		kv := baseEnv(t, "postgres://u:p@127.0.0.1:1/none?sslmode=disable")
-		kv["APP_ENV"] = appEnv
+		if appEnv != "unset" {
+			kv["APP_ENV"] = appEnv
+		} else {
+			delete(kv, "APP_ENV")
+		}
 		// The guard runs before the database is opened, so an unreachable DSN proves
 		// the refusal came first (otherwise the code would be "unavailable").
 		code, out, _ := exec(t, kv, "serve", "-json")
@@ -289,5 +295,58 @@ func TestRequireDevForStubAllowsDevAndARealResolver(t *testing.T) {
 	}
 	if err := requireDevForStub("prod", stub); err == nil {
 		t.Fatal("stub allowed in prod")
+	}
+}
+
+func TestServeRefusesNoAuthOutsideDevIndependentlyOfThePrincipalGuard(t *testing.T) {
+	for _, appEnv := range []string{"prod", "test", ""} {
+		if err := requireDevForNoAuth(appEnv, nil); err == nil || !strings.Contains(err.Message, "no authenticator") {
+			t.Errorf("nil auth allowed with APP_ENV=%q: %v", appEnv, err)
+		}
+		if err := requireDevForNoAuth(appEnv, tollgate.NoAuth{}); err == nil {
+			t.Errorf("NoAuth allowed with APP_ENV=%q", appEnv)
+		}
+		if err := requireDevForNoAuth(appEnv, realAuth{}); err != nil {
+			t.Errorf("a real authenticator refused with APP_ENV=%q: %v", appEnv, err)
+		}
+	}
+	if err := requireDevForNoAuth("dev", nil); err != nil {
+		t.Errorf("dev with the default auth refused: %v", err)
+	}
+	// through boot: a non-dev env with a real principal resolver still stops on the proxy.
+	if err := requireDevForStub("prod", okResolver{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// realAuth stands in for Plan 05's authenticator.
+type realAuth struct{ tollgate.Authenticator }
+
+func TestTelemetryBootFailureNamesTheCauseWithoutCredentials(t *testing.T) {
+	// config.Load rejects a malformed endpoint, so build the Config directly to reach the boot path.
+	cfg := config.Config{Env: "dev", OTLPEndpoint: "http://user:topsecret@[::1/"}
+	var logs bytes.Buffer
+	_, cerr := boot(context.Background(), cfg, slog.New(slog.NewJSONHandler(&logs, nil)), dataplane.Deps{Auth: realAuth{}})
+	if cerr == nil || cerr.Code != contract.CodeInternal || len(cerr.Details) == 0 {
+		t.Fatalf("want a typed internal error with the cause in details, got %+v", cerr)
+	}
+	if all := cerr.Message + strings.Join(cerr.Details, " ") + logs.String(); strings.Contains(all, "topsecret") {
+		t.Fatalf("credentials leaked: %s", all)
+	}
+}
+
+func TestMigrateFailureIsTypedWithNoConnectionDetails(t *testing.T) {
+	kv := map[string]string{"DATABASE_URL": "postgres://dbuser:dbpass@127.0.0.1:1/dbname?sslmode=disable"}
+	code, out, errOut := exec(t, kv, "migrate", "-json")
+	if code != 1 || decode(t, out).Error.Code != contract.CodeUnavailable {
+		t.Fatalf("%d %s", code, out)
+	}
+	for _, leak := range []string{"dbuser", "dbpass", "127.0.0.1", "dbname"} {
+		if strings.Contains(out, leak) || strings.Contains(errOut, leak) {
+			t.Errorf("connection detail %q leaked: %s | %s", leak, out, errOut)
+		}
+	}
+	if !strings.Contains(errOut, `"action":"up"`) {
+		t.Errorf("cause not logged: %q", errOut)
 	}
 }

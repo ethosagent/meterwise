@@ -22,6 +22,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/meterwised /app/meterwised
 COPY --from=web /web/dist /app/web
 ENV WEB_DIR=/app/web
+ENV APP_ENV=prod
 # 8080 proxy, 8081 control plane and web app; the admin listener (9090) stays private.
 EXPOSE 8080 8081
 ENTRYPOINT ["/app/meterwised"]

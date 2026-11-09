@@ -68,7 +68,7 @@ const (
 	DefaultAppName                   = "Meterwise"
 	DefaultWebDir                    = "web/dist"
 	DefaultLogLevel                  = "info"
-	DefaultEnv                       = "dev"
+	DefaultEnv                       = "prod"
 	DefaultMaxWorkspaces             = 20
 	DefaultMaxConcurrentPerWorkspace = 8
 	maxAppNameLen                    = 64

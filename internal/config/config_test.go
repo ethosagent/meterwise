@@ -29,7 +29,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if c.AppName != "Meterwise" || c.ProxyPublicHost != "localhost:8080" || c.WebDir != "web/dist" {
 		t.Fatalf("brand defaults wrong: %+v", c)
 	}
-	if !c.PrivacyMode || c.MaxWorkspaces != 20 || c.MaxConcurrentPerWorkspace != 8 || c.LogLevel != "info" || c.Env != "dev" {
+	if !c.PrivacyMode || c.MaxWorkspaces != 20 || c.MaxConcurrentPerWorkspace != 8 || c.LogLevel != "info" || c.Env != "prod" {
 		t.Fatalf("defaults wrong: %+v", c)
 	}
 }
@@ -131,4 +131,28 @@ func hasDetail(details []string, key string) bool {
 		}
 	}
 	return false
+}
+
+func TestAppEnvDefaultsToProdWhenUnsetOrEmpty(t *testing.T) {
+	cases := []struct {
+		name string
+		kv   map[string]string
+		want string
+	}{
+		{"unset", map[string]string{}, "prod"},
+		{"empty", map[string]string{config.EnvAppEnv: ""}, "prod"},
+		{"dev", map[string]string{config.EnvAppEnv: "dev"}, "dev"},
+		{"upper case", map[string]string{config.EnvAppEnv: "DEV"}, "dev"},
+		{"test", map[string]string{config.EnvAppEnv: "test"}, "test"},
+	}
+	for _, tc := range cases {
+		tc.kv[config.EnvDatabaseURL] = goodDB
+		c, err := config.Load(env(tc.kv))
+		if err != nil || c.Env != tc.want {
+			t.Errorf("%s: env=%q err=%v, want %q", tc.name, c.Env, err, tc.want)
+		}
+	}
+	if _, err := config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvAppEnv: "staging"})); err == nil {
+		t.Error("an unknown APP_ENV must be a config problem")
+	}
 }

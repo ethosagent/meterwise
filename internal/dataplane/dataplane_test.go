@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,15 +51,30 @@ func TestOptionsDefaultsAndPrivacy(t *testing.T) {
 	if _, ok := o.Metrics.(tollgate.DiscardSink); !ok {
 		t.Errorf("default sink = %T, want DiscardSink", o.Metrics)
 	}
-	if o.DisablePrivacyMode {
-		t.Error("privacy mode must be on by default")
-	}
 	if o.Limits != tollgate.DefaultLimits() {
 		t.Error("limits must be tollgate's defaults")
 	}
-	off := dataplane.Options(cfg(t, map[string]string{config.EnvPrivacyMode: "false"}), dataplane.Deps{})
-	if !off.DisablePrivacyMode {
-		t.Error("PRIVACY_MODE=false must disable privacy mode")
+}
+
+func TestPrivacyModeFalseIsAcceptedButWarnsThatItDoesNothing(t *testing.T) {
+	var buf bytes.Buffer
+	deps := dataplane.Deps{Logger: slog.New(slog.NewJSONHandler(&buf, nil))}
+	p, err := dataplane.New(cfg(t, map[string]string{config.EnvPrivacyMode: "false"}), deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = p.Close(context.Background())
+	if !strings.Contains(buf.String(), dataplane.PrivacyModeIgnoredWarning) || !strings.Contains(buf.String(), `"level":"WARN"`) {
+		t.Fatalf("no boot warning for PRIVACY_MODE=false: %q", buf.String())
+	}
+	buf.Reset()
+	p, err = dataplane.New(cfg(t, map[string]string{}), deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = p.Close(context.Background())
+	if strings.Contains(buf.String(), "PRIVACY_MODE") {
+		t.Fatalf("default config must not warn: %q", buf.String())
 	}
 }
 

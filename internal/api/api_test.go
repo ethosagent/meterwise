@@ -337,3 +337,35 @@ func TestEveryRequestStartsASpan(t *testing.T) {
 		t.Fatalf("span %q trace %s: inbound W3C context was not continued", s.Name, s.SpanContext.TraceID())
 	}
 }
+
+// recordingPrefs remembers which user each call was made for.
+type recordingPrefs struct {
+	api.PreferenceStore
+	gets, updates []string
+}
+
+func (r *recordingPrefs) Get(ctx context.Context, id string) (contract.Preferences, error) {
+	r.gets = append(r.gets, id)
+	return r.PreferenceStore.Get(ctx, id)
+}
+
+func (r *recordingPrefs) Update(ctx context.Context, id string, p contract.PreferencesPatch) (contract.Preferences, error) {
+	r.updates = append(r.updates, id)
+	return r.PreferenceStore.Update(ctx, id, p)
+}
+
+// A middleware that forgot to attach the principal would leave UserID empty (or, now, 401): both
+// fail this test, which pins the user the handler acts for to the one the resolver returned.
+func TestHandlersActForThePrincipalTheResolverReturned(t *testing.T) {
+	rec := &recordingPrefs{PreferenceStore: api.NewMemoryPreferences()}
+	f := newFixture(t, func(d *api.Deps) { d.Prefs = rec })
+	if resp, b := f.do(t, "GET", "/api/me/preferences", ""); resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET: %d %s", resp.StatusCode, b)
+	}
+	if resp, b := f.do(t, "PATCH", "/api/me/preferences", `{"theme":"dark"}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH: %d %s", resp.StatusCode, b)
+	}
+	if len(rec.gets) != 1 || rec.gets[0] != "u-1" || len(rec.updates) != 1 || rec.updates[0] != "u-1" {
+		t.Fatalf("handlers acted for gets=%v updates=%v, want u-1 on both", rec.gets, rec.updates)
+	}
+}

@@ -25,18 +25,23 @@ type Deps struct {
 	Logger    *slog.Logger
 }
 
-// Options turns the config and deps into tollgate.Options. Privacy mode follows
-// PRIVACY_MODE (default on, decision D12); limits are tollgate's defaults.
+// PrivacyModeIgnoredWarning is logged at boot when PRIVACY_MODE=false. tollgate v0.1.0
+// accepts Options.DisablePrivacyMode but does not act on it, so the setting changes nothing.
+const PrivacyModeIgnoredWarning = "PRIVACY_MODE=false has no effect: tollgate v0.1.0 does not implement a switch for it; privacy behaviour is unchanged"
+
+// Options turns the config and deps into tollgate.Options. Limits are tollgate's
+// defaults. PRIVACY_MODE is accepted but not forwarded: tollgate v0.1.0 ignores
+// DisablePrivacyMode (see PrivacyModeIgnoredWarning), so forwarding it would only
+// suggest a control that does not exist.
 func Options(cfg config.Config, d Deps) tollgate.Options {
 	o := tollgate.Options{
-		Auth:               d.Auth,
-		Admission:          d.Admission,
-		Providers:          d.Resolver,
-		Metrics:            d.Sink,
-		Transport:          d.Transport,
-		Logger:             d.Logger,
-		Limits:             tollgate.DefaultLimits(),
-		DisablePrivacyMode: !cfg.PrivacyMode,
+		Auth:      d.Auth,
+		Admission: d.Admission,
+		Providers: d.Resolver,
+		Metrics:   d.Sink,
+		Transport: d.Transport,
+		Logger:    d.Logger,
+		Limits:    tollgate.DefaultLimits(),
 	}
 	if o.Auth == nil {
 		o.Auth = tollgate.NoAuth{}
@@ -54,6 +59,13 @@ func Options(cfg config.Config, d Deps) tollgate.Options {
 // Mount Handler on LISTEN_PROXY and AdminHandler on LISTEN_ADMIN; call Start
 // before serving and Close after the servers have shut down.
 func New(cfg config.Config, d Deps) (*tollgate.Proxy, error) {
+	if !cfg.PrivacyMode {
+		log := d.Logger
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn(PrivacyModeIgnoredWarning, "key", config.EnvPrivacyMode)
+	}
 	p, err := tollgate.New(Options(cfg, d))
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: %w", err)

@@ -23,6 +23,7 @@ tests create and drop their own throwaway databases; they never touch the `meter
 export DATABASE_URL="$TEST_DATABASE_URL"
 go run ./cmd/meterwised config check -json     # lists every configuration problem at once
 go run ./cmd/meterwised migrate                # goose baseline (0001_store) against DATABASE_URL
+export APP_ENV=dev
 go run ./cmd/meterwised serve                  # proxy :8080, API + web :8081, admin 127.0.0.1:9090
 curl -s 127.0.0.1:8081/healthz                 # {"status":"ok"} (pings Postgres)
 curl -s 127.0.0.1:8081/api/config              # {"appName":...,"proxyPublicHost":...}
@@ -44,7 +45,7 @@ request to a stub admin until Plan 02.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | base URL of an OTLP/HTTP collector; unset turns tracing off |
 | `CLERK_ISSUER` / `CLERK_JWKS_URL` / `CLERK_PUBLISHABLE_KEY` | unset | consumed by Plan 02 |
 | `WEB_DIR` | `web/dist` | built web app served on `LISTEN_API` |
-| `LOG_LEVEL` / `APP_ENV` | `info` / `dev` | `debug|info|warn|error` / `dev|test|prod`; until Plan 02 ships a real principal resolver, serve refuses any value but `dev` |
+| `LOG_LEVEL` / `APP_ENV` | `info` / `prod` | `debug|info|warn|error` / `dev|test|prod`; unset or empty means `prod`, and until Plan 02 ships a real principal and Plan 05 a real authenticator, `serve` refuses to boot in anything but `dev` |
 
 ## Web
 

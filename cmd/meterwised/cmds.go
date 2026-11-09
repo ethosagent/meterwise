@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"runtime"
 
 	"github.com/ethosagent/meterwise/internal/config"
@@ -74,7 +75,9 @@ func cmdMigrate(ctx context.Context, e *env, args []string) int {
 		ms, err = store.Status(ctx, cfg.DatabaseURL)
 	}
 	if err != nil {
-		return fail(e, asJSON, contract.NewError(contract.CodeUnavailable, "migrate "+action+" failed: "+err.Error()), exitFailed)
+		// The detail goes to the log with the DSN scrubbed; the typed error carries no connection details.
+		slog.New(slog.NewJSONHandler(e.stderr, nil)).Error("migrate", "action", action, "err", scrubDSN(err.Error(), cfg.DatabaseURL))
+		return fail(e, asJSON, contract.NewError(contract.CodeUnavailable, "migrate "+action+" failed; see the log for the cause"), exitFailed)
 	}
 	if ms == nil {
 		ms = []store.Migration{}

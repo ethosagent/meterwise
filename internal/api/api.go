@@ -126,7 +126,11 @@ func (s *server) appConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
-	p, _ := PrincipalFrom(r.Context())
+	p, ok := PrincipalFrom(r.Context())
+	if !ok {
+		writeError(w, contract.NewError(contract.CodeUnauthorized, "authentication required"))
+		return
+	}
 	prefs, err := s.Prefs.Get(r.Context(), p.UserID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -136,7 +140,11 @@ func (s *server) getPreferences(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) patchPreferences(w http.ResponseWriter, r *http.Request) {
-	p, _ := PrincipalFrom(r.Context())
+	p, ok := PrincipalFrom(r.Context())
+	if !ok {
+		writeError(w, contract.NewError(contract.CodeUnauthorized, "authentication required"))
+		return
+	}
 	var patch contract.PreferencesPatch
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()

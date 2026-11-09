@@ -26,7 +26,7 @@ hooks:
 	scripts/install-hooks.sh
 
 run:
-	go run ./cmd/meterwised serve
+	APP_ENV=dev go run ./cmd/meterwised serve
 
 migrate:
 	go run ./cmd/meterwised migrate

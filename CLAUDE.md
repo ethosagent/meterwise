@@ -23,7 +23,7 @@ make db-up                               # Postgres 16 on 127.0.0.1:54329 for da
 go run ./cmd/gen                         # regenerate TS twin, openapi.json, docs/schema.md
 go run ./cmd/meterwised config check -json   # every env problem at once
 go run ./cmd/meterwised migrate              # goose baseline against DATABASE_URL
-go run ./cmd/meterwised serve                # proxy :8080, API + web :8081, admin 127.0.0.1:9090
+APP_ENV=dev go run ./cmd/meterwised serve  # proxy :8080, API + web :8081, admin 127.0.0.1:9090
 METERWISE_BASE_REF=build/all-plans scripts/run-checks.sh   # base branch for the migrate gate (default main)
 ```
 

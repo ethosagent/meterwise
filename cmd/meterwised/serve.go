@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,10 +78,15 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 	if cerr := requireDevForStub(cfg.Env, principals); cerr != nil {
 		return nil, cerr
 	}
+	if cerr := requireDevForNoAuth(cfg.Env, deps.Auth); cerr != nil {
+		return nil, cerr
+	}
 	rt := &instance{cfg: cfg, log: log, servers: map[string]*http.Server{}, lns: map[string]net.Listener{}}
 	tp, shutdown, err := startTelemetry(ctx, cfg)
 	if err != nil {
-		return nil, contract.NewError(contract.CodeInternal, "cannot start telemetry for "+config.EnvOTLPEndpoint)
+		cause := scrubURL(err.Error(), cfg.OTLPEndpoint)
+		log.Error("telemetry", "err", cause)
+		return nil, contract.NewError(contract.CodeInternal, "cannot start telemetry for "+config.EnvOTLPEndpoint, cause)
 	}
 	rt.shutdown = shutdown
 	if rt.db, err = store.Open(ctx, cfg.DatabaseURL); err != nil {
@@ -124,6 +131,44 @@ func requireDevForStub(appEnv string, res api.PrincipalResolver) *contract.Error
 			config.EnvAppEnv+"="+appEnv+" needs a real principal resolver (Plan 02)")
 	}
 	return nil
+}
+
+// requireDevForNoAuth refuses to run the proxy without a real authenticator outside dev: a nil
+// Deps.Auth falls back to tollgate.NoAuth, which admits every caller as one tenant. It is
+// independent of the principal guard, so swapping the control-plane resolver (Plan 02) does not
+// open the data plane; Plan 05 supplies the real authenticator.
+func requireDevForNoAuth(appEnv string, auth tollgate.Authenticator) *contract.Error {
+	if _, none := auth.(tollgate.NoAuth); (auth == nil || none) && appEnv != "dev" {
+		return contract.NewError(contract.CodeConfigInvalid,
+			"the proxy has no authenticator (tollgate.NoAuth admits every caller) and runs only with "+config.EnvAppEnv+"=dev",
+			config.EnvAppEnv+"="+appEnv+" needs a real authenticator (Plan 05)")
+	}
+	return nil
+}
+
+// scrubURL removes a URL's credentials from an error message.
+func scrubURL(msg, raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.User != nil {
+		msg = strings.ReplaceAll(msg, u.User.String(), "***")
+		if pw, ok := u.User.Password(); ok && pw != "" {
+			msg = strings.ReplaceAll(msg, pw, "***")
+		}
+	}
+	return strings.ReplaceAll(msg, raw, "<redacted-url>")
+}
+
+// scrubDSN removes everything that identifies the database (credentials, host, port, name) from an
+// error message, for the migrate log line.
+func scrubDSN(msg, dsn string) string {
+	msg = scrubURL(msg, dsn)
+	if u, err := url.Parse(dsn); err == nil {
+		for _, part := range []string{u.User.Username(), u.Hostname(), u.Port(), strings.TrimPrefix(u.Path, "/")} {
+			if part != "" {
+				msg = strings.ReplaceAll(msg, part, "***")
+			}
+		}
+	}
+	return msg
 }
 
 // listen binds every listener and reports all that fail, not just the first.
