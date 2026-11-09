@@ -336,7 +336,7 @@ red migrate "migrations but no Postgres: fails closed" "cannot create a throwawa
 m_any() { printf 'export const x: any = 1;\n' >web/src/bad.ts; }
 m_tsc() { printf 'export const n: number = "text";\n' >web/src/bad.ts; }
 m_vitest() { printf 'import { expect, it } from "vitest";\n\nit("fails", () => {\n  expect(1).toBe(2);\n});\n' >web/src/bad.test.ts; }
-m_webcov() { { for i in $(seq 1 60); do printf 'export function f%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/untested.ts; }
+m_webcov() { { for i in $(seq 1 120); do printf 'export function f%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/untested.ts; }
 m_barrel() { printf 'export const a = 1;\n' >web/src/index.ts; }
 m_barrelmts() { printf 'export const a = 1;\n' >web/src/index.mts; }
 m_nofeat() { mkdir -p web/src/features/billing; printf 'export const b = 1;\n' >web/src/features/billing/Page.ts; }
@@ -349,9 +349,9 @@ red web "explicit any" "npm run check failed" m_any
 red web "type error" "npm run typecheck failed" m_tsc
 red web "failing vitest" "npm run test failed" m_vitest
 red web "coverage below 70 %" "npm run test failed" m_webcov
-m_webcov_testdir() { mkdir -p web/src/test; { for i in $(seq 1 60); do printf 'export function t%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/test/untested.ts; }
+m_webcov_testdir() { mkdir -p web/src/test; { for i in $(seq 1 120); do printf 'export function t%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/test/untested.ts; }
 red web "untested file in web/src/test is not exempt from coverage" "npm run test failed" m_webcov_testdir
-m_webcov_contract() { { for i in $(seq 1 60); do printf 'export function c%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/contract/handwritten.ts; }
+m_webcov_contract() { { for i in $(seq 1 120); do printf 'export function c%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/contract/handwritten.ts; }
 red web "untested file next to generated.ts is not exempt from coverage" "npm run test failed" m_webcov_contract
 m_hex_testdir() { mkdir -p web/src/test; printf 'export const c = "#ff0000";\n' >web/src/test/extra.ts; }
 red web "hex colour in a new web/src/test file is caught by the hygiene test" "npm run test failed" m_hex_testdir
