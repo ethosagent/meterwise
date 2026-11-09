@@ -20,6 +20,10 @@ func tsType(t reflect.Type) (string, error) {
 		return "string", nil // decimal string (ruling R12)
 	case reflect.TypeFor[contract.Theme]():
 		return "Theme", nil
+	case reflect.TypeFor[contract.Role]():
+		return "Role", nil
+	case reflect.TypeFor[contract.InvitationStatus]():
+		return "InvitationStatus", nil
 	case reflect.TypeFor[map[string]any]():
 		return "Record<string, unknown>", nil
 	}
@@ -39,9 +43,19 @@ func tsType(t reflect.Type) (string, error) {
 		}
 		return el + "[]", nil
 	case reflect.Struct:
-		return t.Name(), nil
+		return dtoName(t), nil
 	}
 	return "", fmt.Errorf("gen: no TypeScript mapping for Go type %s", t)
+}
+
+// dtoName is the API name of a struct type: the DTOs() name, else the Go name.
+func dtoName(t reflect.Type) string {
+	for _, d := range contract.DTOs() {
+		if d.Type == t {
+			return d.Name
+		}
+	}
+	return t.Name()
 }
 
 // fieldInfo reads a struct field's JSON name and optionality.
@@ -80,6 +94,18 @@ func tsInterface(d contract.DTO) (string, error) {
 	return b.String(), nil
 }
 
+// tsConstTuple writes `export const NAME = [...] as const;` and the union type derived from it.
+func tsConstTuple[T ~string](b *strings.Builder, name, typ string, vals []T) {
+	b.WriteString("export const " + name + " = [")
+	for i, v := range vals {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(b, "%q", string(v))
+	}
+	b.WriteString("] as const;\n\nexport type " + typ + " = (typeof " + name + ")[number];\n\n")
+}
+
 func genContractTS() ([]byte, error) {
 	var b strings.Builder
 	b.WriteString(generatedBanner)
@@ -89,14 +115,9 @@ func genContractTS() ([]byte, error) {
 		fmt.Fprintf(&b, "  %q,\n", s.Code)
 	}
 	b.WriteString("] as const;\n\nexport type ErrorCode = (typeof ERROR_CODES)[number];\n\n")
-	b.WriteString("export const THEMES = [")
-	for i, th := range contract.Themes() {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%q", th)
-	}
-	b.WriteString("] as const;\n\nexport type Theme = (typeof THEMES)[number];\n\n")
+	tsConstTuple(&b, "THEMES", "Theme", contract.Themes())
+	tsConstTuple(&b, "ROLES", "Role", contract.Roles())
+	tsConstTuple(&b, "INVITATION_STATUSES", "InvitationStatus", contract.InvitationStatuses())
 	b.WriteString("export const ERROR_STATUS: Record<ErrorCode, number> = {\n")
 	for _, s := range specs {
 		fmt.Fprintf(&b, "  %s: %d,\n", s.Code, s.Status)

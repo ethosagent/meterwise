@@ -4,29 +4,39 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
+
+// enumSchema is the OpenAPI string enum for a contract string type.
+func enumSchema[T ~string](vals []T) map[string]any {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		out = append(out, string(v))
+	}
+	return map[string]any{"type": "string", "enum": out}
+}
 
 func schemaFor(t reflect.Type) (map[string]any, error) {
 	switch t {
 	case reflect.TypeFor[contract.MicroUSD]():
 		return map[string]any{"type": "string", "pattern": `^-?\d+\.\d{6}$`, "description": "decimal USD, six places"}, nil
 	case reflect.TypeFor[contract.Theme]():
-		themes := []string{}
-		for _, th := range contract.Themes() {
-			themes = append(themes, string(th))
-		}
-		return map[string]any{"type": "string", "enum": themes}, nil
+		return enumSchema(contract.Themes()), nil
+	case reflect.TypeFor[contract.Role]():
+		return enumSchema(contract.Roles()), nil
+	case reflect.TypeFor[contract.InvitationStatus]():
+		return enumSchema(contract.InvitationStatuses()), nil
 	case reflect.TypeFor[map[string]any]():
 		return map[string]any{"type": "object", "additionalProperties": true}, nil
 	case reflect.TypeFor[contract.Code]():
-		codes := []string{}
-		for _, s := range contract.Errors() {
-			codes = append(codes, string(s.Code))
+		codes := []contract.Code{}
+		for _, e := range contract.Errors() {
+			codes = append(codes, e.Code)
 		}
-		return map[string]any{"type": "string", "enum": codes}, nil
+		return enumSchema(codes), nil
 	}
 	switch t.Kind() {
 	case reflect.Pointer:
@@ -46,7 +56,7 @@ func schemaFor(t reflect.Type) (map[string]any, error) {
 		}
 		return map[string]any{"type": "array", "items": el}, nil
 	case reflect.Struct:
-		return map[string]any{"$ref": "#/components/schemas/" + t.Name()}, nil
+		return map[string]any{"$ref": "#/components/schemas/" + dtoName(t)}, nil
 	}
 	return nil, fmt.Errorf("gen: no OpenAPI mapping for Go type %s", t)
 }
@@ -73,11 +83,19 @@ func objectSchema(d contract.DTO) (map[string]any, error) {
 }
 
 func operation(r contract.Route) map[string]any {
+	status := "200"
+	if r.Status != 0 {
+		status = strconv.Itoa(r.Status)
+	}
+	success := map[string]any{"description": "OK"}
+	if r.Response != "" {
+		success["content"] = jsonContent(r.Response)
+	}
 	op := map[string]any{
 		"summary":     r.Summary,
 		"operationId": operationID(r),
 		"responses": map[string]any{
-			"200":     map[string]any{"description": "OK", "content": jsonContent(r.Response)},
+			status:    success,
 			"default": map[string]any{"description": "Error", "content": jsonContent("ErrorBody")},
 		},
 	}

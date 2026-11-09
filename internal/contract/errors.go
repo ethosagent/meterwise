@@ -14,17 +14,23 @@ type Code string
 // The registry. Add a code here (and to errorSpecs) before returning it from
 // any handler or subcommand; TestRegistryIsComplete fails otherwise.
 const (
-	CodeInvalidRequest Code = "invalid_request"
-	CodeUnauthorized   Code = "unauthorized"
-	CodeForbidden      Code = "forbidden"
-	CodeNotFound       Code = "not_found"
-	CodeConflict       Code = "conflict"
-	CodeGone           Code = "gone"
-	CodeRateLimited    Code = "rate_limited"
-	CodeConfigInvalid  Code = "config_invalid"
-	CodeNotAvailable   Code = "not_available"
-	CodeUnavailable    Code = "unavailable"
-	CodeInternal       Code = "internal"
+	CodeInvalidRequest  Code = "invalid_request"
+	CodeUnauthenticated Code = "unauthenticated"
+	CodeForbidden       Code = "forbidden"
+	CodeNotFound        Code = "not_found"
+	CodeConflict        Code = "conflict"
+	CodeGone            Code = "gone"
+	CodeRateLimited     Code = "rate_limited"
+	CodeConfigInvalid   Code = "config_invalid"
+	CodeNotAvailable    Code = "not_available"
+	CodeUnavailable     Code = "unavailable"
+	CodeInternal        Code = "internal"
+
+	CodeNotInvited          Code = "not_invited"
+	CodeWorkspaceLimit      Code = "workspace_limit"
+	CodeDefaultWorkspace    Code = "default_workspace"
+	CodeDuplicateInvitation Code = "duplicate_invitation"
+	CodeValidationFailed    Code = "validation_failed"
 )
 
 // ErrorSpec is the registry entry for one code.
@@ -36,7 +42,7 @@ type ErrorSpec struct {
 
 var errorSpecs = []ErrorSpec{
 	{CodeInvalidRequest, http.StatusBadRequest, "The request is malformed or fails validation; details lists the fields."},
-	{CodeUnauthorized, http.StatusUnauthorized, "No valid credential was presented."},
+	{CodeUnauthenticated, http.StatusUnauthorized, "No valid credential was presented."},
 	{CodeForbidden, http.StatusForbidden, "The caller is authenticated but lacks the permission."},
 	{CodeNotFound, http.StatusNotFound, "The resource does not exist or is not visible to the caller."},
 	{CodeConflict, http.StatusConflict, "The request conflicts with current state."},
@@ -46,6 +52,11 @@ var errorSpecs = []ErrorSpec{
 	{CodeNotAvailable, http.StatusNotImplemented, "The capability is not wired in this build."},
 	{CodeUnavailable, http.StatusServiceUnavailable, "A dependency (for example the database) is not reachable right now; retry."},
 	{CodeInternal, http.StatusInternalServerError, "An unexpected failure; the message carries no internals."},
+	{CodeNotInvited, http.StatusForbidden, "The identity is valid but holds no active membership and no pending invitation."},
+	{CodeWorkspaceLimit, http.StatusConflict, "The organization already has MAX_WORKSPACES workspaces."},
+	{CodeDefaultWorkspace, http.StatusConflict, "The default workspace cannot be deleted."},
+	{CodeDuplicateInvitation, http.StatusConflict, "A pending invitation or an active membership already exists for that email."},
+	{CodeValidationFailed, http.StatusUnprocessableEntity, "A request field failed validation; details lists the fields."},
 }
 
 // Errors returns the registry sorted by code. The slice is a copy.
