@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { AppRoutes } from "../../routes";
+import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { ADMIN_ME, MEMBER_ME, mockApi, TEST_WORKSPACES } from "../../test/mockApi";
 import { renderAt } from "../../test/render";
 import { WorkspacePage } from "./Page";
@@ -10,12 +12,76 @@ const DEFAULT = TEST_WORKSPACES[0];
 const STAGING = TEST_WORKSPACES[1];
 
 describe("WorkspacePage", () => {
-  it("shows the active workspace's name and proxy URL, with no Reset URL", async () => {
+  it("shows the active workspace's name, proxy URL and Reset URL", async () => {
     mockApi();
     renderAt(<WorkspacePage />, PATH);
     expect(await screen.findByLabelText("Proxy URL")).toHaveValue(DEFAULT?.proxyUrl);
     expect(screen.getByLabelText("Name")).toHaveValue("Default workspace");
-    expect(screen.queryByText(/reset url/i)).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset URL" })).toBeInTheDocument();
+  });
+
+  it("without workspace_url:read the URL row says it is hidden and offers nothing", async () => {
+    const noUrl = {
+      admin: false,
+      grants: MEMBER_SNAPSHOT.grants.filter((g) => g.resourceType !== "workspace_url"),
+    };
+    mockApi({ me: MEMBER_ME, access: { snapshot: noUrl } });
+    renderAt(<WorkspacePage />, PATH);
+    expect(await screen.findByText("The proxy URL is hidden for your account")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Proxy URL")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset URL" })).toBeNull();
+    expect(screen.queryByText("Allowed client CIDRs")).toBeNull();
+  });
+
+  it("with workspace_url:read but not manage: the URL, no Reset URL, no CIDR editor", async () => {
+    mockApi({ me: MEMBER_ME });
+    renderAt(<WorkspacePage />, PATH);
+    expect(await screen.findByLabelText("Proxy URL")).toHaveValue(DEFAULT?.proxyUrl);
+    expect(screen.queryByRole("button", { name: "Reset URL" })).toBeNull();
+    expect(screen.queryByText("Allowed client CIDRs")).toBeNull();
+  });
+
+  it("resets the URL from settings and the new URL replaces the old", async () => {
+    const api = mockApi();
+    renderAt(<WorkspacePage />, PATH);
+    await screen.findByLabelText("Proxy URL");
+    await userEvent.click(screen.getByRole("button", { name: "Reset URL" }));
+    const pop = within(document.querySelector(".ant-popover") as HTMLElement);
+    await userEvent.click(await pop.findByRole("button", { name: "Reset URL" }));
+    await waitFor(() =>
+      expect(api.callsTo("POST", "/api/workspaces/ws_1/url/reset")).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Proxy URL")).not.toHaveValue(DEFAULT?.proxyUrl),
+    );
+  });
+
+  it("edits the allowed client CIDRs as tags, normalises a bare IP and saves with a PUT", async () => {
+    const api = mockApi();
+    renderAt(<WorkspacePage />, PATH);
+    const input = await screen.findByLabelText("Allowed client CIDRs");
+    expect(screen.getByRole("button", { name: "Save CIDRs" })).toBeDisabled();
+    await userEvent.type(input, "10.0.0.0/8{Enter}");
+    await userEvent.type(input, "203.0.113.7{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Save CIDRs" }));
+    await waitFor(() =>
+      expect(api.callsTo("PUT", "/api/workspaces/ws_1/url/allowed-cidrs")).toHaveLength(1),
+    );
+    expect(api.callsTo("PUT", "/api/workspaces/ws_1/url/allowed-cidrs")[0]?.body).toEqual({
+      cidrs: ["10.0.0.0/8", "203.0.113.7"],
+    });
+    // the server normalised the bare IP; the saved list refetched from the workspace list
+    expect(await screen.findByText("203.0.113.7/32")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save CIDRs" })).toBeDisabled();
+  });
+
+  it("shows the server's first problem when a CIDR is refused", async () => {
+    mockApi();
+    renderAt(<WorkspacePage />, PATH);
+    const input = await screen.findByLabelText("Allowed client CIDRs");
+    await userEvent.type(input, "not-an-ip{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Save CIDRs" }));
+    expect(await screen.findByText("not-an-ip is not a valid IP or CIDR")).toBeInTheDocument();
   });
 
   it("copies the proxy URL", async () => {
@@ -163,5 +229,37 @@ describe("the active workspace is never substituted", () => {
     const sw = await screen.findByTestId("workspace-switcher");
     await waitFor(() => expect(sw).toHaveTextContent("Workspace unavailable"));
     expect(sw).not.toHaveTextContent("Default workspace");
+  });
+});
+
+describe("switching workspace under the mounted page", () => {
+  it("drops the grace notice and a dirty CIDR draft, shows the new workspace's list and acts on it", async () => {
+    const withCidrs = TEST_WORKSPACES.map((w) =>
+      w.id === "ws_2" ? { ...w, allowedClientCidrs: ["192.0.2.0/24"] } : w,
+    );
+    const api = mockApi({ workspaces: withCidrs });
+    renderAt(<AppRoutes />, PATH);
+    const input = await screen.findByLabelText("Allowed client CIDRs");
+    await userEvent.type(input, "10.9.0.0/16{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Reset URL" }));
+    const pop = within(document.querySelector(".ant-popover") as HTMLElement);
+    await userEvent.click(await pop.findByRole("button", { name: "Reset URL" }));
+    expect(await screen.findByText(/previous URL still works/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("workspace-switcher"));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Staging" }));
+    expect(await screen.findByText("192.0.2.0/24")).toBeInTheDocument();
+    expect(await screen.findByText("192.0.2.0/24")).toBeInTheDocument();
+    expect(screen.queryByText("10.9.0.0/16")).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/previous URL still works/)).toBeNull());
+    expect(screen.getByRole("button", { name: "Save CIDRs" })).toBeDisabled();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Reset URL" }));
+    await screen.findByText(/keeps working for the grace period/);
+    const buttons = screen.getAllByRole("button", { name: "Reset URL" });
+    await userEvent.click(buttons[buttons.length - 1] as HTMLElement); // the popover's confirm
+    await waitFor(() =>
+      expect(api.callsTo("POST", "/api/workspaces/ws_2/url/reset")).toHaveLength(1),
+    );
   });
 });

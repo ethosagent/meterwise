@@ -2,9 +2,12 @@
 
 **Settings / Workspace** (`/settings/workspace`) and the create-workspace dialog.
 
-- Shows: the active workspace's name (admins can rename), its proxy URL with a Copy button, and a
+- Shows: the active workspace's name (admins can rename), its proxy URL with Copy and Reset URL
+  (`WorkspaceUrl.tsx`, shared with Setup), the Allowed client CIDRs tags editor (`AllowedCidrs.tsx`) and a
   danger zone with delete. The default workspace cannot be deleted: the button is disabled and says why.
-  There is no Reset URL here (Plan 04 adds it).
+- The URL is gated: `publicId`, `proxyUrl` and `allowedClientCidrs` are null without `workspace_url:read`
+  (the row says the URL is hidden). Reset URL and the CIDR editor need `workspace_url:manage`
+  (`PUT /api/workspaces/{id}/url/allowed-cidrs`; the server validates, a 422 shows its first problem).
 - `CreateWorkspaceDialog` (opened from the sidebar switcher): name in, proxy URL with Copy out.
   A `409 workspace_limit` shows "Workspace limit reached"; `422` shows the server's first problem.
 - Endpoints: `GET|POST /api/workspaces`, `PATCH|DELETE /api/workspaces/{id}` (hooks in `api/identity.ts`).

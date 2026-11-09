@@ -1,4 +1,4 @@
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 import type {
   ErrorCode,
   Grant,
@@ -9,13 +9,12 @@ import type {
 } from "../contract/generated";
 import { apiFetch } from "./client";
 import { meKey, workspacesKey } from "./identity";
+import { enc, json, useInvalidatingMutation } from "./mutation";
 
 export const permissionsKey = ["permissions"] as const;
 export const membersKey = ["members"] as const;
 export const groupsKey = ["groups"] as const;
 export const orgPermissionsKey = ["organization", "permissions"] as const;
-
-const enc = encodeURIComponent;
 
 /** Readable lines for the Plan 03 conflicts; pass as `byCode` to describeApiError. */
 export const ACCESS_ERROR_TEXT = {
@@ -90,126 +89,109 @@ export function useOrgDefaults(enabled: boolean) {
   });
 }
 
-/** A mutation that refreshes the given keys and then the caller's own access. */
-function useAccessMutation<V, R>(
-  fn: (v: V) => Promise<R>,
-  keys: readonly (readonly unknown[])[],
-  /** Refresh on failure too, for a mutation that sends several requests and can half-apply. */
-  settled = false,
-) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    [settled ? "onSettled" : "onSuccess"]: async () => {
-      await Promise.all([
-        ...keys.map((queryKey) => qc.invalidateQueries({ queryKey })),
-        refreshAccess(qc),
-      ]);
-    },
-  });
-}
-
-const body = (v: unknown) => JSON.stringify(v);
+/**
+ * What a change to a grant, a role, a removed member, a deleted group or an attached workspace can
+ * alter for the caller: their access, workspace list and Me. Creating or renaming a group, or moving
+ * members between groups, does not, so those refresh the group lists only.
+ */
+const ACCESS_KEYS = [permissionsKey, workspacesKey, meKey] as const;
 
 export function useCreateGroup() {
-  return useAccessMutation(
-    (name: string) => apiFetch<Group>("/api/groups", { method: "POST", body: body({ name }) }),
+  return useInvalidatingMutation(
+    (name: string) => apiFetch<Group>("/api/groups", { method: "POST", body: json({ name }) }),
     [groupsKey],
   );
 }
 
 export function useRenameGroup() {
-  return useAccessMutation(
+  return useInvalidatingMutation(
     (v: { id: string; name: string }) =>
       apiFetch<Group>(`/api/groups/${enc(v.id)}`, {
         method: "PATCH",
-        body: body({ name: v.name }),
+        body: json({ name: v.name }),
       }),
     [groupsKey],
   );
 }
 
 export function useDeleteGroup() {
-  return useAccessMutation(
+  return useInvalidatingMutation(
     (id: string) => apiFetch<void>(`/api/groups/${enc(id)}`, { method: "DELETE" }),
-    [groupsKey, membersKey],
+    [groupsKey, membersKey, ...ACCESS_KEYS],
   );
 }
 
 export function usePutGroupGrants() {
-  return useAccessMutation(
+  return useInvalidatingMutation(
     (v: { id: string; grants: Grant[] }) =>
       apiFetch<{ grants: Grant[] }>(`/api/groups/${enc(v.id)}/permissions`, {
         method: "PUT",
-        body: body({ grants: v.grants }),
+        body: json({ grants: v.grants }),
       }),
-    [groupsKey],
+    [groupsKey, ...ACCESS_KEYS],
   );
 }
 
-/** Attach or detach a workspace. Attaching seeds read grants and detaching drops the group's grants there. */
-export function useGroupWorkspace() {
-  return useAccessMutation(
-    async (v: { id: string; workspaceId: string; attach: boolean }) => {
-      if (v.attach) {
-        await apiFetch<Group>(`/api/groups/${enc(v.id)}/workspaces`, {
-          method: "POST",
-          body: body({ workspaceId: v.workspaceId }),
-        });
-      } else {
-        await apiFetch<void>(`/api/groups/${enc(v.id)}/workspaces/${enc(v.workspaceId)}`, {
-          method: "DELETE",
-        });
-      }
-    },
-    [groupsKey],
+/** Attaching seeds read grants for the group on the workspace. */
+export function useAttachWorkspace() {
+  return useInvalidatingMutation(
+    (v: { id: string; workspaceId: string }) =>
+      apiFetch<Group>(`/api/groups/${enc(v.id)}/workspaces`, {
+        method: "POST",
+        body: json({ workspaceId: v.workspaceId }),
+      }),
+    [groupsKey, ...ACCESS_KEYS],
   );
 }
 
-/** Moves users in or out of a group, one request each, in order. Group membership touches group_users only. */
-export function useGroupMembership() {
-  return useAccessMutation(
-    async (v: { id: string; add: string[]; remove: string[] }) => {
-      for (const userId of v.add) {
-        await apiFetch(`/api/groups/${enc(v.id)}/members`, {
-          method: "POST",
-          body: body({ userId }),
-        });
-      }
-      for (const userId of v.remove) {
-        await apiFetch(`/api/groups/${enc(v.id)}/members/${enc(userId)}`, { method: "DELETE" });
-      }
-    },
+/** Detaching drops every grant the group has on the workspace. */
+export function useDetachWorkspace() {
+  return useInvalidatingMutation(
+    (v: { id: string; workspaceId: string }) =>
+      apiFetch<void>(`/api/groups/${enc(v.id)}/workspaces/${enc(v.workspaceId)}`, {
+        method: "DELETE",
+      }),
+    [groupsKey, ...ACCESS_KEYS],
+  );
+}
+
+/** Replaces a group's member set in one request; every id must be an active member or nothing changes (422). */
+export function useSetGroupMembers() {
+  return useInvalidatingMutation(
+    (v: { id: string; userIds: string[] }) =>
+      apiFetch<{ items: Member[] }>(`/api/groups/${enc(v.id)}/members`, {
+        method: "PUT",
+        body: json({ userIds: v.userIds }),
+      }),
     [groupsKey, membersKey],
-    true,
   );
 }
 
 export function usePutOrgDefaults() {
-  return useAccessMutation(
+  return useInvalidatingMutation(
     (grants: Grant[]) =>
       apiFetch<{ grants: Grant[] }>("/api/organization/permissions", {
         method: "PUT",
-        body: body({ grants }),
+        body: json({ grants }),
       }),
-    [orgPermissionsKey],
+    [orgPermissionsKey, ...ACCESS_KEYS],
   );
 }
 
 export function useSetMemberRole() {
-  return useAccessMutation(
+  return useInvalidatingMutation(
     (v: { userId: string; role: Role }) =>
       apiFetch<Member>(`/api/members/${enc(v.userId)}`, {
         method: "PATCH",
-        body: body({ role: v.role }),
+        body: json({ role: v.role }),
       }),
-    [membersKey],
+    [membersKey, ...ACCESS_KEYS],
   );
 }
 
 export function useRemoveMember() {
-  return useAccessMutation(
+  return useInvalidatingMutation(
     (userId: string) => apiFetch<void>(`/api/members/${enc(userId)}`, { method: "DELETE" }),
-    [membersKey, groupsKey],
+    [membersKey, groupsKey, ...ACCESS_KEYS],
   );
 }

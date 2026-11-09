@@ -1,8 +1,10 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import type { ErrorCode, Invitation, Me, Role, Workspace } from "../contract/generated";
+import type { ErrorCode, Invitation, Me, Role } from "../contract/generated";
 import { apiFetch } from "./client";
+import type { WorkspaceView } from "./contract04";
 import { ApiError } from "./errors";
+import { enc, json, useInvalidatingMutation } from "./mutation";
 
 /** Error codes the identity screens branch on; `satisfies` ties each to the generated registry. */
 export const IDENTITY_ERRORS = {
@@ -54,7 +56,7 @@ export function useMe(enabled = true) {
 export function useWorkspaces() {
   return useQuery({
     queryKey: workspacesKey,
-    queryFn: async () => (await apiFetch<{ items: Workspace[] }>("/api/workspaces")).items,
+    queryFn: async () => (await apiFetch<{ items: WorkspaceView[] }>("/api/workspaces")).items,
   });
 }
 
@@ -68,7 +70,7 @@ export type ActiveWorkspace =
   | { state: "loading" }
   | { state: "none" }
   | { state: "missing" }
-  | { state: "ready"; workspace: Workspace };
+  | { state: "ready"; workspace: WorkspaceView };
 
 export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
   const meQuery = useMe();
@@ -98,43 +100,30 @@ export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
   return { state: "missing", retry };
 }
 
-/** A workspace mutation: run `fn`, then refetch the workspace list (and Me, when `rePoint`, as a delete can move the active one). */
-function useWorkspaceMutation<V, R>(fn: (v: V) => Promise<R>, rePoint = false) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    onSuccess: async () => {
-      if (!rePoint) return qc.invalidateQueries({ queryKey: workspacesKey });
-      // The server re-points a deleted active workspace, so both lists are stale.
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: workspacesKey }),
-        qc.invalidateQueries({ queryKey: meKey }),
-      ]);
-      await invalidateWorkspaceScoped(qc);
-    },
-  });
-}
-
 export function useCreateWorkspace() {
-  return useWorkspaceMutation((name: string) =>
-    apiFetch<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
+  return useInvalidatingMutation(
+    (name: string) =>
+      apiFetch<WorkspaceView>("/api/workspaces", { method: "POST", body: json({ name }) }),
+    [workspacesKey],
   );
 }
 
 export function useRenameWorkspace() {
-  return useWorkspaceMutation((v: { id: string; name: string }) =>
-    apiFetch<Workspace>(`/api/workspaces/${encodeURIComponent(v.id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name: v.name }),
-    }),
+  return useInvalidatingMutation(
+    (v: { id: string; name: string }) =>
+      apiFetch<WorkspaceView>(`/api/workspaces/${enc(v.id)}`, {
+        method: "PATCH",
+        body: json({ name: v.name }),
+      }),
+    [workspacesKey],
   );
 }
 
 export function useDeleteWorkspace() {
-  return useWorkspaceMutation(
-    (id: string) =>
-      apiFetch<void>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    true,
+  // The server re-points a deleted active workspace, so Me and everything workspace-scoped are stale too.
+  return useInvalidatingMutation(
+    (id: string) => apiFetch<void>(`/api/workspaces/${enc(id)}`, { method: "DELETE" }),
+    [workspacesKey, meKey, [WORKSPACE_SCOPE]],
   );
 }
 
@@ -143,7 +132,7 @@ export function useSwitchWorkspace() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ activeWorkspaceId: string }>(`/api/workspaces/${encodeURIComponent(id)}/switch`, {
+      apiFetch<{ activeWorkspaceId: string }>(`/api/workspaces/${enc(id)}/switch`, {
         method: "POST",
       }),
     onSuccess: async ({ activeWorkspaceId }) => {
@@ -161,28 +150,24 @@ export function useInvitations(enabled: boolean) {
   });
 }
 
-function useInvitationMutation<V>(fn: (v: V) => Promise<unknown>) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    onSuccess: () => qc.invalidateQueries({ queryKey: invitationsKey }),
-  });
-}
-
 export function useInvite() {
-  return useInvitationMutation((v: { email: string; role: Role }) =>
-    apiFetch<Invitation>("/api/invitations", { method: "POST", body: JSON.stringify(v) }),
+  return useInvalidatingMutation(
+    (v: { email: string; role: Role }) =>
+      apiFetch<Invitation>("/api/invitations", { method: "POST", body: json(v) }),
+    [invitationsKey],
   );
 }
 
 export function useResendInvitation() {
-  return useInvitationMutation((id: string) =>
-    apiFetch<Invitation>(`/api/invitations/${encodeURIComponent(id)}/resend`, { method: "POST" }),
+  return useInvalidatingMutation(
+    (id: string) => apiFetch<Invitation>(`/api/invitations/${enc(id)}/resend`, { method: "POST" }),
+    [invitationsKey],
   );
 }
 
 export function useRevokeInvitation() {
-  return useInvitationMutation((id: string) =>
-    apiFetch<void>(`/api/invitations/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  return useInvalidatingMutation(
+    (id: string) => apiFetch<void>(`/api/invitations/${enc(id)}`, { method: "DELETE" }),
+    [invitationsKey],
   );
 }

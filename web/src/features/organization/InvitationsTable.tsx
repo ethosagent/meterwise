@@ -1,8 +1,9 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { App, Button, Card, Flex, Popconfirm, Table, Tag, Typography, theme } from "antd";
+import { Button, Card, Flex, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
-import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
+import { useInvitations } from "../../api/identity";
 import type { Invitation } from "../../contract/generated";
+import { InvitationActions } from "./InvitationActions";
 import { InviteModal } from "./InviteModal";
 
 const STATUS_COLOR: Record<Invitation["status"], string> = {
@@ -18,10 +19,7 @@ const STATUS_COLOR: Record<Invitation["status"], string> = {
  */
 export function InvitationsTable({ isAdmin }: { isAdmin: boolean }) {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
   const list = useInvitations(true);
-  const resend = useResendInvitation();
-  const revoke = useRevokeInvitation();
   const [inviting, setInviting] = useState(false);
 
   return (
@@ -67,35 +65,7 @@ export function InvitationsTable({ isAdmin }: { isAdmin: boolean }) {
             key: "actions",
             render: (_: unknown, inv) =>
               inv.status === "pending" ? (
-                <>
-                  <Button
-                    type="link"
-                    disabled={inv.role === "admin" && !isAdmin}
-                    loading={resend.isPending && resend.variables === inv.id}
-                    onClick={() =>
-                      resend.mutate(inv.id, {
-                        onSuccess: () => message.success(`Invitation resent to ${inv.email}`),
-                        onError: () => message.error("Could not resend the invitation."),
-                      })
-                    }
-                  >
-                    Resend
-                  </Button>
-                  <Popconfirm
-                    title={`Revoke the invitation for ${inv.email}?`}
-                    okText="Revoke"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() =>
-                      revoke.mutate(inv.id, {
-                        onError: () => message.error("Could not revoke the invitation."),
-                      })
-                    }
-                  >
-                    <Button type="link" danger disabled={inv.role === "admin" && !isAdmin}>
-                      Revoke
-                    </Button>
-                  </Popconfirm>
-                </>
+                <InvitationActions invitation={inv} isAdmin={isAdmin} />
               ) : null,
           },
         ]}

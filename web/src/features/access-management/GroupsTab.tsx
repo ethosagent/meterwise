@@ -1,60 +1,38 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { Alert, Button, Flex, Form, Input, Modal, Table, theme } from "antd";
+import { Button, Flex, Form, Input, Table, theme } from "antd";
 import { useState } from "react";
 import { ACCESS_ERROR_TEXT, useCreateGroup, useGroups } from "../../api/access";
 import { describeApiError } from "../../api/errors";
 import type { Group } from "../../contract/generated";
+import { MutationFormModal } from "../../shell/MutationFormModal";
 import { GroupDrawer } from "./GroupDrawer";
 
 function NewGroupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const create = useCreateGroup();
-  const [form] = Form.useForm<{ name: string }>();
-  const close = () => {
-    create.reset();
-    form.resetFields();
-    onClose();
-  };
   return (
-    <Modal
+    <MutationFormModal<{ name: string }>
       open={open}
+      onClose={onClose}
+      name="newGroup"
       title="New group"
-      onCancel={close}
-      destroyOnHidden
-      footer={
-        <>
-          <Button onClick={close}>Cancel</Button>
-          <Button type="primary" loading={create.isPending} onClick={() => form.submit()}>
-            Create group
-          </Button>
-        </>
+      submitText="Create group"
+      mutation={create}
+      errorText={(e) =>
+        describeApiError(e, {
+          byCode: ACCESS_ERROR_TEXT,
+          fallback: "Could not create the group. Try again.",
+        })
       }
+      onSubmit={(v, done) => create.mutate(v.name.trim(), { onSuccess: done })}
     >
-      <Form
-        name="newGroup"
-        form={form}
-        layout="vertical"
-        requiredMark={false}
-        onFinish={(v) => create.mutate(v.name.trim(), { onSuccess: close })}
+      <Form.Item
+        label="Name"
+        name="name"
+        rules={[{ required: true, whitespace: true, message: "Enter a name" }]}
       >
-        {create.isError ? (
-          <Alert
-            type="error"
-            showIcon
-            title={describeApiError(create.error, {
-              byCode: ACCESS_ERROR_TEXT,
-              fallback: "Could not create the group. Try again.",
-            })}
-          />
-        ) : null}
-        <Form.Item
-          label="Name"
-          name="name"
-          rules={[{ required: true, whitespace: true, message: "Enter a name" }]}
-        >
-          <Input maxLength={80} autoComplete="off" />
-        </Form.Item>
-      </Form>
-    </Modal>
+        <Input maxLength={80} autoComplete="off" />
+      </Form.Item>
+    </MutationFormModal>
   );
 }
 

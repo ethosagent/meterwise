@@ -336,7 +336,42 @@ red migrate "migrations but no Postgres: fails closed" "cannot create a throwawa
 m_any() { printf 'export const x: any = 1;\n' >web/src/bad.ts; }
 m_tsc() { printf 'export const n: number = "text";\n' >web/src/bad.ts; }
 m_vitest() { printf 'import { expect, it } from "vitest";\n\nit("fails", () => {\n  expect(1).toBe(2);\n});\n' >web/src/bad.test.ts; }
-m_webcov() { { for i in $(seq 1 120); do printf 'export function f%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/untested.ts; }
+# The web coverage rows add untested functions to ONE file, sized so that file alone drags every metric
+# below the floor however big the app has grown (a fixed count goes stale as covered code is added).
+# webcov_n measures the base tree once (json-summary, outside the tree) and solves, per metric,
+# covered / (total + n * c) < floor, where c is what one payload function adds: 1 function, 3 statements,
+# 3 lines, 2 branches. It takes the largest n and adds 10 % plus 5 as headroom.
+# The floor is read from web/vite.config.ts (coverage.thresholds), never restated here; the lowest of the
+# four thresholds is used and an unparsable config fails closed (the rows go SETUP FAILED, not green).
+webcov_floor() {
+  local v
+  v="$(grep -E '^[[:space:]]*thresholds:[[:space:]]*\{' "$REPO/web/vite.config.ts" | grep -oE '(statements|branches|functions|lines):[[:space:]]*[0-9]+' | grep -oE '[0-9]+$' | sort -n | head -n1)"
+  [ -n "$v" ] || { echo "selftest: cannot read coverage.thresholds from web/vite.config.ts" >&2; return 1; }
+  echo "$v"
+}
+webcov_n() {
+  local floor; floor="$(webcov_floor)" || return 1
+  if [ ! -s "$SCRATCH/webcov.n" ]; then
+    (cd "$BASE/web" && npm test -- --coverage.reporter=json-summary --coverage.reportsDirectory="$SCRATCH/webcov" >"$SCRATCH/webcov.log" 2>&1)
+    node -e '
+      const [file, floor] = [process.argv[1], Number(process.argv[2])];
+      const t = JSON.parse(require("fs").readFileSync(file, "utf8")).total;
+      const per = { functions: 1, statements: 3, lines: 3, branches: 2 };
+      let n = 0;
+      for (const [m, c] of Object.entries(per)) {
+        n = Math.max(n, Math.ceil(((t[m].covered * 100) / floor - t[m].total) / c));
+      }
+      console.log(Math.ceil(n * 1.1) + 5);
+    ' "$SCRATCH/webcov/coverage-summary.json" "$floor" >"$SCRATCH/webcov.n" || { rm -f "$SCRATCH/webcov.n"; return 1; }
+  fi
+  cat "$SCRATCH/webcov.n"
+}
+# webcov_file PREFIX FILE: write webcov_n untested functions named PREFIX1.. into FILE.
+webcov_file() {
+  local n i; n="$(webcov_n)" || return 1
+  { for i in $(seq 1 "$n"); do printf 'export function %s%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$1" "$i" "$i"; done; } >"$2"
+}
+m_webcov() { webcov_file f web/src/untested.ts; }
 m_barrel() { printf 'export const a = 1;\n' >web/src/index.ts; }
 m_barrelmts() { printf 'export const a = 1;\n' >web/src/index.mts; }
 m_nofeat() { mkdir -p web/src/features/billing; printf 'export const b = 1;\n' >web/src/features/billing/Page.ts; }
@@ -349,9 +384,9 @@ red web "explicit any" "npm run check failed" m_any
 red web "type error" "npm run typecheck failed" m_tsc
 red web "failing vitest" "npm run test failed" m_vitest
 red web "coverage below 70 %" "npm run test failed" m_webcov
-m_webcov_testdir() { mkdir -p web/src/test; { for i in $(seq 1 120); do printf 'export function t%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/test/untested.ts; }
+m_webcov_testdir() { mkdir -p web/src/test; webcov_file t web/src/test/untested.ts; }
 red web "untested file in web/src/test is not exempt from coverage" "npm run test failed" m_webcov_testdir
-m_webcov_contract() { { for i in $(seq 1 120); do printf 'export function c%s(a: number): number {\n  if (a > %s) {\n    return a * 2;\n  }\n  return a;\n}\n' "$i" "$i"; done; } >web/src/contract/handwritten.ts; }
+m_webcov_contract() { webcov_file c web/src/contract/handwritten.ts; }
 red web "untested file next to generated.ts is not exempt from coverage" "npm run test failed" m_webcov_contract
 m_hex_testdir() { mkdir -p web/src/test; printf 'export const c = "#ff0000";\n' >web/src/test/extra.ts; }
 red web "hex colour in a new web/src/test file is caught by the hygiene test" "npm run test failed" m_hex_testdir

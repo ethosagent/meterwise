@@ -1,5 +1,4 @@
 import {
-  App,
   Button,
   Drawer,
   Input,
@@ -13,15 +12,15 @@ import {
 } from "antd";
 import { useState } from "react";
 import {
-  ACCESS_ERROR_TEXT,
+  useAttachWorkspace,
   useDeleteGroup,
+  useDetachWorkspace,
   useGroupGrants,
-  useGroupWorkspace,
   usePutGroupGrants,
   useRenameGroup,
 } from "../../api/access";
-import { describeApiError } from "../../api/errors";
 import { useWorkspaces } from "../../api/identity";
+import { useAccessToast } from "../../api/useAccessToast";
 import type { Group } from "../../contract/generated";
 import { GrantsEditor } from "./GrantsEditor";
 import { MembersTransfer } from "./MembersTransfer";
@@ -35,14 +34,13 @@ interface Props {
 
 function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
   const workspaces = useWorkspaces().data ?? [];
   const rename = useRenameGroup();
   const del = useDeleteGroup();
-  const attach = useGroupWorkspace();
+  const attach = useAttachWorkspace();
+  const detach = useDetachWorkspace();
   const [name, setName] = useState(group.name);
-  const fail = (e: unknown, fallback: string) =>
-    message.error(describeApiError(e, { byCode: ACCESS_ERROR_TEXT, fallback }));
+  const fail = useAccessToast();
   const nameOf = (id: string) => workspaces.find((w) => w.id === id)?.name ?? id;
   return (
     <>
@@ -75,8 +73,8 @@ function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
             closable={isAdmin}
             onClose={(e) => {
               e.preventDefault();
-              attach.mutate(
-                { id: group.id, workspaceId: id, attach: false },
+              detach.mutate(
+                { id: group.id, workspaceId: id },
                 { onError: (err) => fail(err, "Could not detach the workspace.") },
               );
             }}
@@ -97,7 +95,7 @@ function Details({ group, onClose, isAdmin }: Props & { group: Group }) {
         onChange={(workspaceId) =>
           workspaceId !== null &&
           attach.mutate(
-            { id: group.id, workspaceId, attach: true },
+            { id: group.id, workspaceId },
             { onError: (e) => fail(e, "Could not attach the workspace.") },
           )
         }

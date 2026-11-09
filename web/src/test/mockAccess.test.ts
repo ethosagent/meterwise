@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createAccessMock } from "./mockAccess";
+import { TAXONOMY } from "../access/taxonomy";
+import { createAccessMock, MEMBER_SNAPSHOT, WORKSPACE_READ_RESOURCES } from "./mockAccess";
 
 const g = (resourceType: string, action: string, workspaceId: string | null) => ({
   workspaceId,
@@ -32,5 +33,22 @@ describe("createAccessMock can()", () => {
 
   it("an action outside the taxonomy is never allowed to a non-admin", () => {
     expect(mockWith([g("session", "write", null)]).can("session", "write")).toBe(false);
+  });
+});
+
+describe("the seeded member reads", () => {
+  it("follow the generated taxonomy: every workspace-scoped resource with a read action", () => {
+    const expected = Object.entries(TAXONOMY)
+      .filter(
+        ([, spec]) =>
+          spec.scope === "workspace" && (spec.actions as readonly string[]).includes("read"),
+      )
+      .map(([name]) => name)
+      .sort();
+    expect([...WORKSPACE_READ_RESOURCES].sort()).toEqual(expected);
+    expect(MEMBER_SNAPSHOT.grants.map((x) => x.resourceType).sort()).toEqual(expected);
+    expect(MEMBER_SNAPSHOT.grants.every((x) => x.workspaceId === null && x.action === "read")).toBe(
+      true,
+    );
   });
 });

@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useMe } from "./api/identity";
+import { useActiveWorkspace } from "./api/identity";
 import { AcceptInviteRoute, AuthGate, LoginRoute } from "./auth/AuthGate";
 import { AccessManagementPage } from "./features/access-management/Page";
 import { MonitorsPage } from "./features/monitors/Page";
@@ -38,8 +38,7 @@ const WORKSPACE_PAGES: readonly NavKey[] = [
 
 /** With no readable workspace (Me.activeWorkspaceId is null) a workspace page is an explanation, not an error. */
 function WorkspaceGate({ children }: { children: ReactElement }) {
-  const me = useMe().data;
-  return me && me.activeWorkspaceId === null ? <NoWorkspaceAccess /> : children;
+  return useActiveWorkspace().state === "none" ? <NoWorkspaceAccess /> : children;
 }
 
 export function AppRoutes() {

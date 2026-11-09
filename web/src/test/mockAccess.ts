@@ -22,9 +22,18 @@ export function errorResponse(
 const forbidden = (reason: "no matching grant" | "admin required") =>
   errorResponse(403, "forbidden", "not allowed", { reason });
 
-const READS: Grant[] = (
-  ["workspace", "workspace_url", "session", "monitor_config", "savings"] as ResourceType[]
-).map((resourceType) => ({ workspaceId: null, resourceType, action: "read" }));
+/** Every workspace-scoped resource with a read action, from the generated taxonomy: what the seed grants a member. */
+export const WORKSPACE_READ_RESOURCES = (Object.keys(TAXONOMY) as ResourceType[]).filter(
+  (name) =>
+    TAXONOMY[name].scope === "workspace" &&
+    (TAXONOMY[name].actions as readonly string[]).includes("read"),
+);
+
+const READS: Grant[] = WORKSPACE_READ_RESOURCES.map((resourceType) => ({
+  workspaceId: null,
+  resourceType,
+  action: "read",
+}));
 
 /** What the seed gives a member: read on every workspace-scoped resource, in every workspace. */
 export const MEMBER_SNAPSHOT: PermissionSnapshot = { admin: false, grants: READS };
@@ -201,15 +210,24 @@ function groups(m: AccessMock, method: string, r: GroupRoute, body: Record<strin
     if (method === "POST") {
       const ws = String(body.workspaceId);
       if (!g.workspaceIds.includes(ws)) g.workspaceIds = [...g.workspaceIds, ws];
-      const seeded: Grant[] = (
-        ["workspace", "workspace_url", "session", "monitor_config", "savings"] as ResourceType[]
-      ).map((resourceType) => ({ workspaceId: ws, resourceType, action: "read" }));
+      const seeded: Grant[] = WORKSPACE_READ_RESOURCES.map((resourceType) => ({
+        workspaceId: ws,
+        resourceType,
+        action: "read",
+      }));
       g.grants = [...g.grants.filter((x) => x.workspaceId !== ws), ...seeded];
       return jsonResponse(view(g));
     }
     g.workspaceIds = g.workspaceIds.filter((w) => w !== r.arg);
     g.grants = g.grants.filter((x) => x.workspaceId !== r.arg);
     return new Response(null, { status: 204 });
+  }
+  if (method === "PUT") {
+    const ids = body.userIds as string[];
+    if (ids.some((id) => !m.members.some((x) => x.userId === id))) {
+      return errorResponse(422, "validation_failed", "every id must be an active member");
+    }
+    g.memberIds = [...new Set(ids)];
   }
   if (method === "POST") {
     const userId = String(body.userId);

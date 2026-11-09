@@ -12,15 +12,14 @@ import {
   theme,
 } from "antd";
 import { useEffect } from "react";
+import type { WorkspaceView } from "../../api/contract04";
 import { useActiveWorkspace, useDeleteWorkspace, useRenameWorkspace } from "../../api/identity";
 import { usePermission } from "../../auth/usePermission";
-import type { Workspace } from "../../contract/generated";
-import { NoWorkspaceAccess } from "../../shell/NoWorkspaceAccess";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
-import { ProxyUrl } from "./ProxyUrl";
+import { WorkspaceUrl } from "./WorkspaceUrl";
 
-function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
+function General({ ws, canManage }: { ws: WorkspaceView; canManage: boolean }) {
   const { message } = App.useApp();
   const rename = useRenameWorkspace();
   const [form] = Form.useForm<{ name: string }>();
@@ -57,12 +56,12 @@ function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
         ) : null}
       </Form>
       <Typography.Title level={5}>Proxy URL</Typography.Title>
-      <ProxyUrl url={ws.proxyUrl} />
+      <WorkspaceUrl ws={ws} withCidrs />
     </Card>
   );
 }
 
-function DangerZone({ ws }: { ws: Workspace }) {
+function DangerZone({ ws }: { ws: WorkspaceView }) {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const del = useDeleteWorkspace();
@@ -112,7 +111,7 @@ export function WorkspacePage() {
       <PageHead page={pageByKey("workspace")} />
       {active.state === "ready" ? (
         <>
-          <General ws={active.workspace} canManage={canRename} />
+          <General key={active.workspace.id} ws={active.workspace} canManage={canRename} />
           {canDelete ? <DangerZone ws={active.workspace} /> : null}
         </>
       ) : active.state === "missing" ? (
@@ -123,8 +122,6 @@ export function WorkspacePage() {
           description="It may have been deleted in another session. Nothing is shown here rather than the wrong workspace."
           action={<Button onClick={active.retry}>Try again</Button>}
         />
-      ) : active.state === "none" ? (
-        <NoWorkspaceAccess />
       ) : (
         <Skeleton active />
       )}

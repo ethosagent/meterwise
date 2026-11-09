@@ -1,18 +1,13 @@
-import { App, Skeleton, Transfer } from "antd";
-import {
-  ACCESS_ERROR_TEXT,
-  useGroupMembers,
-  useGroupMembership,
-  useMembers,
-} from "../../api/access";
-import { describeApiError } from "../../api/errors";
+import { Skeleton, Transfer } from "antd";
+import { useGroupMembers, useMembers, useSetGroupMembers } from "../../api/access";
+import { useAccessToast } from "../../api/useAccessToast";
 
 /** Two lists: organization members on the left, this group's members on the right. Moving touches group_users only. */
 export function MembersTransfer({ groupId, disabled }: { groupId: string; disabled: boolean }) {
-  const { message } = App.useApp();
+  const fail = useAccessToast();
   const all = useMembers(true);
   const inGroup = useGroupMembers(groupId);
-  const move = useGroupMembership();
+  const move = useSetGroupMembers();
   if (!all.data || !inGroup.data) return <Skeleton active />;
   const targetKeys = inGroup.data.map((m) => m.userId);
   return (
@@ -30,21 +25,11 @@ export function MembersTransfer({ groupId, disabled }: { groupId: string; disabl
         `${item.title} ${item.email}`.toLowerCase().includes(q.toLowerCase())
       }
       render={(item) => `${item.title} (${item.email})`}
-      onChange={(_next, direction, moved) =>
+      onChange={(next) =>
         move.mutate(
+          { id: groupId, userIds: next.map(String) },
           {
-            id: groupId,
-            add: direction === "right" ? moved.map(String) : [],
-            remove: direction === "left" ? moved.map(String) : [],
-          },
-          {
-            onError: (e) =>
-              message.error(
-                describeApiError(e, {
-                  byCode: ACCESS_ERROR_TEXT,
-                  fallback: "Could not update the group's members.",
-                }),
-              ),
+            onError: (e) => fail(e, "Could not update the group's members."),
           },
         )
       }

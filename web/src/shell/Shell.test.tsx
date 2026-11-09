@@ -12,7 +12,7 @@ import { ALL_PAGES } from "./nav";
 
 const renderApp = (path: string) => renderAt(<AppRoutes />, path);
 /** Pages with real content; every other destination is still the empty stub. */
-const BUILT = new Set(["workspace", "organization", "access"]);
+const BUILT = new Set(["workspace", "organization", "access", "setup"]);
 const NAMES = TEST_WORKSPACES.map((w) => w.name);
 
 beforeEach(() => {
