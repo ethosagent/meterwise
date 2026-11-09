@@ -1,7 +1,7 @@
 import { QueryObserver } from "@tanstack/react-query";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { permissionsKey } from "../api/access";
 import { ApiError } from "../api/errors";
 import { meKey, workspacesKey } from "../api/identity";
@@ -63,6 +63,10 @@ describe("grants decide what a control does", () => {
 });
 
 describe("a 403 means the snapshot was stale", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("refetches the snapshot, the workspace list and Me, and the control goes away", async () => {
     const api = mockApi({ me: MEMBER_ME, access: { snapshot: ONE_WORKSPACE } });
     renderAt(<AppRoutes />, "/settings/workspace");
@@ -103,6 +107,7 @@ describe("a 403 means the snapshot was stale", () => {
     ["me", meKey],
     ["workspaces", workspacesKey],
   ])("a persistent 403 on %s refreshes access once and then stops", async (_n, key) => {
+    vi.useFakeTimers();
     const client = createQueryClient(false);
     let refused = 0;
     let snapshots = 0;
@@ -118,13 +123,14 @@ describe("a 403 means the snapshot was stale", () => {
         return { admin: false, grants: [] };
       }),
     ];
-    await new Promise((r) => setTimeout(r, 300)); // settle: a loop would keep counting
+    await vi.advanceTimersByTimeAsync(300); // settle: a loop would keep counting
     expect(refused).toBeLessThanOrEqual(3);
     expect(snapshots).toBeLessThanOrEqual(3);
     const settled = refused;
-    await new Promise((r) => setTimeout(r, 200));
+    await vi.advanceTimersByTimeAsync(200);
     expect(refused).toBe(settled);
     for (const stop of stops) stop();
+    vi.useRealTimers();
   });
 });
 
