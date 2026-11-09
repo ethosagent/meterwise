@@ -19,6 +19,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0012](0012-clerk-react-sdk.md) | Clerk React SDK for sign-in, behind an auth adapter | Accepted |
 | [0013](0013-clerk-go-sdk-and-svix-for-identity.md) | The Clerk Go SDK and Svix verify identity and webhooks | Accepted |
 | [0014](0014-single-org-now-org-id-everywhere-rls-deferred.md) | Single org now, org_id everywhere, RLS deferred | Accepted |
+| [0015](0015-rbac-kernel-grants-one-gateway-last-admin-lock.md) | RBAC kernel: grants, one gateway, last-admin lock | Accepted |
 
 Template: [`template.md`](template.md).
 
