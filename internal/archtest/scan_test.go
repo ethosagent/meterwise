@@ -15,7 +15,9 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -33,9 +35,54 @@ var writerDirs = []string{"internal/ledger", "internal/audit"}
 // ident matches a possibly quoted, possibly schema-qualified table name.
 const ident = `(?:"?public"?\.)?"?`
 
-var writesLedger = regexp.MustCompile(`(?i)\b(INSERT\s+INTO|DELETE\s+FROM(?:\s+ONLY)?|MERGE\s+INTO(?:\s+ONLY)?|TRUNCATE(?:\s+TABLE)?(?:\s+ONLY)?|COPY)\s+` + ident + `(?:calls|sessions|monitor_events|audit_log)"?(?:[^a-z0-9_]|$)`)
+// ledgerTables reads contract.LedgerTables from its source (archtest depends on the
+// standard library only, so it parses the file instead of importing the package).
+// go test runs in this package's directory.
+var ledgerTables = func() []string {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "../contract/ledger.go", nil, 0)
+	if err != nil {
+		panic("archtest: cannot read the ledger table list: " + err.Error())
+	}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, sp := range gd.Specs {
+			vs, ok := sp.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != 1 || vs.Names[0].Name != "LedgerTables" || len(vs.Values) != 1 {
+				continue
+			}
+			lit, ok := vs.Values[0].(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+			var out []string
+			for _, e := range lit.Elts {
+				bl, ok := e.(*ast.BasicLit)
+				if !ok || bl.Kind != token.STRING {
+					panic("archtest: contract.LedgerTables must be a list of string literals")
+				}
+				name, err := strconv.Unquote(bl.Value)
+				if err != nil {
+					panic("archtest: contract.LedgerTables: " + err.Error())
+				}
+				out = append(out, regexp.QuoteMeta(name))
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+	}
+	panic("archtest: contract.LedgerTables not found or empty in internal/contract/ledger.go")
+}()
 
-var writesLedgerUpdate = regexp.MustCompile(`(?i)\bUPDATE\s+(?:ONLY\s+)?` + ident + `(?:calls|sessions|monitor_events|audit_log)"?(?:\s+(?:AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\b`)
+var ledgerAlt = strings.Join(ledgerTables, "|")
+
+var writesLedger = regexp.MustCompile(`(?i)\b(INSERT\s+INTO|DELETE\s+FROM(?:\s+ONLY)?|MERGE\s+INTO(?:\s+ONLY)?|TRUNCATE(?:\s+TABLE)?(?:\s+ONLY)?|COPY)\s+` + ident + `(?:` + ledgerAlt + `)"?(?:[^a-z0-9_]|$)`)
+
+var writesLedgerUpdate = regexp.MustCompile(`(?i)\bUPDATE\s+(?:ONLY\s+)?` + ident + `(?:` + ledgerAlt + `)"?(?:\s+(?:AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\b`)
 
 var (
 	goComments  = regexp.MustCompile(`(?s)/\*.*?\*/|//[^\n]*`)
@@ -51,7 +98,7 @@ func scanWriters(files map[string]string) []Violation {
 		if (ext != ".go" && ext != ".sql") || strings.HasSuffix(rel, "_test.go") || strings.HasPrefix(rel, "internal/archtest/") || inTestdata(rel) {
 			continue
 		}
-		if contains(writerFiles, rel) || underDirs(rel, writerDirs) {
+		if slices.Contains(writerFiles, rel) || underDirs(rel, writerDirs) {
 			continue
 		}
 		strip := sqlComments
@@ -69,15 +116,6 @@ func scanWriters(files map[string]string) []Violation {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })
 	return out
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 func underDirs(rel string, dirs []string) bool {
@@ -127,7 +165,7 @@ func scanWeb(files map[string]string, pkgJSON string) []Violation {
 		}
 		for _, set := range []map[string]string{p.Dependencies, p.DevDependencies, p.PeerDependencies, p.OptionalDependencies} {
 			for name := range set {
-				if !contains(webAllow, name) {
+				if !slices.Contains(webAllow, name) {
 					add(fmt.Sprintf("web/package.json declares %q: not on the npm allowlist (needs an ADR and an entry in law_test.go)", name))
 				}
 			}
@@ -160,7 +198,7 @@ func checkWebImport(rel, spec string) string {
 	} else {
 		name = parts[0]
 	}
-	if !contains(webAllow, name) {
+	if !slices.Contains(webAllow, name) {
 		return fmt.Sprintf("%s imports %q: package %q is not on the npm allowlist (needs an ADR and an entry in law_test.go)", rel, spec, name)
 	}
 	return ""
@@ -284,7 +322,7 @@ var buildLine = regexp.MustCompile(`(?m)^[ \t]*//(?:go:build|[ \t]*\+build)\b`)
 func scanBuildConstraints(files map[string]string) []Violation {
 	var out []Violation
 	for rel, body := range files {
-		if path.Ext(rel) != ".go" || contains(buildConstraintAllow, rel) || inTestdata(rel) {
+		if path.Ext(rel) != ".go" || slices.Contains(buildConstraintAllow, rel) || inTestdata(rel) {
 			continue
 		}
 		if buildLine.MatchString(body) {
@@ -305,10 +343,10 @@ func hasPlatformSuffix(base string) bool {
 		return false
 	}
 	last := parts[len(parts)-1]
-	if contains(knownArch, last) {
+	if slices.Contains(knownArch, last) {
 		return true
 	}
-	return contains(knownOS, last)
+	return slices.Contains(knownOS, last)
 }
 
 // testMainExempt packages may have tests without nonet.Run: archtest shells out
@@ -381,7 +419,7 @@ func scanTestMain(files map[string]string) []Violation {
 	}
 	var out []Violation
 	for dir := range hasTests {
-		if !guarded[dir] && !contains(testMainExempt, dir) {
+		if !guarded[dir] && !slices.Contains(testMainExempt, dir) {
 			out = append(out, Violation{"H8", dir + " has tests but no TestMain that calls nonet.Run; without it a test can reach the internet and stay green"})
 		}
 	}
@@ -400,7 +438,7 @@ func scanModules(files map[string]string) []Violation {
 	for rel := range files {
 		switch path.Base(rel) {
 		case "go.mod":
-			if rel != "go.mod" && !contains(moduleAllow, rel) {
+			if rel != "go.mod" && !slices.Contains(moduleAllow, rel) {
 				out = append(out, Violation{"H9", rel + " is a nested module: its packages are invisible to the root gates. Remove it or allowlist it in law_test.go with an ADR"})
 			}
 		case "go.work":

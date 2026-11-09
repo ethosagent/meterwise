@@ -7,8 +7,9 @@
 #   scripts/run-checks.sh fmt test   only the named gates
 #   scripts/run-checks.sh --list     print gate names
 #   scripts/run-checks.sh --fast     the seconds-cheap gates (FAST_GATES in scripts/lib.sh)
-#   scripts/run-checks.sh --json [--fast|gate...]  same run, plus one JSON summary line on
-#                                    stdout: {"ok":bool,"gates":[{"name","ok","secs","log"}]}
+#   scripts/run-checks.sh [--json] [--fast] [gate...]  flags in any order; --json adds one JSON
+#                                    summary line on stdout: {"ok":bool,"gates":[{"name","ok","secs","log"}]}
+#                                    (named gates win over --fast; an unknown flag fails)
 #
 # Add a gate: drop scripts/check-<name>.sh and add <name> to GATES. A gate whose inputs do not
 # exist yet prints "! SKIP <gate>: <reason>" (ruling R5) and goes real, failing closed, once they do.
@@ -18,10 +19,17 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 . scripts/lib.sh
 GATES=(fmt vet mod arch lint test vuln docs size sqlc migrate web generated)
-if [ "${1:-}" = "--list" ]; then printf '%s\n' "${GATES[@]}"; exit 0; fi
 JSON=0
-if [ "${1:-}" = "--json" ]; then JSON=1; shift; fi
-if [ "${1:-}" = "--fast" ]; then GATES=("${FAST_GATES[@]}"); shift; fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --list) printf '%s\n' "${GATES[@]}"; exit 0 ;;
+    --json) JSON=1 ;;
+    --fast) GATES=("${FAST_GATES[@]}") ;;
+    -*) echo "✗ unknown flag $1 (flags: --list --json --fast)" >&2; exit 2 ;;
+    *) break ;;
+  esac
+  shift
+done
 if [ "$#" -gt 0 ]; then GATES=("$@"); fi
 
 mkdir -p .logs

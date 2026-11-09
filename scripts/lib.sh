@@ -60,6 +60,22 @@ unset PGHOST PGHOSTADDR PGSERVICE PGSERVICEFILE PGDATABASE PGPORT PGOPTIONS PGSS
 PG_PORT="${METERWISE_PG_PORT:-54329}"
 PG_DSN_DEFAULT="postgres://meterwise:meterwise@127.0.0.1:${PG_PORT}/meterwise?sslmode=disable"
 
+# url_host URL prints the host of a URL: scheme and userinfo dropped, port and path
+# dropped, an IPv6 literal kept in its brackets.
+url_host() {
+  local a="${1#*://}"
+  a="${a%%[/?]*}"
+  printf '%s' "${a##*@}" | sed -E 's#^(\[[^]]*\]|[^:]*).*#\1#'
+}
+
+# is_loopback_host HOST: exactly localhost, [::1], or a well-formed 127.x.y.z (every
+# octet 0-255, no leading zeros, so 127.999.1.1 and 127.0.0.01 are refused).
+is_loopback_host() {
+  local o='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+  case "$1" in *$'\n'*) return 1 ;; localhost | '[::1]') return 0 ;; esac
+  printf '%s' "$1" | grep -qE "^127(\.$o){3}\$"
+}
+
 # dsn_problem DSN prints why a DSN is unusable for gates (empty when fine).
 dsn_problem() {
   local dsn="$1" auth host
@@ -79,8 +95,8 @@ dsn_problem() {
     done
     unset IFS
   fi
-  host="$(printf '%s' "${auth##*@}" | sed -E 's#^(\[[^]]*\]|[^:]*).*#\1#')"
-  if ! printf '%s' "$host" | grep -qE '^(localhost|127(\.[0-9]+){3}|\[::1\])$'; then echo "host '$host' is not loopback"; return; fi
+  host="$(url_host "$dsn")"
+  if ! is_loopback_host "$host"; then echo "host '$host' is not loopback"; return; fi
   printf '%s' "$dsn" | grep -qE '^[a-z]+://[^/?]*/[^/?]+' || echo "no database name in the URL path"
 }
 
@@ -130,10 +146,11 @@ tracked_on_base() {
 # sqlc input of any shape exists (ruling R5): a misnamed config (sqlc.yml, sqlc.json,
 # a nested one), queries or generated output without sqlc.yaml are errors, never SKIPs.
 sqlc_state() {
-  local cfgs q o
-  cfgs="$(list_files | grep -E '(^|/)sqlc\.(ya?ml|json)$' || true)"
-  q="$(list_files internal/store/queries | head -n 1)"
-  o="$(list_files internal/store/sqlc | head -n 1)"
+  local files cfgs q o
+  files="$(list_files)"
+  cfgs="$(grep -E '(^|/)sqlc\.(ya?ml|json)$' <<<"$files" || true)"
+  q="$(grep -m1 '^internal/store/queries/' <<<"$files" || true)"
+  o="$(grep -m1 '^internal/store/sqlc/' <<<"$files" || true)"
   if [ -n "$cfgs" ] && [ "$cfgs" != "sqlc.yaml" ]; then
     echo "error: sqlc config must be exactly one root sqlc.yaml (found: $(echo "$cfgs" | tr '\n' ' '))"; return
   fi

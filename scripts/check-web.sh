@@ -3,7 +3,7 @@
 # biome check (format + lint, noBarrelFile, noExplicitAny), tsc --noEmit (strict),
 # vitest with the 70 % coverage floor (web/vite.config.ts), vite build, then the
 # structural rules: no index.ts barrels, every web/src/features/<name>/ has a
-# README, and the web dependency law H5 (internal/archtest).
+# README. The web dependency law H5 is enforced by the arch gate (internal/archtest).
 # No web/package.json = explicit SKIP (ruling R5); with one, everything is real.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -40,10 +40,5 @@ fi
 for d in ${features[@]+"${features[@]}"}; do
   [ -f "${d}README.md" ] || err "${d} has no README.md (one folder per feature, documented)"
 done
-cd ..
-if ! out="$(go test -count=1 -run 'TestArchitecture$' ./internal/archtest 2>&1)"; then
-  echo "$out" | head -n 30
-  err "web dependency law H5 (or another archtest rule) failed"
-fi
 [ "$fail" -eq 0 ] || { echo "--- web gate failures:"; printf '  ✗ %s\n' "${errs[@]}"; }
 exit "$fail"

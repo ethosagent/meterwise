@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/ethosagent/meterwise/internal/contract"
 )
 
 var numberRe = regexp.MustCompile(`^(\d{4})_`)
@@ -29,7 +32,6 @@ func lintMigrations(ms []migration, stray []string, families map[string][]string
 
 // ledgerTables are written only by the features that own them (archtest H4); a
 // manifest line cannot hand them to any other feature.
-var ledgerTables = map[string]bool{"calls": true, "sessions": true, "monitor_events": true, "audit_log": true}
 var ledgerOwners = map[string]bool{"ledger": true, "audit": true, "calls": true, "sessions": true}
 
 // checkFamilies checks the manifest against what the migrations really create: an
@@ -46,7 +48,7 @@ func (l *linter) checkFamilies() {
 				l.add("%s: lists table %s for feature %s, but no migration creates it (stale entry)", familiesFile, t, feature)
 			case o != feature:
 				l.add("%s: lists table %s for feature %s, but feature %s created it", familiesFile, t, feature, o)
-			case ledgerTables[t] && !ledgerOwners[feature]:
+			case slices.Contains(contract.LedgerTables, t) && !ledgerOwners[feature]:
 				l.add("%s: ledger table %s may only belong to feature ledger or audit, not %s", familiesFile, t, feature)
 			}
 		}

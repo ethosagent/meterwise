@@ -14,9 +14,11 @@ MAX_LINES="${READ_GUARD_MAX_LINES:-400}"
 # reader_ok FILE: may FILE be sent to METERWISE_READER_URL? Only a loopback reader, and
 # never a secret-looking file (by name or by content).
 reader_ok() {
-  local f="$1" host
-  host="$(printf '%s' "$METERWISE_READER_URL" | sed -E 's#^https?://([^@/]*@)?(\[[^]]*\]|[^:/?]*).*#\2#')"
-  case "$host" in localhost | 127.0.0.1 | '[::1]') ;; *) return 1 ;; esac
+  local f="$1"
+  # lib.sh is sourced only here, so the common (reader mode off) path stays fast
+  . "$(dirname "${BASH_SOURCE[0]}")/../../scripts/lib.sh"
+  case "$METERWISE_READER_URL" in http://* | https://*) ;; *) return 1 ;; esac
+  is_loopback_host "$(url_host "$METERWISE_READER_URL")" || return 1
   case "$METERWISE_READER_URL" in *@*) return 1 ;; esac
   case "$(basename "$f" | tr '[:upper:]' '[:lower:]')" in
     *.env | .env* | *.pem | *.key | *.p12 | *.pfx | *.jks | *.keystore | *.kdbx | *.tfvars | *.tfstate | \
