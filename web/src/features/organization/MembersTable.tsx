@@ -1,10 +1,11 @@
 import { PlusOutlined } from "@ant-design/icons";
-import { App, Button, Card, Flex, Popconfirm, Select, Table, Tag, Typography, theme } from "antd";
+import { Button, Card, Flex, Popconfirm, Select, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
 import { useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
-import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
+import { useInvitations } from "../../api/identity";
 import { useAccessToast } from "../../api/useAccessToast";
 import type { Invitation, Member, Role } from "../../contract/generated";
+import { InvitationActions } from "./InvitationActions";
 import { InviteModal } from "./InviteModal";
 
 type Row =
@@ -26,13 +27,10 @@ interface Props {
 /** Settings > Organization > Members: active members and pending invitations in one table. */
 export function MembersTable({ canManage, isAdmin }: Props) {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
   const members = useMembers(true);
   const invitations = useInvitations(canManage);
   const setRole = useSetMemberRole();
   const remove = useRemoveMember();
-  const resend = useResendInvitation();
-  const revoke = useRevokeInvitation();
   const [inviting, setInviting] = useState(false);
   const fail = useAccessToast();
 
@@ -121,41 +119,9 @@ export function MembersTable({ canManage, isAdmin }: Props) {
             key: "actions",
             render: (_: unknown, r) => {
               if (r.kind === "invite") {
-                const inv = r.invitation;
-                if (!canManage) return null;
-                // Only an admin may touch an admin invitation; the escalation guard would answer 403.
-                const locked = inv.role === "admin" && !isAdmin;
-                return (
-                  <>
-                    <Button
-                      type="link"
-                      disabled={locked}
-                      loading={resend.isPending && resend.variables === inv.id}
-                      onClick={() =>
-                        resend.mutate(inv.id, {
-                          onSuccess: () => message.success(`Invitation resent to ${inv.email}`),
-                          onError: (e) => fail(e, "Could not resend the invitation."),
-                        })
-                      }
-                    >
-                      Resend
-                    </Button>
-                    <Popconfirm
-                      title={`Revoke the invitation for ${inv.email}?`}
-                      okText="Revoke"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() =>
-                        revoke.mutate(inv.id, {
-                          onError: (e) => fail(e, "Could not revoke the invitation."),
-                        })
-                      }
-                    >
-                      <Button type="link" danger disabled={locked}>
-                        Revoke
-                      </Button>
-                    </Popconfirm>
-                  </>
-                );
+                return canManage ? (
+                  <InvitationActions invitation={r.invitation} isAdmin={isAdmin} />
+                ) : null;
               }
               if (!isAdmin) return null;
               return (
