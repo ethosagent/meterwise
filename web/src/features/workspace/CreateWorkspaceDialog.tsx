@@ -1,19 +1,19 @@
 import { Alert, Button, Form, Input, Modal, Typography, theme } from "antd";
 import { useState } from "react";
-import { ApiError } from "../../api/errors";
+import { describeApiError } from "../../api/errors";
 import { IDENTITY_ERRORS, useCreateWorkspace } from "../../api/identity";
 import type { Workspace } from "../../contract/generated";
 import { ProxyUrl } from "./ProxyUrl";
 
 /** What to tell the person when a create fails; the limit is the one they can act on. */
 export function createErrorText(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.code === IDENTITY_ERRORS.workspaceLimit) {
-      return "Workspace limit reached. Delete a workspace you no longer use, or ask the operator to raise the limit.";
-    }
-    if (e.status === 422) return e.problems[0] ?? e.message;
-  }
-  return "Could not create the workspace. Try again.";
+  return describeApiError(e, {
+    byCode: {
+      [IDENTITY_ERRORS.workspaceLimit]:
+        "Workspace limit reached. Delete a workspace you no longer use, or ask the operator to raise the limit.",
+    },
+    fallback: "Could not create the workspace. Try again.",
+  });
 }
 
 /** Name in, proxy URL out: creating a workspace is the whole setup. */

@@ -1,5 +1,5 @@
 import { Alert, Button, Form, Input, Modal, Select } from "antd";
-import { ApiError } from "../../api/errors";
+import { describeApiError } from "../../api/errors";
 import { IDENTITY_ERRORS, useInvite } from "../../api/identity";
 import type { Role } from "../../contract/generated";
 
@@ -9,13 +9,13 @@ const ROLES: { value: Role; label: string }[] = [
 ];
 
 function inviteErrorText(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.code === IDENTITY_ERRORS.duplicateInvitation) {
-      return "That address already has a pending invitation. Resend or revoke it below.";
-    }
-    if (e.status === 422) return e.problems[0] ?? e.message;
-  }
-  return "Could not send the invitation. Try again.";
+  return describeApiError(e, {
+    byCode: {
+      [IDENTITY_ERRORS.duplicateInvitation]:
+        "That address already has a pending invitation. Resend or revoke it below.",
+    },
+    fallback: "Could not send the invitation. Try again.",
+  });
 }
 
 /** Email and role in; the server creates the invitation and emails the link. */

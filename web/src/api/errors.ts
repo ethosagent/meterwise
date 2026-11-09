@@ -54,3 +54,19 @@ export function describeError(code: string): string {
   const status = ERROR_STATUS[code as ErrorCode];
   return status >= 500 ? "The server hit a problem. Try again." : "The request was not accepted.";
 }
+
+/**
+ * The readable line for a failed call: the message mapped to its code, else the first 422 problem
+ * (or message), else the fallback. Screens pass their own wording; none re-implement the branching.
+ */
+export function describeApiError(
+  e: unknown,
+  { byCode = {}, fallback }: { byCode?: Record<string, string>; fallback: string },
+): string {
+  if (e instanceof ApiError) {
+    const mapped = byCode[e.code];
+    if (mapped !== undefined) return mapped;
+    if (e.status === 422) return e.problems[0] ?? e.message;
+  }
+  return fallback;
+}

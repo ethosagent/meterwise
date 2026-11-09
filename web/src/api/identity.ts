@@ -95,33 +95,13 @@ export function useActiveWorkspace(): ActiveWorkspace & { retry: () => void } {
   return { state: "missing", retry };
 }
 
-export function useCreateWorkspace() {
+/** A workspace mutation: run `fn`, then refetch the workspace list (and Me, when `rePoint`, as a delete can move the active one). */
+function useWorkspaceMutation<V, R>(fn: (v: V) => Promise<R>, rePoint = false) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      apiFetch<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: workspacesKey }),
-  });
-}
-
-export function useRenameWorkspace() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (v: { id: string; name: string }) =>
-      apiFetch<Workspace>(`/api/workspaces/${encodeURIComponent(v.id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name: v.name }),
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: workspacesKey }),
-  });
-}
-
-export function useDeleteWorkspace() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<void>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    mutationFn: fn,
     onSuccess: async () => {
+      if (!rePoint) return qc.invalidateQueries({ queryKey: workspacesKey });
       // The server re-points a deleted active workspace, so both lists are stale.
       await Promise.all([
         qc.invalidateQueries({ queryKey: workspacesKey }),
@@ -130,6 +110,29 @@ export function useDeleteWorkspace() {
       await invalidateWorkspaceScoped(qc);
     },
   });
+}
+
+export function useCreateWorkspace() {
+  return useWorkspaceMutation((name: string) =>
+    apiFetch<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
+  );
+}
+
+export function useRenameWorkspace() {
+  return useWorkspaceMutation((v: { id: string; name: string }) =>
+    apiFetch<Workspace>(`/api/workspaces/${encodeURIComponent(v.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: v.name }),
+    }),
+  );
+}
+
+export function useDeleteWorkspace() {
+  return useWorkspaceMutation(
+    (id: string) =>
+      apiFetch<void>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    true,
+  );
 }
 
 /** Switch the active workspace, then refetch everything that was scoped to the old one. */

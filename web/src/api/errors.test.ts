@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, describeError, toApiError } from "./errors";
+import { ApiError, describeApiError, describeError, toApiError } from "./errors";
 
 describe("describeError", () => {
   it("describes known and unknown error codes", () => {
@@ -53,5 +53,25 @@ describe("toApiError", () => {
   it("degrades for JSON that is not an error body", async () => {
     const err = await toApiError(new Response(JSON.stringify([1]), { status: 500 }));
     expect(err.code).toBe("internal");
+  });
+});
+
+describe("describeApiError", () => {
+  const opts = { byCode: { conflict: "Already there." }, fallback: "Try again." };
+  const err = (status: number, code: string, details: Record<string, unknown> = {}) =>
+    new ApiError(status, { code, message: "raw", details });
+
+  it("prefers the message mapped to the code", () => {
+    expect(describeApiError(err(409, "conflict"), opts)).toBe("Already there.");
+  });
+  it("uses the first validation problem, then the message, for a 422", () => {
+    expect(describeApiError(err(422, "validation_failed", { problems: ["bad name"] }), opts)).toBe(
+      "bad name",
+    );
+    expect(describeApiError(err(422, "validation_failed"), opts)).toBe("raw");
+  });
+  it("falls back for anything else", () => {
+    expect(describeApiError(err(500, "internal"), opts)).toBe("Try again.");
+    expect(describeApiError(new Error("x"), opts)).toBe("Try again.");
   });
 });
