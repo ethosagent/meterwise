@@ -3,3 +3,66 @@
 //   sqlc v1.31.1
 
 package sqlc
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type Invitation struct {
+	ID                pgtype.UUID
+	OrgID             pgtype.UUID
+	Email             string
+	Role              string
+	ClerkInvitationID pgtype.Text
+	InvitedBy         pgtype.UUID
+	ExpiresAt         pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	AcceptedAt        pgtype.Timestamptz
+	RevokedAt         pgtype.Timestamptz
+}
+
+type Membership struct {
+	OrgID     pgtype.UUID
+	UserID    pgtype.UUID
+	Role      string
+	Status    string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Organization struct {
+	ID        pgtype.UUID
+	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
+type User struct {
+	ID          pgtype.UUID
+	OrgID       pgtype.UUID
+	ClerkUserID string
+	Email       string
+	Name        string
+	AvatarUrl   string
+	Preferences []byte
+	CreatedAt   pgtype.Timestamptz
+	DeletedAt   pgtype.Timestamptz
+}
+
+type Workspace struct {
+	ID        pgtype.UUID
+	OrgID     pgtype.UUID
+	PublicID  string
+	Name      string
+	IsDefault bool
+	Settings  []byte
+	CreatedAt pgtype.Timestamptz
+}
+
+type WorkspacePublicID struct {
+	PublicID    string
+	OrgID       pgtype.UUID
+	WorkspaceID pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
+	RetiredAt   pgtype.Timestamptz
+	GraceUntil  pgtype.Timestamptz
+}

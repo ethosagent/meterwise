@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,17 +30,17 @@ type Store struct {
 func Open(ctx context.Context, dsn string) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return nil, errors.New("store: DATABASE_URL is not a valid postgres URL")
+		return nil, fail(ClassBadURL, "store: DATABASE_URL is not a valid postgres URL")
 	}
 	cfg.ConnConfig.ConnectTimeout = connectTimeout
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("store: open pool: %w", err)
+		return nil, fail(ClassPool, "store: cannot open the connection pool")
 	}
 	s := &Store{pool: pool, q: sqlc.New(pool)}
 	if err := s.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, err
+		return nil, fail(ClassUnreachable, "store: database unreachable")
 	}
 	return s, nil
 }
@@ -50,7 +48,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 // Ping proves the database answers a query (the sqlc Ping query).
 func (s *Store) Ping(ctx context.Context) error {
 	if _, err := s.q.Ping(ctx); err != nil {
-		return fmt.Errorf("store: ping: %w", err)
+		return fail(ClassUnreachable, "store: database unreachable")
 	}
 	return nil
 }

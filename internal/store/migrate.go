@@ -39,19 +39,32 @@ func provider(db *sql.DB) (*goose.Provider, error) {
 func withDB(ctx context.Context, dsn string, fn func(*goose.Provider) error) error {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		return errors.New("store: DATABASE_URL is not a valid postgres URL")
+		return fail(ClassBadURL, "store: DATABASE_URL is not a valid postgres URL")
 	}
 	cfg.ConnConfig.ConnectTimeout = connectTimeout
 	db := stdlib.OpenDB(*cfg.ConnConfig)
 	defer func() { _ = db.Close() }()
 	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("store: database unreachable: %w", err)
+		return fail(ClassUnreachable, "store: database unreachable")
 	}
 	p, err := provider(db)
 	if err != nil {
-		return err
+		return fail(ClassMigration, "store: cannot load the embedded migrations")
 	}
-	return fn(p)
+	if err := fn(p); err != nil {
+		return migrationFailure(err)
+	}
+	return nil
+}
+
+// migrationFailure keeps only the failing migration's file name from a goose
+// error; the SQL and driver text are dropped.
+func migrationFailure(err error) *Error {
+	var partial *goose.PartialError
+	if errors.As(err, &partial) && partial.Failed != nil {
+		return fail(ClassMigration, "store: migration "+partial.Failed.Source.Path+" failed")
+	}
+	return fail(ClassMigration, "store: migration run failed")
 }
 
 // Migrate applies every pending migration and returns the ones it applied.

@@ -2,6 +2,8 @@ package store_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -44,11 +46,11 @@ func TestBaselineAppliesPingsAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	n, err := store.Pending(ctx, dsn)
-	if err != nil || n != 1 {
-		t.Fatalf("pending before migrate = %d, %v; want 1", n, err)
+	if err != nil || n < 1 {
+		t.Fatalf("pending before migrate = %d, %v; want every embedded migration", n, err)
 	}
 	applied, err := store.Migrate(ctx, dsn)
-	if err != nil || len(applied) != 1 || applied[0].Version != 1 || !strings.HasSuffix(applied[0].Source, "0001_store.sql") {
+	if err != nil || len(applied) != n || applied[0].Version != 1 || !strings.HasSuffix(applied[0].Source, "0001_store.sql") {
 		t.Fatalf("Migrate = %+v, %v", applied, err)
 	}
 	again, err := store.Migrate(ctx, dsn)
@@ -56,7 +58,7 @@ func TestBaselineAppliesPingsAndIsIdempotent(t *testing.T) {
 		t.Fatalf("second Migrate applied %+v, %v; want nothing", again, err)
 	}
 	st, err := store.Status(ctx, dsn)
-	if err != nil || len(st) != 1 || !st[0].Applied {
+	if err != nil || len(st) != n || !st[0].Applied || !st[n-1].Applied {
 		t.Fatalf("Status = %+v, %v", st, err)
 	}
 
@@ -73,5 +75,45 @@ func TestBaselineAppliesPingsAndIsIdempotent(t *testing.T) {
 	}
 	if s.Pool() == nil {
 		t.Fatal("nil pool")
+	}
+}
+
+// secretDSNs carry a password in the userinfo, in a percent-encoded form and in
+// the query string. None of them may reach an error message.
+var secretDSNs = []string{
+	"postgres://app:hunter2secret@127.0.0.1:1/meterwise",
+	"postgres://app:p%40ss%2Fw%3Ard9x@127.0.0.1:1/meterwise",
+	"postgres://app@127.0.0.1:1/meterwise?password=qu3ryS3cret",
+	"postgres://app@127.0.0.1:1/meterwise?password=%71u3ry%53ecret2",
+	"postgres://app:hunter2secret@127.0.0.1:1/meterwise?sslmode=bogus",
+	"postgres://app:hunter2secret@[::1/meterwise",
+}
+
+var secretFragments = []string{"hunter2secret", "p%40ss", "p@ss", "w:rd9x", "w%3Ard9x", "qu3ryS3cret", "%71u3ry", "3ecret2", "127.0.0.1", "meterwise"}
+
+func TestErrorsCarryNoConnectionDetail(t *testing.T) {
+	ctx := context.Background()
+	for _, dsn := range secretDSNs {
+		for name, run := range map[string]func() error{
+			"open":    func() error { _, err := store.Open(ctx, dsn); return err },
+			"migrate": func() error { _, err := store.Migrate(ctx, dsn); return err },
+			"status":  func() error { _, err := store.Status(ctx, dsn); return err },
+		} {
+			err := run()
+			if err == nil {
+				t.Fatalf("%s accepted %q", name, dsn)
+			}
+			if store.ClassOf(err) == "" {
+				t.Errorf("%s: error is not a store.Error: %T", name, err)
+			}
+			for _, frag := range secretFragments {
+				if strings.Contains(err.Error(), frag) || strings.Contains(fmt.Sprintf("%+v", err), frag) {
+					t.Errorf("%s: error %q leaks %q", name, err, frag)
+				}
+			}
+			if errors.Unwrap(err) != nil {
+				t.Errorf("%s: error wraps a driver error", name)
+			}
+		}
 	}
 }
