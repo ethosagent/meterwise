@@ -211,6 +211,13 @@ function groups(m: AccessMock, method: string, r: GroupRoute, body: Record<strin
     g.grants = g.grants.filter((x) => x.workspaceId !== r.arg);
     return new Response(null, { status: 204 });
   }
+  if (method === "PUT") {
+    const ids = body.userIds as string[];
+    if (ids.some((id) => !m.members.some((x) => x.userId === id))) {
+      return errorResponse(422, "validation_failed", "every id must be an active member");
+    }
+    g.memberIds = [...new Set(ids)];
+  }
   if (method === "POST") {
     const userId = String(body.userId);
     if (!m.members.some((x) => x.userId === userId))

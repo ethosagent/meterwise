@@ -129,14 +129,15 @@ describe("AccessManagementPage (admin)", () => {
     await userEvent.click(await drawer.findByRole("tab", { name: "Members" }));
     await userEvent.click(await drawer.findByText("Bo Member (bo@acme.test)"));
     await userEvent.click(drawer.getByRole("button", { name: "right" }));
-    await waitFor(() => expect(api.callsTo("POST", "/api/groups/g1/members")).toHaveLength(1));
-    expect(api.callsTo("POST", "/api/groups/g1/members")[0]?.body).toEqual({ userId: BO.userId });
+    await waitFor(() => expect(api.callsTo("PUT", "/api/groups/g1/members")).toHaveLength(1));
+    expect(api.callsTo("PUT", "/api/groups/g1/members")[0]?.body).toEqual({ userIds: [BO.userId] });
     expect(api.callsTo("PUT", /\/api\/groups\/g1\/permissions/)).toHaveLength(0);
     await userEvent.click(await drawer.findByText("Bo Member (bo@acme.test)"));
     await userEvent.click(drawer.getByRole("button", { name: "left" }));
-    await waitFor(() =>
-      expect(api.callsTo("DELETE", `/api/groups/g1/members/${BO.userId}`)).toHaveLength(1),
-    );
+    await waitFor(() => expect(api.callsTo("PUT", "/api/groups/g1/members")).toHaveLength(2));
+    expect(api.callsTo("PUT", "/api/groups/g1/members")[1]?.body).toEqual({ userIds: [] });
+    expect(api.callsTo("POST", /\/members/)).toHaveLength(0);
+    expect(api.callsTo("DELETE", /\/members/)).toHaveLength(0);
   });
 
   it("renames and deletes a group", async () => {

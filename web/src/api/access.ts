@@ -155,22 +155,15 @@ export function useDetachWorkspace() {
   );
 }
 
-/** Moves users in or out of a group, one request each, in order. Group membership touches group_users only. */
-export function useGroupMembership() {
+/** Replaces a group's member set in one request; every id must be an active member or nothing changes (422). */
+export function useSetGroupMembers() {
   return useInvalidatingMutation(
-    async (v: { id: string; add: string[]; remove: string[] }) => {
-      for (const userId of v.add) {
-        await apiFetch(`/api/groups/${enc(v.id)}/members`, {
-          method: "POST",
-          body: json({ userId }),
-        });
-      }
-      for (const userId of v.remove) {
-        await apiFetch(`/api/groups/${enc(v.id)}/members/${enc(userId)}`, { method: "DELETE" });
-      }
-    },
+    (v: { id: string; userIds: string[] }) =>
+      apiFetch<{ items: Member[] }>(`/api/groups/${enc(v.id)}/members`, {
+        method: "PUT",
+        body: json({ userIds: v.userIds }),
+      }),
     [groupsKey, membersKey],
-    { settled: true },
   );
 }
 

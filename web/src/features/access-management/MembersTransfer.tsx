@@ -2,7 +2,7 @@ import { App, Skeleton, Transfer } from "antd";
 import {
   ACCESS_ERROR_TEXT,
   useGroupMembers,
-  useGroupMembership,
+  useSetGroupMembers,
   useMembers,
 } from "../../api/access";
 import { describeApiError } from "../../api/errors";
@@ -12,7 +12,7 @@ export function MembersTransfer({ groupId, disabled }: { groupId: string; disabl
   const { message } = App.useApp();
   const all = useMembers(true);
   const inGroup = useGroupMembers(groupId);
-  const move = useGroupMembership();
+  const move = useSetGroupMembers();
   if (!all.data || !inGroup.data) return <Skeleton active />;
   const targetKeys = inGroup.data.map((m) => m.userId);
   return (
@@ -30,13 +30,9 @@ export function MembersTransfer({ groupId, disabled }: { groupId: string; disabl
         `${item.title} ${item.email}`.toLowerCase().includes(q.toLowerCase())
       }
       render={(item) => `${item.title} (${item.email})`}
-      onChange={(_next, direction, moved) =>
+      onChange={(next) =>
         move.mutate(
-          {
-            id: groupId,
-            add: direction === "right" ? moved.map(String) : [],
-            remove: direction === "left" ? moved.map(String) : [],
-          },
+          { id: groupId, userIds: next.map(String) },
           {
             onError: (e) =>
               message.error(

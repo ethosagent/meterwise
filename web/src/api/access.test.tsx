@@ -9,9 +9,9 @@ import {
   useCreateGroup,
   useDeleteGroup,
   useDetachWorkspace,
-  useGroupMembership,
   useGroups,
   usePermissionSnapshot,
+  useSetGroupMembers,
 } from "./access";
 
 const GROUP: MockGroup = {
@@ -26,29 +26,40 @@ const GROUP: MockGroup = {
 
 function Probe() {
   const groups = useGroups(true);
-  const move = useGroupMembership();
+  const put = useSetGroupMembers();
   return (
     <>
       <output>{groups.data?.[0]?.memberCount ?? "?"}</output>
-      <button
-        type="button"
-        onClick={() => move.mutate({ id: "g1", add: [BO.userId, "ghost"], remove: [] })}
-      >
-        go
+      <p>{put.status}</p>
+      <button type="button" onClick={() => put.mutate({ id: "g1", userIds: [BO.userId] })}>
+        set
+      </button>
+      <button type="button" onClick={() => put.mutate({ id: "g1", userIds: [BO.userId, "ghost"] })}>
+        set ghost
       </button>
     </>
   );
 }
 
-describe("useGroupMembership", () => {
-  it("refreshes the lists even when a later request in the sequence fails (half applied)", async () => {
+describe("useSetGroupMembers", () => {
+  it("replaces the member set with one PUT and refreshes the group list", async () => {
     const api = mockApi({ access: { groups: [GROUP] } });
     renderAt(<Probe />);
     await screen.findByText("0");
-    await userEvent.click(screen.getByRole("button", { name: "go" }));
-    // the first add applied, the second (not a member) was refused with 422
-    await waitFor(() => expect(api.callsTo("POST", "/api/groups/g1/members")).toHaveLength(2));
+    await userEvent.click(screen.getByRole("button", { name: "set" }));
     expect(await screen.findByText("1")).toBeInTheDocument();
+    expect(api.callsTo("PUT", "/api/groups/g1/members")).toHaveLength(1);
+    expect(api.callsTo("POST", /members/)).toHaveLength(0);
+  });
+
+  it("an id that is not a member is a 422 and changes nothing", async () => {
+    const api = mockApi({ access: { groups: [GROUP] } });
+    renderAt(<Probe />);
+    await screen.findByText("0");
+    await userEvent.click(screen.getByRole("button", { name: "set ghost" }));
+    await screen.findByText("error");
+    expect(api.access.groups[0]?.memberIds).toEqual([]);
+    expect(screen.getByText("0")).toBeInTheDocument();
   });
 });
 
