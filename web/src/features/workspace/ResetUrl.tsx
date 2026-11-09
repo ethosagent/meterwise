@@ -1,9 +1,12 @@
 import { Alert, App, Button, InputNumber, Popconfirm, Space, Typography } from "antd";
 import { useState } from "react";
 import { describeApiError } from "../../api/errors";
-import { GRACE_MINUTES_DEFAULT, GRACE_MINUTES_MAX } from "../../api/limits";
 import { useResetUrl, useRetirePrevious } from "../../api/setup";
-import type { ResetURLResponse } from "../../contract/generated";
+import {
+  GRACE_MINUTES_DEFAULT,
+  GRACE_MINUTES_MAX,
+  type ResetURLResponse,
+} from "../../contract/generated";
 
 /**
  * Reset URL: a Popconfirm that explains the grace window, then a notice that the previous URL

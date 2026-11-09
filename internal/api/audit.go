@@ -38,7 +38,7 @@ func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 	if raw := c.Query("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
-			return contract.AuditList{}, contract.Invalid("limit", "must be a whole number from 1 to 200")
+			return contract.AuditList{}, contract.Invalid("limit", "must be a whole number from 1 to "+strconv.Itoa(contract.MaxAuditLimit))
 		}
 		q.Limit = n
 	}

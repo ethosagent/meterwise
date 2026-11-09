@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -354,5 +355,22 @@ func TestTruncateOnIsATriggerEventNotATable(t *testing.T) {
 		if code, _, errs := gen(t, root, "migrations"); code != 1 || !strings.Contains(errs, "touches table orgs") {
 			t.Errorf("%s not flagged: %d %q", stmt, code, errs)
 		}
+	}
+}
+
+// Every limit the contract defines reaches the web twin as an exported constant.
+func TestContractTSEmitsTheLimits(t *testing.T) {
+	b, err := genContractTS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range contract.Limits() {
+		want := "export const " + l.Name + " = " + strconv.Itoa(l.Value) + ";\n"
+		if !strings.Contains(string(b), want) {
+			t.Errorf("generated.ts lacks %q", want)
+		}
+	}
+	if len(contract.Limits()) < 4 {
+		t.Fatalf("limits = %v", contract.Limits())
 	}
 }

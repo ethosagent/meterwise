@@ -1,14 +1,15 @@
-import { ALLOWED_CIDRS_MAX, GRACE_MINUTES_MAX } from "../api/limits";
-import type {
-  AuditAction,
-  AuditActor,
-  AuditEntry,
-  ResetURLResponse,
-  Setup,
-  SetupStatus,
-  Workspace,
+import {
+  ALLOWED_CIDRS_MAX,
+  AUDIT_ACTIONS,
+  type AuditAction,
+  type AuditActor,
+  type AuditEntry,
+  GRACE_MINUTES_MAX,
+  type ResetURLResponse,
+  type Setup,
+  type SetupStatus,
+  type Workspace,
 } from "../contract/generated";
-import { AUDIT_ACTIONS } from "../contract/generated";
 import { type AccessMock, errorResponse, jsonResponse } from "./mockAccess";
 
 export interface UrlInit {
