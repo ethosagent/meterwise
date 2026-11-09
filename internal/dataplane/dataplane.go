@@ -29,11 +29,11 @@ type Deps struct {
 // accepts Options.DisablePrivacyMode but does not act on it, so the setting changes nothing.
 const PrivacyModeIgnoredWarning = "PRIVACY_MODE=false has no effect: tollgate v0.1.0 does not implement a switch for it; privacy behaviour is unchanged"
 
-// Options turns the config and deps into tollgate.Options. Limits are tollgate's
+// Options turns the deps (the config is accepted for symmetry with New and for later settings) into tollgate.Options. Limits are tollgate's
 // defaults. PRIVACY_MODE is accepted but not forwarded: tollgate v0.1.0 ignores
 // DisablePrivacyMode (see PrivacyModeIgnoredWarning), so forwarding it would only
 // suggest a control that does not exist.
-func Options(cfg config.Config, d Deps) tollgate.Options {
+func Options(_ config.Config, d Deps) tollgate.Options {
 	o := tollgate.Options{
 		Auth:      d.Auth,
 		Admission: d.Admission,
