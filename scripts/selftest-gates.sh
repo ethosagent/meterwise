@@ -28,11 +28,21 @@ printf '#!/bin/sh\nexit 1\n' >"$STUBS/docker"; cp "$STUBS/docker" "$STUBS/pg_isr
 pass=0 bad=0
 want_gate() { [ "${#ONLY[@]}" -eq 0 ] && return 0; local g; for g in "${ONLY[@]}"; do [ "$g" = "$1" ] && return 0; done; return 1; }
 
+# strip_store_inputs removes the Plan 01 store inputs and amends the scratch base commit to match.
+strip_store_inputs() {
+  rm -rf internal/store/migrations internal/store/queries internal/store/sqlc sqlc.yaml
+  go run ./cmd/gen schema >/dev/null 2>&1
+  git add -A && git -c user.name=selftest -c user.email=selftest@example.test commit -q --amend --no-edit
+}
+
 # run_case KIND GATE NAME EXPECT MUTATION [ENV...]   KIND: red|control
 run_case() {
   local kind="$1" gate="$2" name="$3" expect="$4" mut="$5"; shift 5
   want_gate "$gate" || return 0
   rm -rf "$W"; cp -Rp "$BASE" "$W"
+  # sqlc and migrate scenarios are written for a tree with no store inputs (the pre-Plan-01 state):
+  # strip them from the base commit, so the scenarios stay meaningful. NOSTRIP=1 keeps the real inputs.
+  case "$gate" in sqlc | migrate) [ -n "${NOSTRIP:-}" ] || (cd "$W" && strip_store_inputs) ;; esac
   (cd "$W" && "$mut") || { echo "✗ SETUP FAILED  [$gate] $name"; bad=$((bad + 1)); return; }
   local out rc
   out="$(cd "$W" && env "$@" scripts/run-checks.sh $gate 2>&1)"; rc=$?
@@ -335,6 +345,12 @@ red generated "taxonomy source under another name is not a SKIP" "unknown target
 red generated "openapi.json deleted" "is missing" m_gendel
 red generated "migration added, docs/schema.md not regenerated" "docs/schema.md is stale" m_genschema
 green generated "clean tree" "all gates passed" nop
+
+# ---- Plan 01 inputs exist: the sqlc and migrate gates are live on the real tree (never a silent SKIP)
+NOSTRIP=1 green sqlc "real tree: sqlc.yaml, queries and generated output are checked" "all gates passed" nop
+NOSTRIP=1 green migrate "real tree: 0001_store applies, reverses and re-applies" "all gates passed" nop
+m_sqlc_real_stale() { echo '// stale' >>internal/store/sqlc/store.sql.go; }
+NOSTRIP=1 red sqlc "real tree: hand-edited sqlc output" "stale or hand-edited" m_sqlc_real_stale
 
 echo "--- selftest: $pass as expected, $bad not"
 [ "$bad" -eq 0 ]
