@@ -45,10 +45,22 @@ export const useMockAuth = create<MockAuthState>((set) => ({
 /** The mock "token" is just the email: the dev mock API reads it back. */
 export const mockToken = (email: string) => `mock:${email}`;
 
+/**
+ * Dev only. With VITE_MOCK_TOKEN_URL set (the end-to-end run), the token is a real signed JWT minted
+ * by the Clerk twin (cmd/clerkmock-serve) for the signed-in email, fetched fresh on every call so
+ * the control plane verifies a genuine signature. Without it, the plain `mock:<email>` string.
+ */
+export async function mintToken(email: string, mintUrl = import.meta.env.VITE_MOCK_TOKEN_URL) {
+  if (!mintUrl) return mockToken(email);
+  const resp = await fetch(`${mintUrl}?email=${encodeURIComponent(email)}`);
+  if (!resp.ok) throw new Error(`token mint failed: ${resp.status}`);
+  return ((await resp.json()) as { token: string }).token;
+}
+
 function useMockSession(): SessionApi {
   const email = useMockAuth((s) => s.email);
   const signOut = useMockAuth((s) => s.signOut);
-  const getToken = useCallback(async () => (email ? mockToken(email) : null), [email]);
+  const getToken = useCallback(async () => (email ? mintToken(email) : null), [email]);
   return useMemo(
     () => ({
       isLoaded: true,

@@ -294,6 +294,27 @@ func TestResolveFailuresShareTheHandlersErrorMapper(t *testing.T) {
 	}
 }
 
+// A closed tab cancels the request context and the driver reports it as a failed query; that is not an
+// ERROR in the service's log.
+func TestAnAbandonedRequestIsNotLoggedAsAServerError(t *testing.T) {
+	f := newFixture(t, nil)
+	f.res.err = &store.Error{Class: store.ClassUnreachable, Message: "store: database unreachable"}
+	h, err := api.New(api.Deps{
+		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), DB: pinger{}, Principals: f.res, Tenancy: newMemTenancy(),
+		Web: fstest.MapFS{"index.html": {Data: []byte("x")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", "/api/me/preferences", nil).WithContext(ctx)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if strings.Contains(f.logs.String(), `"level":"ERROR"`) {
+		t.Fatalf("an abandoned request logged an error: %s", f.logs.String())
+	}
+}
+
 func TestHealthzPingsTheDatabase(t *testing.T) {
 	f := newFixture(t, nil)
 	if resp, b := f.do(t, "GET", "/healthz", ""); resp.StatusCode != 200 || strings.TrimSpace(string(b)) != `{"status":"ok"}` {

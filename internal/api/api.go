@@ -201,7 +201,12 @@ func apiError(err error) *contract.Error {
 // a 4xx is the caller's mistake and already carries its code.
 func (s *server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	e := apiError(err)
-	if e.Status() >= http.StatusInternalServerError {
+	if r.Context().Err() != nil {
+		// The client went away mid-request (a closed tab); the driver reports that as a failed
+		// query. Nobody is waiting for the answer and nothing is wrong with the service.
+		s.Log.LogAttrs(r.Context(), slog.LevelDebug, "request abandoned",
+			slog.String("request_id", RequestIDFrom(r.Context())))
+	} else if e.Status() >= http.StatusInternalServerError {
 		s.Log.LogAttrs(r.Context(), slog.LevelError, "handler error",
 			slog.String("request_id", RequestIDFrom(r.Context())), slog.String("err", err.Error()))
 	}

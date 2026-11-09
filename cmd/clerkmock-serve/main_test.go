@@ -1,0 +1,129 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/identity"
+	"github.com/ethosagent/meterwise/internal/nonet"
+)
+
+func TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }
+
+// syncBuf is a bytes.Buffer the test can read while run writes to it.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
+func (s *syncBuf) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.b.Bytes()...)
+}
+func (s *syncBuf) String() string { return string(s.Bytes()) }
+
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	return ln.Addr().String()
+}
+
+// The minted tokens verify with the production Clerk adapter over the HTTPS listener (trusting
+// only the written certificate), and an expired email is rejected as unauthenticated.
+func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
+	tlsAddr, httpAddr := freeAddr(t), freeAddr(t)
+	ca := filepath.Join(t.TempDir(), "ca.pem")
+	var out, errb syncBuf
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() {
+		done <- run(ctx, []string{"-listen-tls", tlsAddr, "-listen-http", httpAddr, "-public-host", "localhost", "-ca-out", ca}, &out, &errb)
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+
+	var env map[string]string
+	for range 100 {
+		if err := json.Unmarshal(out.Bytes(), &env); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if env == nil {
+		t.Fatalf("no startup line; stderr: %s", errb.String())
+	}
+	pemBytes, err := os.ReadFile(ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		t.Fatal("the certificate is not PEM")
+	}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}}
+	idp, err := identity.NewClerk(identity.ClerkConfig{Issuer: env["CLERK_ISSUER"], JWKSURL: env["CLERK_JWKS_URL"], HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mint := func(email string) string {
+		resp, err := http.Get(env["MINT_URL"] + "?name=Ada&email=" + email)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var b struct{ Token string }
+		if err := json.NewDecoder(resp.Body).Decode(&b); err != nil || b.Token == "" {
+			t.Fatalf("mint: %v %+v", err, b)
+		}
+		if resp.Header.Get("Access-Control-Allow-Origin") == "" {
+			t.Fatal("the mint answers without CORS; the page could not read it")
+		}
+		return b.Token
+	}
+	id, err := idp.Verify(context.Background(), mint("Ada@Example.test"))
+	if err != nil || id.Email != "ada@example.test" || !id.EmailVerified || !strings.HasPrefix(id.Subject, "user_") {
+		t.Fatalf("verify: %+v %v", id, err)
+	}
+	if id2, _ := idp.Verify(context.Background(), mint("ada@example.test")); id2.Subject != id.Subject {
+		t.Fatal("the subject is not stable per email")
+	}
+	post := func(path string) {
+		resp, err := http.Post("http://"+httpAddr+path, "", nil)
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("%s: %v %v", path, resp, err)
+		}
+		_ = resp.Body.Close()
+	}
+	post("/admin/expire?email=ada@example.test")
+	if _, err := idp.Verify(context.Background(), mint("ada@example.test")); contract.AsError(err).Code != contract.CodeUnauthenticated {
+		t.Fatalf("expired mint: %v", err)
+	}
+	post("/admin/restore?email=ada@example.test")
+	if _, err := idp.Verify(context.Background(), mint("ada@example.test")); err != nil {
+		t.Fatalf("restored mint: %v", err)
+	}
+}
+
+func TestCAOutIsRequired(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run(context.Background(), nil, &out, &errb); code != 2 || !strings.Contains(errb.String(), "-ca-out") {
+		t.Fatalf("code %d, %s", code, errb.String())
+	}
+}

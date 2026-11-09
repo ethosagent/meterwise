@@ -40,6 +40,20 @@ Set `CLERK_ISSUER` and `CLERK_JWKS_URL` and the real adapter takes over. `serve`
 and needs the schema, so run `meterwised migrate` first. See [`clerk.md`](clerk.md) for the Clerk setup, the
 invitation flow, `bootstrap-admin` and the webhook replay.
 
+Real identity end to end, no mock API: `cmd/clerkmock-serve` is the Clerk twin as a standalone issuer. It serves the JWKS
+and the invitations API over HTTPS (self-signed, written to `-ca-out`) and a token mint on a plain loopback port.
+`CLERK_*` URLs must be https, and macOS Go ignores `SSL_CERT_FILE`, so run the Linux build of `meterwised` in a container
+that trusts the twin's certificate (`SSL_CERT_FILE=/ca.pem`, Postgres and the twin reached as `host.docker.internal`).
+Build the web app with its dev-only adapter pointed at the mint, so it signs in with real signed tokens:
+
+```sh
+go run ./cmd/clerkmock-serve -ca-out /tmp/ca.pem          # prints the CLERK_* values and MINT_URL as JSON
+cd web && VITE_MOCK_TOKEN_URL=http://127.0.0.1:9444/mint NODE_ENV=development npx vite build --mode development --outDir /tmp/dist
+```
+
+That bundle contains the mock on purpose; `npm run build:release` fails if `dist` does. The driver used for the Plan 02
+acceptance run is kept with its report (`reports/02-e2e/`).
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `DATABASE_URL` | required | `postgres://` URL |
