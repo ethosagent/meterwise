@@ -92,11 +92,7 @@ func (s *Service) DeleteGroup(ctx context.Context, id string) error {
 // AttachWorkspace attaches a group to a workspace and, in the same transaction, seeds the read
 // action of every workspace-scoped resource for it. It is idempotent.
 func (s *Service) AttachWorkspace(ctx context.Context, groupID, workspaceID string) (contract.Group, error) {
-	var seed []contract.GrantSpec
-	for _, g := range WorkspaceReadSeed() {
-		seed = append(seed, contract.GrantSpec{ResourceType: g.ResourceType, Action: g.Action})
-	}
-	return s.st.AttachGroupWorkspace(ctx, s.org, groupID, workspaceID, seed)
+	return s.st.AttachGroupWorkspace(ctx, s.org, groupID, workspaceID, WorkspaceReadSeed())
 }
 
 // DetachWorkspace detaches a group and drops its grants on that workspace.
@@ -171,11 +167,10 @@ func ValidateGrants(grants []contract.Grant, allowAllWorkspaces bool) error {
 		case scope == ScopeWorkspace && g.WorkspaceID == nil && !allowAllWorkspaces:
 			problems = append(problems, at+": "+g.ResourceType+" is workspace-scoped; workspaceId is required")
 		}
-		key := g.ResourceType + "\x00" + g.Action + "\x00" + deref(g.WorkspaceID)
-		if seen[key] {
+		if seen[g.Key()] {
 			problems = append(problems, at+": duplicate grant")
 		}
-		seen[key] = true
+		seen[g.Key()] = true
 	}
 	if len(problems) == 0 {
 		return nil

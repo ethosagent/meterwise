@@ -42,6 +42,16 @@ type GrantRow struct {
 	Action       string
 }
 
+// ToGrant is the API form of a stored grant: nil WorkspaceID when the row names no workspace.
+func (r GrantRow) ToGrant() Grant {
+	g := Grant{ResourceType: r.ResourceType, Action: r.Action}
+	if r.WorkspaceID != "" {
+		ws := r.WorkspaceID
+		g.WorkspaceID = &ws
+	}
+	return g
+}
+
 // GrantSpec is a resource type and action; the taxonomy (package access) decides which exist.
 type GrantSpec struct{ ResourceType, Action string }
 

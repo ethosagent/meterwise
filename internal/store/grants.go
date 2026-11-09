@@ -7,13 +7,9 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-// GrantRow is one grant that applies to a user: from a group (GroupID set) or an org default.
-// WorkspaceID is "" for a grant on every workspace (or an org-scoped resource).
-type GrantRow = contract.GrantRow
-
 // Grants returns every grant that applies to the user, in one round trip: the grants of the
 // user's groups and the org defaults. It is the only read of authorization.
-func (s *Store) Grants(ctx context.Context, orgID, userID string) ([]GrantRow, error) {
+func (s *Store) Grants(ctx context.Context, orgID, userID string) ([]contract.GrantRow, error) {
 	if !validID(userID) {
 		return nil, nil
 	}
@@ -21,9 +17,9 @@ func (s *Store) Grants(ctx context.Context, orgID, userID string) ([]GrantRow, e
 	if err != nil {
 		return nil, queryErr(err)
 	}
-	out := make([]GrantRow, 0, len(rows))
+	out := make([]contract.GrantRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, GrantRow{GroupID: r.GroupID, WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action})
+		out = append(out, contract.GrantRow{GroupID: r.GroupID, WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action})
 	}
 	return out, nil
 }
@@ -36,7 +32,7 @@ func (s *Store) OrgDefaults(ctx context.Context, orgID string) ([]contract.Grant
 	}
 	out := make([]contract.Grant, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, grantOf(r.WorkspaceID, r.ResourceType, r.Action))
+		out = append(out, contract.GrantRow{WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action}.ToGrant())
 	}
 	return out, nil
 }
@@ -54,7 +50,7 @@ func (s *Store) ReplaceOrgDefaults(ctx context.Context, orgID string, grants []c
 			return err
 		}
 		for _, g := range grants {
-			p := sqlc.InsertOrgDefaultParams{OrgID: orgID, WorkspaceID: derefID(g.WorkspaceID), ResourceType: g.ResourceType, Action: g.Action}
+			p := sqlc.InsertOrgDefaultParams{OrgID: orgID, WorkspaceID: g.WorkspaceOrEmpty(), ResourceType: g.ResourceType, Action: g.Action}
 			if err := q.InsertOrgDefault(ctx, p); err != nil {
 				return err
 			}
@@ -65,14 +61,6 @@ func (s *Store) ReplaceOrgDefaults(ctx context.Context, orgID string, grants []c
 		return nil, queryErr(err)
 	}
 	return s.OrgDefaults(ctx, orgID)
-}
-
-// derefID is the workspace id of a grant, "" for an org-wide one (how the queries spell NULL).
-func derefID(id *string) string {
-	if id == nil {
-		return ""
-	}
-	return *id
 }
 
 // requireOrgWorkspace is nil for an org-wide grant or a workspace of the org, else a 422.

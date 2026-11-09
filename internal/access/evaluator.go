@@ -2,7 +2,6 @@ package access
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
@@ -127,18 +126,13 @@ func (PermissionEvaluator) Snapshot(subject Subject, grants []Grant) contract.Pe
 	}
 	seen := map[string]bool{}
 	out := []contract.Grant{}
-	for _, g := range grants {
-		key := g.ResourceType + "\x00" + g.Action + "\x00" + g.WorkspaceID
-		if seen[key] || !Valid(g.ResourceType, g.Action) {
+	for _, row := range grants {
+		g := row.ToGrant()
+		if seen[g.Key()] || !Valid(g.ResourceType, g.Action) {
 			continue
 		}
-		seen[key] = true
-		c := contract.Grant{ResourceType: g.ResourceType, Action: g.Action}
-		if g.WorkspaceID != "" {
-			ws := g.WorkspaceID
-			c.WorkspaceID = &ws
-		}
-		out = append(out, c)
+		seen[g.Key()] = true
+		out = append(out, g)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
@@ -148,14 +142,7 @@ func (PermissionEvaluator) Snapshot(subject Subject, grants []Grant) contract.Pe
 		if a.Action != b.Action {
 			return a.Action < b.Action
 		}
-		return strings.Compare(deref(a.WorkspaceID), deref(b.WorkspaceID)) < 0
+		return a.WorkspaceOrEmpty() < b.WorkspaceOrEmpty()
 	})
 	return contract.PermissionSnapshot{Grants: out}
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

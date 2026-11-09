@@ -54,3 +54,21 @@ func TestNotInvitedIsTheRegisteredError(t *testing.T) {
 		t.Fatalf("%+v", e)
 	}
 }
+
+func TestGrantHelpers(t *testing.T) {
+	row := contract.GrantRow{GroupID: "g", WorkspaceID: "w1", ResourceType: "workspace", Action: "read"}
+	g := row.ToGrant()
+	if g.WorkspaceID == nil || *g.WorkspaceID != "w1" || g.ResourceType != "workspace" || g.Action != "read" {
+		t.Fatalf("ToGrant: %+v", g)
+	}
+	if g.WorkspaceOrEmpty() != "w1" {
+		t.Fatal("WorkspaceOrEmpty")
+	}
+	org := contract.GrantRow{ResourceType: "member", Action: "read"}.ToGrant()
+	if org.WorkspaceID != nil || org.WorkspaceOrEmpty() != "" {
+		t.Fatalf("an org-wide row has no workspace: %+v", org)
+	}
+	if g.Key() == org.Key() || g.Key() != row.ToGrant().Key() || org.Key() != "member\x00read\x00" {
+		t.Fatalf("Key: %q %q", g.Key(), org.Key())
+	}
+}

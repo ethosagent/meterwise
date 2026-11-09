@@ -12,7 +12,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
 )
 
-var readSeed = []store.GrantSpec{
+var readSeed = []contract.GrantSpec{
 	{ResourceType: "workspace", Action: "read"}, {ResourceType: "workspace_url", Action: "read"},
 	{ResourceType: "session", Action: "read"}, {ResourceType: "monitor_config", Action: "read"},
 	{ResourceType: "savings", Action: "read"},

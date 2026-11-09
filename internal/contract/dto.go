@@ -143,6 +143,19 @@ type Grant struct {
 	Action       string  `json:"action"`
 }
 
+// WorkspaceOrEmpty is the grant's workspace id, "" for one on every workspace (or an org-scoped one).
+func (g Grant) WorkspaceOrEmpty() string {
+	if g.WorkspaceID == nil {
+		return ""
+	}
+	return *g.WorkspaceID
+}
+
+// Key identifies the grant: resource type, action and workspace id, so equal grants share a key.
+func (g Grant) Key() string {
+	return g.ResourceType + "\x00" + g.Action + "\x00" + g.WorkspaceOrEmpty()
+}
+
 // GrantList is the grants body of the group and org-default endpoints, request and response.
 type GrantList struct {
 	Grants []Grant `json:"grants"`

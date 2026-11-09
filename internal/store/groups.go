@@ -110,12 +110,9 @@ func (s *Store) DeleteGroup(ctx context.Context, orgID, id string) error {
 	})
 }
 
-// GrantSpec is a resource type and action; the taxonomy (package access) decides which exist.
-type GrantSpec = contract.GrantSpec
-
 // AttachGroupWorkspace links a group to a workspace of the org and seeds one grant per spec on
 // that workspace, in one transaction. Attaching again is a no-op that still returns the group.
-func (s *Store) AttachGroupWorkspace(ctx context.Context, orgID, groupID, workspaceID string, seed []GrantSpec) (contract.Group, error) {
+func (s *Store) AttachGroupWorkspace(ctx context.Context, orgID, groupID, workspaceID string, seed []contract.GrantSpec) (contract.Group, error) {
 	if !validID(workspaceID) {
 		return contract.Group{}, errNotFound
 	}
@@ -157,14 +154,6 @@ func (s *Store) DetachGroupWorkspace(ctx context.Context, orgID, groupID, worksp
 	})
 }
 
-func grantOf(workspaceID, resourceType, action string) contract.Grant {
-	g := contract.Grant{ResourceType: resourceType, Action: action}
-	if workspaceID != "" {
-		g.WorkspaceID = &workspaceID
-	}
-	return g
-}
-
 // GroupGrants returns a group's grants; an unknown group is CodeNotFound.
 func (s *Store) GroupGrants(ctx context.Context, orgID, groupID string) ([]contract.Grant, error) {
 	if _, err := s.Group(ctx, orgID, groupID); err != nil {
@@ -176,7 +165,7 @@ func (s *Store) GroupGrants(ctx context.Context, orgID, groupID string) ([]contr
 	}
 	out := make([]contract.Grant, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, grantOf(r.WorkspaceID, r.ResourceType, r.Action))
+		out = append(out, contract.GrantRow{WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action}.ToGrant())
 	}
 	return out, nil
 }
@@ -202,7 +191,7 @@ func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, g
 			return err
 		}
 		for _, gr := range grants {
-			if err := q.GrantToGroup(ctx, sqlc.GrantToGroupParams{GroupID: groupID, OrgID: orgID, WorkspaceID: derefID(gr.WorkspaceID), ResourceType: gr.ResourceType, Action: gr.Action}); err != nil {
+			if err := q.GrantToGroup(ctx, sqlc.GrantToGroupParams{GroupID: groupID, OrgID: orgID, WorkspaceID: gr.WorkspaceOrEmpty(), ResourceType: gr.ResourceType, Action: gr.Action}); err != nil {
 				return err
 			}
 		}
