@@ -1,12 +1,6 @@
-import type {
-  Action,
-  Grant,
-  Group,
-  Member,
-  PermissionSnapshot,
-  ResourceType,
-} from "../access/plan03-types";
+import type { ResourceType } from "../access/taxonomy";
 import type { WireErrorBody } from "../api/errors";
+import type { Grant, Group, Member, PermissionSnapshot } from "../contract/generated";
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -73,7 +67,7 @@ export interface AccessMock {
   orgDefaults: Grant[];
   setSnapshot: (s: PermissionSnapshot) => void;
   /** The gateway's rule, written independently of the production hasPermission. */
-  can: (resource: ResourceType, action: Action, workspaceId?: string) => boolean;
+  can: (resource: ResourceType, action: string, workspaceId?: string) => boolean;
   isAdmin: () => boolean;
   route: (method: string, path: string, body: Record<string, unknown>) => Response | undefined;
 }

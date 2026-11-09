@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Grant, PermissionSnapshot } from "../access/plan03-types";
+import type { Grant, PermissionSnapshot } from "../contract/generated";
 import { hasPermission, isAdminSnapshot } from "./permissions";
 
 const grant = (

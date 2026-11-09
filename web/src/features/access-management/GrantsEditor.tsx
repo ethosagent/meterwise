@@ -1,8 +1,8 @@
 import { App, Button, Flex, theme } from "antd";
 import { useState } from "react";
-import type { Grant } from "../../access/plan03-types";
 import { ACCESS_ERROR_TEXT } from "../../api/access";
 import { describeApiError } from "../../api/errors";
+import type { Grant } from "../../contract/generated";
 import { type MatrixSection, PermissionsMatrix } from "./PermissionsMatrix";
 
 const norm = (gs: Grant[]) =>

@@ -1,9 +1,5 @@
-import {
-  type Permission,
-  type PermissionSnapshot,
-  type ResourceType,
-  TAXONOMY,
-} from "../access/plan03-types";
+import { type PermissionName as Permission, type ResourceType, TAXONOMY } from "../access/taxonomy";
+import type { PermissionSnapshot } from "../contract/generated";
 
 function parse(permission: Permission): { resource: ResourceType; action: string } | undefined {
   const [resource, action] = permission.split(":");

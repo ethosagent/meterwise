@@ -18,5 +18,4 @@
 - Errors: `group_name_taken`, `last_admin` and `already_member` map to readable lines through `describeApiError`.
 - Test: `Page.test.tsx` (mock server in `src/test/mockAccess.ts`); grant semantics in `src/access/access.test.tsx`.
 
-`src/access/plan03-types.ts` holds temporary types and a hand-written taxonomy until the Go half's generated
-`contract/generated.ts` and `access/taxonomy.ts` land; the integration step deletes it.
+Types come from the generated `contract/generated.ts`; the taxonomy and `PermissionName` from the generated `access/taxonomy.ts`.

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { PermissionSnapshot } from "../../access/plan03-types";
+import type { PermissionSnapshot } from "../../contract/generated";
 import { BO, type MockGroup } from "../../test/mockAccess";
 import { MEMBER_ME, mockApi } from "../../test/mockApi";
 import { renderAt } from "../../test/render";

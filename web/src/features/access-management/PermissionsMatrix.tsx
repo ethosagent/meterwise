@@ -1,14 +1,10 @@
 import { Checkbox, Table, Typography, theme } from "antd";
-import {
-  type Action,
-  type Grant,
-  RESOURCE_TYPES,
-  type ResourceType,
-  type Scope,
-  TAXONOMY,
-} from "../../access/plan03-types";
+import { type ResourceType, type Scope, TAXONOMY } from "../../access/taxonomy";
+import type { Grant } from "../../contract/generated";
 
+type Action = "read" | "write" | "manage";
 const ACTIONS: Action[] = ["read", "write", "manage"];
+const RESOURCE_TYPES = Object.keys(TAXONOMY) as ResourceType[];
 
 export interface MatrixSection {
   /** Heading: the workspace's name, or "Organization". */

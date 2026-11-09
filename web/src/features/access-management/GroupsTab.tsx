@@ -1,9 +1,9 @@
 import { PlusOutlined } from "@ant-design/icons";
 import { Alert, Button, Flex, Form, Input, Modal, Table, theme } from "antd";
 import { useState } from "react";
-import type { Group } from "../../access/plan03-types";
 import { ACCESS_ERROR_TEXT, useCreateGroup, useGroups } from "../../api/access";
 import { describeApiError } from "../../api/errors";
+import type { Group } from "../../contract/generated";
 import { GroupDrawer } from "./GroupDrawer";
 
 function NewGroupModal({ open, onClose }: { open: boolean; onClose: () => void }) {

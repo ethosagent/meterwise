@@ -10,7 +10,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import type { ReactNode } from "react";
-import type { Permission } from "../access/plan03-types";
+import type { PermissionName as Permission } from "../access/taxonomy";
 
 export type NavKey =
   | "overview"

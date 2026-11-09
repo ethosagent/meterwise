@@ -6,10 +6,10 @@ import { permissionsKey } from "../api/access";
 import { ApiError } from "../api/errors";
 import { meKey, workspacesKey } from "../api/identity";
 import { createQueryClient } from "../api/queryClient";
+import type { Grant, PermissionSnapshot } from "../contract/generated";
 import { AppRoutes } from "../routes";
 import { MEMBER_ME, mockApi } from "../test/mockApi";
 import { renderAt } from "../test/render";
-import type { Grant, PermissionSnapshot } from "./plan03-types";
 
 const READS: Grant[] = (["workspace", "session", "savings"] as const).map((resourceType) => ({
   workspaceId: null,

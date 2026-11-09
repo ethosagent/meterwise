@@ -12,7 +12,6 @@ import {
   theme,
 } from "antd";
 import { useState } from "react";
-import type { Group } from "../../access/plan03-types";
 import {
   ACCESS_ERROR_TEXT,
   useDeleteGroup,
@@ -23,6 +22,7 @@ import {
 } from "../../api/access";
 import { describeApiError } from "../../api/errors";
 import { useWorkspaces } from "../../api/identity";
+import type { Group } from "../../contract/generated";
 import { GrantsEditor } from "./GrantsEditor";
 import { MembersTransfer } from "./MembersTransfer";
 

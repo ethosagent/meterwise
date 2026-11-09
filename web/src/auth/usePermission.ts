@@ -1,4 +1,4 @@
-import type { Permission } from "../access/plan03-types";
+import type { PermissionName as Permission } from "../access/taxonomy";
 import { usePermissionSnapshot } from "../api/access";
 import { useMe } from "../api/identity";
 import { hasPermission, isAdminSnapshot } from "./permissions";

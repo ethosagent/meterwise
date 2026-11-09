@@ -1,12 +1,12 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ACCESS_ERRORS,
-  type Grant,
-  type Group,
-  type Member,
-  type PermissionSnapshot,
-} from "../access/plan03-types";
-import type { Role } from "../contract/generated";
+import type {
+  ErrorCode,
+  Grant,
+  Group,
+  Member,
+  PermissionSnapshot,
+  Role,
+} from "../contract/generated";
 import { apiFetch } from "./client";
 import { meKey, workspacesKey } from "./identity";
 
@@ -18,13 +18,13 @@ export const orgPermissionsKey = ["organization", "permissions"] as const;
 const enc = encodeURIComponent;
 
 /** Readable lines for the Plan 03 conflicts; pass as `byCode` to describeApiError. */
-export const ACCESS_ERROR_TEXT: Record<string, string> = {
-  [ACCESS_ERRORS.lastAdmin]:
+export const ACCESS_ERROR_TEXT = {
+  last_admin:
     "That would leave the organization without an admin. Make someone else an admin first.",
-  [ACCESS_ERRORS.alreadyMember]: "That person is already a member of the organization.",
-  [ACCESS_ERRORS.groupNameTaken]: "A group with that name already exists. Pick another name.",
+  already_member: "That person is already a member of the organization.",
+  group_name_taken: "A group with that name already exists. Pick another name.",
   forbidden: "You do not have permission to do that.",
-};
+} as const satisfies Partial<Record<ErrorCode, string>>;
 
 /**
  * Anything that can change what the caller may do (a grant, a group, a role) or which workspaces

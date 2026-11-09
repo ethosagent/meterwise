@@ -1,7 +1,6 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import type { Me } from "../access/plan03-types";
-import type { ErrorCode, Invitation, Role, Workspace } from "../contract/generated";
+import type { ErrorCode, Invitation, Me, Role, Workspace } from "../contract/generated";
 import { apiFetch } from "./client";
 import { ApiError } from "./errors";
 

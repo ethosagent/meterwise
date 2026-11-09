@@ -1,11 +1,10 @@
 import { PlusOutlined } from "@ant-design/icons";
 import { App, Button, Card, Flex, Popconfirm, Select, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
-import type { Member } from "../../access/plan03-types";
 import { ACCESS_ERROR_TEXT, useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
 import { describeApiError } from "../../api/errors";
 import { useInvitations, useResendInvitation, useRevokeInvitation } from "../../api/identity";
-import type { Invitation, Role } from "../../contract/generated";
+import type { Invitation, Member, Role } from "../../contract/generated";
 import { InviteModal } from "./InviteModal";
 
 type Row =

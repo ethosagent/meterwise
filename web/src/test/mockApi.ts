@@ -1,8 +1,8 @@
 import { vi } from "vitest";
-import type { Me } from "../access/plan03-types";
 import type {
   AppConfig,
   Invitation,
+  Me,
   Preferences,
   PreferencesPatch,
   Role,

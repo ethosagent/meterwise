@@ -1,6 +1,6 @@
 import { Table, Tag } from "antd";
-import type { Member } from "../../access/plan03-types";
 import { useGroups, useMembers } from "../../api/access";
+import type { Member } from "../../contract/generated";
 
 /** Read-only: who is in the organization and which groups they belong to. Roles change on Settings > Organization. */
 export function UsersTab() {
