@@ -90,17 +90,37 @@ func (m *minter) handler() http.Handler {
 	return cors(mux)
 }
 
-// cors lets the page (another loopback origin) call the mint; this is a dev tool on loopback.
+// cors lets a page on a loopback origin call the mint and refuses every other
+// browser origin (a request with no Origin header is a script, and passes). The
+// mint hands out signed tokens for any email, so a page on the open web must not
+// be able to read it or hit the admin endpoints (a simple POST carries an Origin).
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		if origin := r.Header.Get("Origin"); origin != "" {
+			if !loopbackOrigin(origin) {
+				http.Error(w, `{"error":"origin not allowed"}`, http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// loopbackOrigin reports whether origin is http(s)://localhost, 127.0.0.1 or [::1], any port.
+func loopbackOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Path != "" {
+		return false
+	}
+	h := u.Hostname()
+	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

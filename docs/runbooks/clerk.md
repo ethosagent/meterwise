@@ -7,19 +7,30 @@ Treat the steps below as the intended configuration and verify them against a Cl
 
 1. Sign-up mode: **restricted / invitation only**. Meterwise also refuses anyone without an invitation
    (`403 not_invited`), so a mistake here cannot open the org.
-2. Customize the **session token** (Sessions, Customize session token) so it carries the claims the adapter reads:
+2. Customize the **session token** (Sessions, Customize session token) so it carries the claims the adapter reads.
+   The email must be the user's **primary** address, never `email_addresses.0` (the first address in the list is not
+   necessarily the primary one, nor the verified one), and `email_verified` must be a JSON **boolean** that is true only
+   when that same primary address is verified:
 
    ```json
    { "email": "{{user.primary_email_address}}",
-     "email_verified": "{{user.email_addresses.0.verification.status == 'verified'}}",
+     "email_verified": "{{user.primary_email_address_verified}}",
      "name": "{{user.full_name}}", "image_url": "{{user.image_url}}" }
    ```
 
-   The exact template expressions for `email_verified` are UNVERIFIED; what the adapter needs is a boolean
-   `email_verified` that is true only for a verified primary address. Without it nobody can complete signup.
+   UNVERIFIED against a live instance: the shortcode for the primary address's verification state, and whether Clerk
+   renders it as a JSON boolean or as the string `"true"`. The adapter decodes `email_verified` as a boolean, so a
+   string, a missing claim or a verification state taken from another address fails closed (nobody can complete
+   signup; login of an already linked user is unaffected). After saving the template, decode one real token and check
+   `email` is the primary address and `"email_verified": true` is a boolean before inviting anyone.
+   The adapter also refuses a token with no `exp`.
 3. Frontend API URL is the token `iss` (`CLERK_ISSUER`); its `/.well-known/jwks.json` is `CLERK_JWKS_URL`.
 4. Webhook endpoint `https://<host>/api/webhooks/clerk`, events `user.created`, `user.updated`, `user.deleted`;
    copy its signing secret to `CLERK_WEBHOOK_SECRET`. Secret key from API keys to `CLERK_SECRET_KEY`.
+5. `CLERK_AUTHORIZED_PARTIES`: comma-separated origins of the web app (for example `https://app.example.com`), the
+   values Clerk puts in the token's `azp` claim. It is **required outside `APP_ENV=dev`** and `meterwised config check`
+   reports it with the other missing settings. A token whose `azp` is absent or not listed is refused. Origins carry no
+   path or credentials; a trailing slash is dropped.
 
 ## First admin
 

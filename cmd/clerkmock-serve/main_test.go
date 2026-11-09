@@ -83,7 +83,12 @@ func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	mint := func(email string) string {
-		resp, err := http.Get(env["MINT_URL"] + "?name=Ada&email=" + email)
+		req, err := http.NewRequest(http.MethodGet, env["MINT_URL"]+"?name=Ada&email="+email, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Origin", "http://localhost:8081")
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -92,8 +97,8 @@ func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&b); err != nil || b.Token == "" {
 			t.Fatalf("mint: %v %+v", err, b)
 		}
-		if resp.Header.Get("Access-Control-Allow-Origin") == "" {
-			t.Fatal("the mint answers without CORS; the page could not read it")
+		if resp.Header.Get("Access-Control-Allow-Origin") != "http://localhost:8081" {
+			t.Fatalf("the mint does not echo a loopback origin: %q", resp.Header.Get("Access-Control-Allow-Origin"))
 		}
 		return b.Token
 	}
@@ -110,6 +115,20 @@ func TestMintedTokensVerifyThroughTheAdapterOverTLS(t *testing.T) {
 			t.Fatalf("%s: %v %v", path, resp, err)
 		}
 		_ = resp.Body.Close()
+	}
+	for _, evil := range []string{"https://evil.example", "http://localhost.evil.example", "http://127.0.0.1.evil.example:80", "null", "http://u@localhost:1"} {
+		for _, call := range [][2]string{{"GET", env["MINT_URL"] + "?email=ada@example.test"}, {"POST", "http://" + httpAddr + "/admin/expire?email=ada@example.test"}} {
+			req, _ := http.NewRequest(call[0], call[1], nil)
+			req.Header.Set("Origin", evil)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden || resp.Header.Get("Access-Control-Allow-Origin") != "" {
+				t.Fatalf("%s %s from origin %q: %d", call[0], call[1], evil, resp.StatusCode)
+			}
+		}
 	}
 	post("/admin/expire?email=ada@example.test")
 	if _, err := idp.Verify(context.Background(), mint("ada@example.test")); contract.AsError(err).Code != contract.CodeUnauthenticated {

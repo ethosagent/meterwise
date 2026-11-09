@@ -64,6 +64,7 @@ acceptance run is kept with its report (`reports/02-e2e/`).
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | base URL of an OTLP/HTTP collector; unset turns tracing off |
 | `CLERK_ISSUER` / `CLERK_JWKS_URL` | unset | exact token `iss` and the JWKS URL (https); both required with `APP_ENV=prod` |
 | `CLERK_SECRET_KEY` / `CLERK_WEBHOOK_SECRET` | unset | backend API key (invitations) and Svix signing secret (`whsec_...`); required with `APP_ENV=prod`, never printed |
+| `CLERK_AUTHORIZED_PARTIES` | unset | origins allowed in the token `azp`; required outside `APP_ENV=dev` (enforced whenever set) |
 | `CLERK_API_URL` / `CLERK_PUBLISHABLE_KEY` | `https://api.clerk.com/v1` / unset | backend API base; publishable key (web) |
 | `APP_URL` | unset | public URL of the web app; invitation emails land on `APP_URL/accept-invite` |
 | `WEB_DIR` | `web/dist` | built web app served on `LISTEN_API` |
