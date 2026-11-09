@@ -57,6 +57,13 @@ func (s *Store) ActiveMemberWithEmail(ctx context.Context, orgID, email string) 
 	return ok, queryErr(err)
 }
 
+// ActiveAdminCount is the number of active admin memberships. It takes no lock: callers that
+// need the count to stay true (last-admin guards) go through lockAdmins instead.
+func (s *Store) ActiveAdminCount(ctx context.Context, orgID string) (int, error) {
+	n, err := s.q.CountActiveAdmins(ctx, orgID)
+	return int(n), queryErr(err)
+}
+
 // lockAdmins serialises admin-removing changes of the org and returns the active admin count.
 // It must run inside a transaction: the advisory lock lives until commit, so two concurrent
 // demotions cannot both see two admins.
