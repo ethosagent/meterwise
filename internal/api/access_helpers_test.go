@@ -102,4 +102,4 @@ func forbidden(t *testing.T, code int, b []byte, reason string) {
 	}
 }
 
-func newAuthorizer(s *stack) *access.Authorizer { return access.NewAuthorizer(s.db) }
+func newAuthorizer(s *stack) *access.Authorizer { return access.NewAuthorizer(s.db, s.db) }

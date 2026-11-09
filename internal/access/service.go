@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/ethosagent/meterwise/internal/contract"
-	"github.com/ethosagent/meterwise/internal/store"
 )
 
 const maxGroupNameRunes = 80
@@ -17,12 +16,30 @@ const maxGroupNameRunes = 80
 // who may call it is the gateway's job (the route table); this layer validates input and keeps the
 // invariants (taxonomy, scope, one transaction per change).
 type Service struct {
-	st  *store.Store
+	st  Store
 	org string
 }
 
-// NewService builds the service over a store.
-func NewService(st *store.Store) *Service { return &Service{st: st, org: store.OrgID()} }
+// Store is the persistence the service needs; *store.Store implements it.
+type Store interface {
+	ListGroups(ctx context.Context, orgID string) ([]contract.Group, error)
+	Group(ctx context.Context, orgID, id string) (contract.Group, error)
+	CreateGroup(ctx context.Context, orgID, name string) (contract.Group, error)
+	RenameGroup(ctx context.Context, orgID, id, name string) (contract.Group, error)
+	DeleteGroup(ctx context.Context, orgID, id string) error
+	AttachGroupWorkspace(ctx context.Context, orgID, groupID, workspaceID string, seed []contract.GrantSpec) (contract.Group, error)
+	DetachGroupWorkspace(ctx context.Context, orgID, groupID, workspaceID string) error
+	GroupGrants(ctx context.Context, orgID, groupID string) ([]contract.Grant, error)
+	ReplaceGroupGrants(ctx context.Context, orgID, groupID string, grants []contract.Grant) ([]contract.Grant, error)
+	OrgDefaults(ctx context.Context, orgID string) ([]contract.Grant, error)
+	ReplaceOrgDefaults(ctx context.Context, orgID string, grants []contract.Grant) ([]contract.Grant, error)
+	GroupMembers(ctx context.Context, orgID, groupID string) ([]contract.Member, error)
+	AddGroupMember(ctx context.Context, orgID, groupID, userID string) error
+	RemoveGroupMember(ctx context.Context, orgID, groupID, userID string) error
+}
+
+// NewService builds the service over a store for one organization.
+func NewService(st Store, orgID string) *Service { return &Service{st: st, org: orgID} }
 
 func invalid(field, msg string) error {
 	return contract.NewError(contract.CodeValidationFailed, "request validation failed", field+": "+msg)
@@ -75,9 +92,9 @@ func (s *Service) DeleteGroup(ctx context.Context, id string) error {
 // AttachWorkspace attaches a group to a workspace and, in the same transaction, seeds the read
 // action of every workspace-scoped resource for it. It is idempotent.
 func (s *Service) AttachWorkspace(ctx context.Context, groupID, workspaceID string) (contract.Group, error) {
-	var seed []store.GrantSpec
+	var seed []contract.GrantSpec
 	for _, g := range WorkspaceReadSeed() {
-		seed = append(seed, store.GrantSpec{ResourceType: g.ResourceType, Action: g.Action})
+		seed = append(seed, contract.GrantSpec{ResourceType: g.ResourceType, Action: g.Action})
 	}
 	return s.st.AttachGroupWorkspace(ctx, s.org, groupID, workspaceID, seed)
 }

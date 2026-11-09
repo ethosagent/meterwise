@@ -9,12 +9,7 @@ import (
 
 // GrantRow is one grant that applies to a user: from a group (GroupID set) or an org default.
 // WorkspaceID is "" for a grant on every workspace (or an org-scoped resource).
-type GrantRow struct {
-	GroupID      string
-	WorkspaceID  string
-	ResourceType string
-	Action       string
-}
+type GrantRow = contract.GrantRow
 
 // Grants returns every grant that applies to the user, in one round trip: the grants of the
 // user's groups and the org defaults. It is the only read of authorization.

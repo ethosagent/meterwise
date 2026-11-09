@@ -94,7 +94,7 @@ func (s *Store) DeleteGroup(ctx context.Context, orgID, id string) error {
 }
 
 // GrantSpec is a resource type and action; the taxonomy (package access) decides which exist.
-type GrantSpec struct{ ResourceType, Action string }
+type GrantSpec = contract.GrantSpec
 
 // AttachGroupWorkspace links a group to a workspace of the org and seeds one grant per spec on
 // that workspace, in one transaction. Attaching again is a no-op that still returns the group.

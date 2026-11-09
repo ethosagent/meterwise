@@ -20,12 +20,7 @@ const (
 
 // Grant is one granted permission. GroupID is empty for an org default; WorkspaceID is empty for
 // "every workspace" (and for org-scoped resources).
-type Grant struct {
-	GroupID      string
-	WorkspaceID  string
-	ResourceType string
-	Action       string
-}
+type Grant = contract.GrantRow
 
 // Subject is who asks.
 type Subject struct {
