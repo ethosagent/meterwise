@@ -142,3 +142,49 @@ func TestDeleteRacingAttachLeavesNoOrphanAndNoDriverError(t *testing.T) {
 		}
 	}
 }
+
+// The folded reads: a group with nothing is an empty list, an unknown group is not_found, and the
+// batch writes take duplicates and org-wide grants in one statement.
+func TestFoldedGroupReadsAndBatchWrites(t *testing.T) {
+	ctx, org := context.Background(), store.OrgID()
+	s, _, g, ws := groupRig(t)
+	if got, err := s.GroupGrants(ctx, org, g.ID); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("empty group grants: %#v %v", got, err)
+	}
+	if got, err := s.GroupMembers(ctx, org, g.ID); err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("empty group members: %#v %v", got, err)
+	}
+	for _, id := range []string{missingID, "not-a-uuid"} {
+		if _, err := s.GroupGrants(ctx, org, id); code(err) != contract.CodeNotFound {
+			t.Fatalf("GroupGrants(%s): %v", id, err)
+		}
+		if _, err := s.GroupMembers(ctx, org, id); code(err) != contract.CodeNotFound {
+			t.Fatalf("GroupMembers(%s): %v", id, err)
+		}
+	}
+	if _, err := s.AttachGroupWorkspace(ctx, org, g.ID, ws.ID, readSeed); err != nil {
+		t.Fatal(err)
+	}
+	dup := []contract.Grant{
+		{WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"},
+		{WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"},
+		{ResourceType: "member", Action: "read"},
+	}
+	got, err := s.ReplaceGroupGrants(ctx, org, g.ID, dup)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("replace with a duplicate: %+v %v", got, err)
+	}
+	if got, err = s.ReplaceGroupGrants(ctx, org, g.ID, nil); err != nil || len(got) != 0 {
+		t.Fatalf("replace with nothing: %+v %v", got, err)
+	}
+	other := missingID
+	if _, err := s.ReplaceOrgDefaults(ctx, org, []contract.Grant{{WorkspaceID: &other, ResourceType: "session", Action: "read"}}); code(err) != contract.CodeValidationFailed {
+		t.Fatalf("unknown workspace in org defaults: %v", err)
+	}
+	defs, err := s.ReplaceOrgDefaults(ctx, org, []contract.Grant{
+		{WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"}, {WorkspaceID: &ws.ID, ResourceType: "session", Action: "read"}, {ResourceType: "member", Action: "read"},
+	})
+	if err != nil || len(defs) != 2 {
+		t.Fatalf("org defaults: %+v %v", defs, err)
+	}
+}

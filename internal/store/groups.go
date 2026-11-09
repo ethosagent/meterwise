@@ -155,18 +155,23 @@ func (s *Store) DetachGroupWorkspace(ctx context.Context, orgID, groupID, worksp
 	})
 }
 
-// GroupGrants returns a group's grants; an unknown group is CodeNotFound.
+// GroupGrants returns a group's grants in one read; an unknown group is CodeNotFound.
 func (s *Store) GroupGrants(ctx context.Context, orgID, groupID string) ([]contract.Grant, error) {
-	if _, err := s.Group(ctx, orgID, groupID); err != nil {
-		return nil, err
+	if !validID(groupID) {
+		return nil, errNotFound
 	}
 	rows, err := s.q.ListGroupGrants(ctx, sqlc.ListGroupGrantsParams{OrgID: orgID, GroupID: groupID})
 	if err != nil {
 		return nil, queryErr(err)
 	}
+	if len(rows) == 0 {
+		return nil, errNotFound // the query yields a row for every grant, or one empty row for a group without any
+	}
 	out := make([]contract.Grant, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, contract.GrantRow{WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action}.ToGrant())
+		if r.ResourceType != "" {
+			out = append(out, contract.GrantRow{WorkspaceID: r.WorkspaceID, ResourceType: r.ResourceType, Action: r.Action}.ToGrant())
+		}
 	}
 	return out, nil
 }
@@ -191,12 +196,13 @@ func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, g
 		if err := q.DeleteGroupGrants(ctx, sqlc.DeleteGroupGrantsParams{OrgID: orgID, GroupID: groupID}); err != nil {
 			return err
 		}
-		for _, gr := range grants {
-			if err := q.GrantToGroup(ctx, sqlc.GrantToGroupParams{GroupID: groupID, OrgID: orgID, WorkspaceID: gr.WorkspaceOrEmpty(), ResourceType: gr.ResourceType, Action: gr.Action}); err != nil {
-				return err
-			}
+		if len(grants) == 0 {
+			return nil
 		}
-		return nil
+		cols := newGrantColumns(grants)
+		return q.GrantManyToGroup(ctx, sqlc.GrantManyToGroupParams{
+			OrgID: orgID, GroupID: groupID, WorkspaceIds: cols.workspaceIDs, ResourceTypes: cols.resourceTypes, Actions: cols.actions,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -204,18 +210,23 @@ func (s *Store) ReplaceGroupGrants(ctx context.Context, orgID, groupID string, g
 	return s.GroupGrants(ctx, orgID, groupID)
 }
 
-// GroupMembers lists a group's active members; an unknown group is CodeNotFound.
+// GroupMembers lists a group's active members in one read; an unknown group is CodeNotFound.
 func (s *Store) GroupMembers(ctx context.Context, orgID, groupID string) ([]contract.Member, error) {
-	if _, err := s.Group(ctx, orgID, groupID); err != nil {
-		return nil, err
+	if !validID(groupID) {
+		return nil, errNotFound
 	}
 	rows, err := s.q.ListGroupMembers(ctx, sqlc.ListGroupMembersParams{OrgID: orgID, GroupID: groupID})
 	if err != nil {
 		return nil, queryErr(err)
 	}
+	if len(rows) == 0 {
+		return nil, errNotFound // a group that exists always yields at least one row
+	}
 	out := make([]contract.Member, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toMember(r.UserID, r.Email, r.Name, r.AvatarUrl, r.Role, r.JoinedAt, r.GroupIds))
+		if r.UserID != "" { // the placeholder row of a group with no active member
+			out = append(out, toMember(r.UserID, r.Email, r.Name, r.AvatarUrl, r.Role, r.JoinedAt, r.GroupIds))
+		}
 	}
 	return out, nil
 }
@@ -246,4 +257,16 @@ func (s *Store) RemoveGroupMember(ctx context.Context, orgID, groupID, userID st
 	return s.withLockedGroup(ctx, orgID, groupID, func(q *sqlc.Queries) error {
 		return notFoundIfZero(q.RemoveGroupUser(ctx, sqlc.RemoveGroupUserParams{OrgID: orgID, GroupID: groupID, UserID: userID}))
 	})
+}
+
+// grantColumns is a grant list as the parallel arrays the batch statements take; an org-wide grant
+// has the empty string as its workspace id.
+type grantColumns struct{ workspaceIDs, resourceTypes, actions []string }
+
+func newGrantColumns(grants []contract.Grant) grantColumns {
+	c := grantColumns{make([]string, len(grants)), make([]string, len(grants)), make([]string, len(grants))}
+	for i, g := range grants {
+		c.workspaceIDs[i], c.resourceTypes[i], c.actions[i] = g.WorkspaceOrEmpty(), g.ResourceType, g.Action
+	}
+	return c
 }

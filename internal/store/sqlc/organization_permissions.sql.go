@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const countOrgWorkspacesAmong = `-- name: CountOrgWorkspacesAmong :one
+SELECT count(*)::int AS n FROM workspaces
+WHERE org_id = $1::text::uuid AND id = ANY($2::text[]::uuid[])
+`
+
+type CountOrgWorkspacesAmongParams struct {
+	OrgID string
+	Ids   []string
+}
+
+// How many of the given workspace ids belong to the org: one read validates a whole grant list.
+func (q *Queries) CountOrgWorkspacesAmong(ctx context.Context, arg CountOrgWorkspacesAmongParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countOrgWorkspacesAmong, arg.OrgID, arg.Ids)
+	var n int32
+	err := row.Scan(&n)
+	return n, err
+}
+
 const deleteOrgDefaults = `-- name: DeleteOrgDefaults :exec
 DELETE FROM organization_permissions WHERE org_id = $1::text::uuid
 `
@@ -18,25 +36,28 @@ func (q *Queries) DeleteOrgDefaults(ctx context.Context, orgID string) error {
 	return err
 }
 
-const insertOrgDefault = `-- name: InsertOrgDefault :exec
+const insertOrgDefaults = `-- name: InsertOrgDefaults :exec
 INSERT INTO organization_permissions (org_id, workspace_id, resource_type, action)
-VALUES ($1::text::uuid, NULLIF($2::text, '')::uuid, $3, $4)
+SELECT $1::text::uuid, NULLIF(($2::text[])[i], '')::uuid,
+       ($3::text[])[i], ($4::text[])[i]
+FROM generate_subscripts($3::text[], 1) AS i
 ON CONFLICT ON CONSTRAINT organization_permissions_identity DO NOTHING
 `
 
-type InsertOrgDefaultParams struct {
-	OrgID        string
-	WorkspaceID  string
-	ResourceType string
-	Action       string
+type InsertOrgDefaultsParams struct {
+	OrgID         string
+	WorkspaceIds  []string
+	ResourceTypes []string
+	Actions       []string
 }
 
-func (q *Queries) InsertOrgDefault(ctx context.Context, arg InsertOrgDefaultParams) error {
-	_, err := q.db.Exec(ctx, insertOrgDefault,
+// InsertOrgDefault for a whole list: parallel arrays, one grant per index (generate_subscripts; sqlc cannot analyse a multi-array unnest) (” workspace = org-wide).
+func (q *Queries) InsertOrgDefaults(ctx context.Context, arg InsertOrgDefaultsParams) error {
+	_, err := q.db.Exec(ctx, insertOrgDefaults,
 		arg.OrgID,
-		arg.WorkspaceID,
-		arg.ResourceType,
-		arg.Action,
+		arg.WorkspaceIds,
+		arg.ResourceTypes,
+		arg.Actions,
 	)
 	return err
 }
