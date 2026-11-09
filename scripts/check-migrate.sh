@@ -51,6 +51,9 @@ if [ -n "$base_ref" ] && mb="$(git merge-base HEAD "$base_ref" 2>/dev/null)" && 
 $(git diff --name-status HEAD~1 HEAD -- "$dir")"
   fi
   changed="$(printf '%s\n' "$diffs" | grep -v -E '^(A[[:space:]]|$)' || true)"
+  # untracked new files are additions too (git diff does not list them)
+  diffs="$diffs
+$(git ls-files --others --exclude-standard -- "$dir" | sed 's/^/A\t/')"
   # numbers must increase: a new migration numbered below the newest applied one is out of order
   ord_ref="$mb"
   if [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then ord_ref="HEAD~1"; fi
