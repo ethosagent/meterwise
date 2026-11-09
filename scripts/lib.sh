@@ -103,23 +103,43 @@ ensure_pg() {
   printf '%s\n' "$PG_DSN_DEFAULT"
 }
 
-# base_ref prints the branch applied work is compared with: main, else origin/main, else nothing.
+# base_ref prints the branch applied work is compared with: $METERWISE_BASE_REF when set
+# (ruling R18; it must resolve, else nothing is printed so callers fail), else main, else
+# origin/main, else nothing.
 base_ref() {
   local r
+  if [ -n "${METERWISE_BASE_REF:-}" ]; then
+    if git rev-parse --verify -q "$METERWISE_BASE_REF^{commit}" >/dev/null; then echo "$METERWISE_BASE_REF"; fi
+    return
+  fi
   for r in main origin/main; do
     if git rev-parse --verify -q "$r^{commit}" >/dev/null; then echo "$r"; return; fi
   done
 }
 
+# compare_ref is the single place that decides what applied work is compared with. On success
+# it sets CMP_BASE (the base branch), CMP_MB (merge-base with HEAD), CMP_ORD (the commit whose
+# tree holds the applied migrations) and CMP_LAST (1 when HEAD is the merge-base and HEAD~1
+# exists: the last commit is then compared too, as on the base branch itself). It returns 1
+# when there is no base or no merge-base.
+compare_ref() {
+  CMP_BASE="$(base_ref)" CMP_MB="" CMP_ORD="" CMP_LAST=0
+  [ -n "$CMP_BASE" ] || return 1
+  CMP_MB="$(git merge-base HEAD "$CMP_BASE" 2>/dev/null || true)"
+  [ -n "$CMP_MB" ] || return 1
+  CMP_ORD="$CMP_MB"
+  if [ "$CMP_MB" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then
+    CMP_LAST=1 CMP_ORD="HEAD~1"
+  fi
+}
+
 # tracked_on_base PATH: is PATH tracked on the base branch (or, on the base branch itself,
 # in its previous commit)? A gate whose input vanished must fail, not SKIP (ruling R5).
 tracked_on_base() {
-  local b mb r refs
-  b="$(base_ref)"
-  [ -n "$b" ] || return 1
-  refs="$b"
-  mb="$(git merge-base HEAD "$b" 2>/dev/null || true)"
-  if [ -n "$mb" ] && [ "$mb" = "$(git rev-parse HEAD)" ] && git rev-parse --verify -q HEAD~1 >/dev/null; then refs="$refs HEAD~1"; fi
+  local r refs
+  compare_ref || { [ -n "$CMP_BASE" ] && git ls-tree -r --name-only "$CMP_BASE" -- "$1" 2>/dev/null | grep -q . ; return; }
+  refs="$CMP_BASE"
+  [ "$CMP_LAST" -eq 0 ] || refs="$refs HEAD~1"
   for r in $refs; do
     if [ -n "$(git ls-tree -r --name-only "$r" -- "$1" 2>/dev/null | head -n 1)" ]; then return 0; fi
   done

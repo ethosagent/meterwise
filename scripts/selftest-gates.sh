@@ -293,6 +293,9 @@ red migrate "applied migration edited, only origin/main exists" "applied migrati
 m_mig_lastcommit() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m edit; }
 red migrate "applied migration edited in the last commit on main itself" "applied migrations were modified" m_mig_lastcommit
 red migrate "no main or origin/main under CI=true" "cannot prove applied migrations are unchanged" m_mig_nobase CI=true
+m_mig_baseref() { mig 0001_orgs.sql "$GOOD"; git add -A; git -c user.name=t -c user.email=t@example.test commit -q -m mig; git branch trunk; git branch -m main feature; sed -i.bak 's/name text NOT NULL/name text/' internal/store/migrations/0001_orgs.sql; rm -f internal/store/migrations/0001_orgs.sql.bak; }
+red migrate "METERWISE_BASE_REF names the base: edited applied migration" "applied migrations were modified" m_mig_baseref METERWISE_BASE_REF=trunk
+red migrate "METERWISE_BASE_REF that does not resolve fails closed" "does not resolve" m_mig_baseref METERWISE_BASE_REF=no-such-branch
 red migrate "TEST_DATABASE_URL on a remote host is refused" "not loopback" m_mig_ok TEST_DATABASE_URL=postgres://u:p@db.example.com:5432/x
 red migrate "TEST_DATABASE_URL without a database name is refused" "no database name" m_mig_ok TEST_DATABASE_URL=postgres://u:p@127.0.0.1:54329
 red migrate "migrations but no Postgres: fails closed" "cannot create a throwaway database" m_mig_ok TEST_DATABASE_URL=postgres://x:x@127.0.0.1:1/x
