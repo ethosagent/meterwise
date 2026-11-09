@@ -13,6 +13,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0005](0005-postgres-only-with-pgx-sqlc-goose.md) | Postgres only, with pgx, sqlc and goose | Accepted |
 | [0006](0006-two-savings-numbers-never-summed.md) | Saved and likely saved are two numbers, never summed | Accepted |
 | [0007](0007-dependency-allowlists.md) | Dependency allowlists for Go layers and npm | Accepted |
+| [0008](0008-web-design-tokens-derived-from-the-plan-and-prototype.md) | Web design tokens derived from the plan and prototype | Accepted |
 | [0010](0010-control-plane-stack.md) | Control plane on the stdlib mux, with OTel API and OTLP/HTTP | Accepted |
 
 Template: [`template.md`](template.md).

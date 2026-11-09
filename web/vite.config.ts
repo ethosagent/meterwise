@@ -1,9 +1,16 @@
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
-// Plan 01 adds the React plugin; the shell here builds and tests without it.
+// The dev server proxies /api to the Go backend; in production one origin serves both.
+const backend = process.env.METERWISE_API_URL ?? "http://127.0.0.1:8080";
+
 export default defineConfig({
+  plugins: [react()],
+  server: { proxy: { "/api": { target: backend, changeOrigin: true } } },
   build: { outDir: "dist", sourcemap: true },
   test: {
+    environment: "jsdom",
+    setupFiles: ["src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     coverage: {
       provider: "v8",
@@ -11,7 +18,8 @@ export default defineConfig({
       exclude: [
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
-        "src/main.ts",
+        "src/main.tsx",
+        "src/test/**",
         "src/contract/generated.ts",
       ],
       // Floor 70 % (docs/context-budget.md). Raise, never lower.
