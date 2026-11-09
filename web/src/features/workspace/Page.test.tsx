@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../../routes";
 import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { ADMIN_ME, MEMBER_ME, mockApi, TEST_WORKSPACES } from "../../test/mockApi";
@@ -18,6 +18,19 @@ describe("WorkspacePage", () => {
     expect(await screen.findByLabelText("Proxy URL")).toHaveValue(DEFAULT?.proxyUrl);
     expect(screen.getByLabelText("Name")).toHaveValue("Default workspace");
     expect(screen.getByRole("button", { name: "Reset URL" })).toBeInTheDocument();
+  });
+
+  it("renders Reset URL and the CIDR editor without a React duplicate-key warning", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      mockApi();
+      renderAt(<WorkspacePage />, PATH);
+      await screen.findByLabelText("Allowed client CIDRs");
+      const keyWarnings = err.mock.calls.filter((c) => String(c[0]).includes("same key"));
+      expect(keyWarnings).toEqual([]);
+    } finally {
+      err.mockRestore();
+    }
   });
 
   it("without workspace_url:read the URL row says it is hidden and offers nothing", async () => {

@@ -24,9 +24,9 @@ export function WorkspaceUrl({ ws, withCidrs = false }: { ws: Workspace; withCid
   return (
     <Space vertical size="middle" style={{ width: "100%" }}>
       <ProxyUrl url={ws.proxyUrl} />
-      {canManage ? <ResetUrl key={ws.id} workspaceId={ws.id} /> : null}
+      {canManage ? <ResetUrl key={`reset-${ws.id}`} workspaceId={ws.id} /> : null}
       {canManage && withCidrs && ws.allowedClientCidrs !== null ? (
-        <AllowedCidrs key={ws.id} workspaceId={ws.id} saved={ws.allowedClientCidrs} />
+        <AllowedCidrs key={`cidrs-${ws.id}`} workspaceId={ws.id} saved={ws.allowedClientCidrs} />
       ) : null}
     </Space>
   );
