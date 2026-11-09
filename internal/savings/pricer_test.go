@@ -59,6 +59,9 @@ func TestCost(t *testing.T) {
 			8400, true},
 		{"unknown model is not priced", "openai", "gpt-9", contract.Usage{Input: 10}, mid, 0, false},
 		{"unknown provider is not priced", "mistral", "gpt-4o", contract.Usage{Input: 10}, mid, 0, false},
+		{"a different model that shares a prefix stays unpriced", "anthropic", "claude-sonnet-4-5", contract.Usage{Input: 10}, mid, 0, false},
+		{"-latest is the same model", "anthropic", "claude-sonnet-4-latest", contract.Usage{Input: 1_000_000}, mid, 3_000_000, true},
+		{"a qualifier after a colon is the same model", "openai", "gpt-4o-mini:ft-acme", contract.Usage{Input: 1_000_000}, mid, 150_000, true},
 		{"model name must match at a boundary", "openai", "gpt-4oo", contract.Usage{Input: 10}, mid, 0, false},
 		{"rounds half up to a whole micro-dollar", "openai", "gpt-4o-mini", contract.Usage{Input: 3}, mid, 0, true}, // 0.45 -> 0
 		{"cached larger than input does not go negative", "openai", "gpt-4o", contract.Usage{Input: 100, Cached: 500}, mid, 125, true},

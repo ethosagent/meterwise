@@ -63,8 +63,9 @@ func (p *TablePricer) Replace(rows []PriceRow) {
 }
 
 // Cost prices u for provider and model at time at. The model matches exactly or as the longest
-// pricing-table name followed by a boundary ('-', ':' or '@'), so a dated name such as
-// claude-sonnet-4-20250514 finds claude-sonnet-4 while gpt-4o never swallows gpt-4o-mini. Among
+// pricing-table name plus a date, -latest or ':'/'@' suffix, so claude-sonnet-4-20250514 finds
+// claude-sonnet-4 while gpt-4o never swallows gpt-4o-mini and claude-opus-4-5 never takes the
+// claude-opus-4 price. Among
 // the rows of that model the latest one effective at "at" wins. Token semantics follow the wire:
 // OpenAI input includes cached tokens, Anthropic input excludes them. The result rounds half up
 // to a whole micro-dollar. ok is false for an unknown model, a time before the first row, negative
@@ -133,10 +134,40 @@ func (s *snapshot) find(provider, model string, at time.Time) (PriceRow, bool) {
 	return row, found
 }
 
+// matches reports whether model is the pricing-table name itself or that name plus a version
+// suffix: a date (-20250514 or -2024-07-18), -latest, or a ':'/'@' qualifier. Anything else is a
+// different model (claude-opus-4-5 is not claude-opus-4) and stays unpriced rather than mispriced.
 func matches(name, model string) bool {
 	if !strings.HasPrefix(model, name) {
 		return false
 	}
 	rest := model[len(name):]
-	return rest == "" || rest[0] == '-' || rest[0] == ':' || rest[0] == '@'
+	switch {
+	case rest == "", rest == "-latest", rest[0] == ':', rest[0] == '@':
+		return true
+	}
+	return isDate(rest)
+}
+
+func isDate(rest string) bool {
+	d := strings.TrimPrefix(rest, "-")
+	if len(d) == len(rest) {
+		return false
+	}
+	switch len(d) {
+	case 8:
+		return allDigits(d)
+	case 10:
+		return allDigits(d[:4]) && d[4] == '-' && allDigits(d[5:7]) && d[7] == '-' && allDigits(d[8:])
+	}
+	return false
+}
+
+func allDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }

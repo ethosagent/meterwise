@@ -29,6 +29,10 @@ INSERT INTO pricing (provider, model, input_per_m, output_per_m, cached_per_m, e
     ('anthropic', 'claude-3-5-sonnet', 3000000, 15000000,  300000, '2024-01-01T00:00:00Z'),
     ('anthropic', 'claude-3-7-sonnet', 3000000, 15000000,  300000, '2024-01-01T00:00:00Z'),
     ('anthropic', 'claude-sonnet-4',   3000000, 15000000,  300000, '2024-01-01T00:00:00Z'),
+    ('anthropic', 'claude-sonnet-4-5', 3000000, 15000000,  300000, '2024-01-01T00:00:00Z'),
+    ('anthropic', 'claude-haiku-4-5',  1000000,  5000000,  100000, '2024-01-01T00:00:00Z'),
+    ('anthropic', 'claude-opus-4-5',   5000000, 25000000,  500000, '2024-01-01T00:00:00Z'),
+    ('anthropic', 'claude-opus-4-1',  15000000, 75000000, 1500000, '2024-01-01T00:00:00Z'),
     ('anthropic', 'claude-opus-4',    15000000, 75000000, 1500000, '2024-01-01T00:00:00Z'),
     ('anthropic', 'claude-3-haiku',     250000,  1250000,   30000, '2024-01-01T00:00:00Z');
 
