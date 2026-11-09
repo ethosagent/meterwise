@@ -114,8 +114,9 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		Principals: f.res,
 		Tenancy:    newMemTenancy(),
 		Web: fstest.MapFS{
-			"index.html":      {Data: []byte("<html>app</html>")},
-			"assets/app-1.js": {Data: []byte("console.log(1)")},
+			"index.html":          {Data: []byte("<html>app</html>")},
+			"assets/app-1.js":     {Data: []byte("console.log(1)")},
+			"assets/app-1.js.map": {Data: []byte(`{"sources":["src/secret.ts"]}`)},
 		},
 		Tracer:          tp,
 		AppName:         "Acme Meter",
@@ -357,6 +358,11 @@ func TestStaticServing(t *testing.T) {
 	resp, b = f.do(t, "GET", "/assets/app-1.js", "")
 	if resp.StatusCode != 200 || string(b) != "console.log(1)" || !strings.Contains(resp.Header.Get("Cache-Control"), "immutable") {
 		t.Fatalf("asset: %d %q %q", resp.StatusCode, b, resp.Header.Get("Cache-Control"))
+	}
+	for _, p := range []string{"/assets/app-1.js.map", "/assets/app-1.js.MAP", "/assets//app-1.js.map"} {
+		if resp, b = f.do(t, "GET", p, ""); resp.StatusCode != 404 || strings.Contains(string(b), "secret") {
+			t.Fatalf("source map %s served: %d %s", p, resp.StatusCode, b)
+		}
 	}
 	resp, b = f.do(t, "GET", "/assets/missing.js", "")
 	if resp.StatusCode != 404 || decodeErr(t, b).Code != contract.CodeNotFound {

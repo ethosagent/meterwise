@@ -26,6 +26,10 @@ func staticHandler(web fs.FS) http.Handler {
 		if name == "" {
 			name = "index.html"
 		}
+		if strings.HasSuffix(strings.ToLower(name), ".map") { // source maps never ship
+			writeError(w, contract.NewError(contract.CodeNotFound, "no such file"))
+			return
+		}
 		if info, err := fs.Stat(web, name); err == nil && !info.IsDir() && name != indexName {
 			setCache(w, name)
 			files.ServeHTTP(w, r)
