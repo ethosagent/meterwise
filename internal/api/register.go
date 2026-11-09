@@ -1,7 +1,5 @@
 package api
 
-import "github.com/ethosagent/meterwise/internal/contract"
-
 // registerTenancy wires the Plan 02 routes. Authorization is the gateway's, by the route table.
 func (s *server) registerTenancy() {
 	register(s, "GET", "/api/me/preferences", s.getPreferences)
@@ -39,18 +37,4 @@ func (s *server) registerAccess() {
 	register(s, "DELETE", "/api/groups/{id}/members/{userId}", s.removeGroupMember)
 	register(s, "GET", "/api/organization/permissions", s.orgDefaults)
 	register(s, "PUT", "/api/organization/permissions", s.setOrgDefaults)
-}
-
-func members(list []contract.Member) contract.MemberList {
-	if list == nil {
-		list = []contract.Member{}
-	}
-	return contract.MemberList{Items: list}
-}
-
-func grants(list []contract.Grant) contract.GrantList {
-	if list == nil {
-		list = []contract.Grant{}
-	}
-	return contract.GrantList{Grants: list}
 }

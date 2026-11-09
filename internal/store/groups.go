@@ -2,17 +2,18 @@ package store
 
 import (
 	"context"
-	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-func toGroup(id, name string, created time.Time, members int32, workspaces []string) contract.Group {
+func toGroup(id, name string, created pgtype.Timestamptz, members int32, workspaces []string) contract.Group {
 	if workspaces == nil {
 		workspaces = []string{}
 	}
-	return contract.Group{ID: id, Name: name, MemberCount: int(members), WorkspaceIDs: workspaces, CreatedAt: created.UTC().Format(time.RFC3339)}
+	return contract.Group{ID: id, Name: name, MemberCount: int(members), WorkspaceIDs: workspaces, CreatedAt: rfc3339(created)}
 }
 
 // ListGroups returns the org's groups by name.
@@ -23,7 +24,7 @@ func (s *Store) ListGroups(ctx context.Context, orgID string) ([]contract.Group,
 	}
 	out := make([]contract.Group, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toGroup(r.ID, r.Name, ts(r.CreatedAt), r.MemberCount, r.WorkspaceIds))
+		out = append(out, toGroup(r.ID, r.Name, r.CreatedAt, r.MemberCount, r.WorkspaceIds))
 	}
 	return out, nil
 }
@@ -41,7 +42,7 @@ func group(ctx context.Context, q *sqlc.Queries, orgID, id string) (contract.Gro
 	if err != nil {
 		return contract.Group{}, queryErr(err)
 	}
-	return toGroup(r.ID, r.Name, ts(r.CreatedAt), r.MemberCount, r.WorkspaceIds), nil
+	return toGroup(r.ID, r.Name, r.CreatedAt, r.MemberCount, r.WorkspaceIds), nil
 }
 
 func nameTaken() error {

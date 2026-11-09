@@ -190,6 +190,19 @@ func (s *server) switchWorkspace(c Call, _ none) (contract.SwitchWorkspaceRespon
 	return contract.SwitchWorkspaceResponse{ActiveWorkspaceID: id}, err
 }
 
+func (s *server) listMembers(c Call, _ none) (contract.MemberList, error) {
+	list, err := s.Tenancy.ListMembers(c.Ctx, c.Principal)
+	return contract.MemberList{Items: list}, err
+}
+
+func (s *server) updateMember(c Call, req contract.UpdateMemberRequest) (contract.Member, error) {
+	return s.Tenancy.SetMemberRole(c.Ctx, c.Principal, c.Path("userId"), req.Role)
+}
+
+func (s *server) removeMember(c Call, _ none) (none, error) {
+	return none{}, s.Tenancy.RemoveMember(c.Ctx, c.Principal, c.Path("userId"))
+}
+
 func (s *server) listInvitations(c Call, _ none) (contract.InvitationList, error) {
 	list, err := s.Tenancy.ListInvitations(c.Ctx, c.Principal)
 	if err != nil {

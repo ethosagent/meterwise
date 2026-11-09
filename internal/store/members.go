@@ -16,7 +16,7 @@ func toMember(userID, email, name, avatar, role string, joined pgtype.Timestampt
 	}
 	return contract.Member{
 		UserID: userID, Email: email, Name: name, AvatarURL: avatar, Role: contract.Role(role),
-		GroupIDs: groups, JoinedAt: ts(joined).Format(time.RFC3339),
+		GroupIDs: groups, JoinedAt: rfc3339(joined),
 	}
 }
 

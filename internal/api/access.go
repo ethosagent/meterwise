@@ -25,24 +25,8 @@ type Access interface {
 	SetOrgDefaults(ctx context.Context, grants []contract.Grant) ([]contract.Grant, error)
 }
 
-func (s *server) listMembers(c Call, _ none) (contract.MemberList, error) {
-	list, err := s.Tenancy.ListMembers(c.Ctx, c.Principal)
-	return members(list), err
-}
-
-func (s *server) updateMember(c Call, req contract.UpdateMemberRequest) (contract.Member, error) {
-	return s.Tenancy.SetMemberRole(c.Ctx, c.Principal, c.Path("userId"), req.Role)
-}
-
-func (s *server) removeMember(c Call, _ none) (none, error) {
-	return none{}, s.Tenancy.RemoveMember(c.Ctx, c.Principal, c.Path("userId"))
-}
-
 func (s *server) listGroups(c Call, _ none) (contract.GroupList, error) {
 	list, err := s.Access.ListGroups(c.Ctx)
-	if list == nil {
-		list = []contract.Group{}
-	}
 	return contract.GroupList{Items: list}, err
 }
 
@@ -64,12 +48,12 @@ func (s *server) deleteGroup(c Call, _ none) (none, error) {
 
 func (s *server) groupGrants(c Call, _ none) (contract.GrantList, error) {
 	list, err := s.Access.GroupGrants(c.Ctx, c.Path("id"))
-	return grants(list), err
+	return contract.GrantList{Grants: list}, err
 }
 
 func (s *server) setGroupGrants(c Call, req contract.GrantList) (contract.GrantList, error) {
 	list, err := s.Access.SetGroupGrants(c.Ctx, c.Path("id"), req.Grants)
-	return grants(list), err
+	return contract.GrantList{Grants: list}, err
 }
 
 func (s *server) attachWorkspace(c Call, req contract.AttachWorkspaceRequest) (contract.Group, error) {
@@ -82,12 +66,12 @@ func (s *server) detachWorkspace(c Call, _ none) (none, error) {
 
 func (s *server) groupMembers(c Call, _ none) (contract.MemberList, error) {
 	list, err := s.Access.GroupMembers(c.Ctx, c.Path("id"))
-	return members(list), err
+	return contract.MemberList{Items: list}, err
 }
 
 func (s *server) addGroupMember(c Call, req contract.AddGroupMemberRequest) (contract.MemberList, error) {
 	list, err := s.Access.AddGroupMember(c.Ctx, c.Path("id"), req.UserID)
-	return members(list), err
+	return contract.MemberList{Items: list}, err
 }
 
 func (s *server) removeGroupMember(c Call, _ none) (none, error) {
@@ -96,10 +80,10 @@ func (s *server) removeGroupMember(c Call, _ none) (none, error) {
 
 func (s *server) orgDefaults(c Call, _ none) (contract.GrantList, error) {
 	list, err := s.Access.OrgDefaults(c.Ctx)
-	return grants(list), err
+	return contract.GrantList{Grants: list}, err
 }
 
 func (s *server) setOrgDefaults(c Call, req contract.GrantList) (contract.GrantList, error) {
 	list, err := s.Access.SetOrgDefaults(c.Ctx, req.Grants)
-	return grants(list), err
+	return contract.GrantList{Grants: list}, err
 }
