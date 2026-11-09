@@ -132,10 +132,10 @@ m_h8() { gofile internal/audit/doc.go <<<'// Package audit appends audit events.
 package audit'; gofile internal/audit/net_test.go <<<'package audit
 import "testing"
 func TestDials(t *testing.T) {}'; }
-m_h6store() { gofile internal/store/x.go <<<'// Package store is the base.
-package store
-import _ "github.com/jackc/pgx/v5"'; }
-modclean() { git diff --quiet -- go.mod && [ ! -e go.sum ]; }
+m_h6store() { gofile internal/api/x.go <<<'// Package api is the base.
+package api
+import _ "github.com/go-chi/chi/v5"'; }
+modclean() { git diff --quiet -- go.mod go.sum; }
 POST=modclean green arch "an allowlisted import missing from go.mod does not rewrite go.mod or go.sum" "all gates passed" m_h6store
 m_h9() { mkdir -p internal/config/nested; printf 'module nested\n' >internal/config/nested/go.mod; gofile internal/config/nested/n_test.go <<<'package nested
 import "testing"
@@ -179,9 +179,9 @@ red test "no database under CI=true fails closed" "unset under CI=true" nop PATH
 
 # ---- vuln
 m_vuln() { cat >>go.mod <<<'
-require golang.org/x/text v0.3.0'; gofile internal/config/vuln.go <<<'package config
-import "golang.org/x/text/language"
-var _, _ = language.Parse("en")'; (go mod tidy >/dev/null 2>&1 || true); }
+require gopkg.in/yaml.v2 v2.2.2'; gofile internal/config/vuln.go <<<'package config
+import "gopkg.in/yaml.v2"
+var _ = yaml.Unmarshal([]byte("a: 1"), new(map[string]any))'; (go mod tidy >/dev/null 2>&1 || true); }
 red vuln "called vulnerable dependency" "Vulnerability" m_vuln
 
 # ---- docs
