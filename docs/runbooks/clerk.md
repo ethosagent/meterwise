@@ -43,6 +43,12 @@ This records an admin invitation (7 days) and, with `CLERK_SECRET_KEY` set, asks
 follows the email, signs in, and the web app calls `POST /api/auth/complete-signup`, which turns the invitation
 into an active membership. Without Clerk configured (dev) only the database row is created.
 
+Recovery: the Clerk `user.deleted` webhook removes the memberships of the deleted user, including the last admin
+(the API refuses that, Clerk's own deletion cannot be refused). While no admin is active, run `bootstrap-admin` for the
+address again: it issues a fresh admin invitation, and whoever signs up with that address (a new Clerk user) becomes an
+active admin with no groups. With an active admin it keeps answering conflict. A removed admin whose Clerk user still
+exists is re-activated instead.
+
 ## Webhooks without a tunnel
 
 ```sh
