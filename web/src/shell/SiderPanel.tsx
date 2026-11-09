@@ -34,7 +34,7 @@ export function SiderPanel() {
   useEffect(() => {
     if (inSettings)
       setOpenKeys((keys) => (keys.includes(SETTINGS_KEY) ? keys : [...keys, SETTINGS_KEY]));
-  }, [inSettings, pathname]);
+  }, [inSettings]);
 
   return (
     <Layout.Sider
