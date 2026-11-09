@@ -22,8 +22,35 @@ func lintMigrations(ms []migration, stray []string, families map[string][]string
 	for _, m := range ms {
 		l.one(m)
 	}
+	l.checkFamilies()
 	sort.Strings(l.problems)
 	return l.problems
+}
+
+// ledgerTables are written only by the features that own them (archtest H4); a
+// manifest line cannot hand them to any other feature.
+var ledgerTables = map[string]bool{"calls": true, "sessions": true, "monitor_events": true, "audit_log": true}
+var ledgerOwners = map[string]bool{"ledger": true, "audit": true, "calls": true, "sessions": true}
+
+// checkFamilies checks the manifest against what the migrations really create: an
+// entry must name a table that exists and was created by that very feature (a
+// manifest cannot move a table between features), and ledger tables stay with
+// their writers. Together with the one-line-per-table duplicate check in
+// loadFamilies, a manifest cannot widen a feature beyond tables it created.
+func (l *linter) checkFamilies() {
+	for feature, tables := range l.families {
+		for _, t := range tables {
+			o, ok := l.owner[t]
+			switch {
+			case !ok:
+				l.add("%s: lists table %s for feature %s, but no migration creates it (stale entry)", familiesFile, t, feature)
+			case o != feature:
+				l.add("%s: lists table %s for feature %s, but feature %s created it", familiesFile, t, feature, o)
+			case ledgerTables[t] && !ledgerOwners[feature]:
+				l.add("%s: ledger table %s may only belong to feature ledger or audit, not %s", familiesFile, t, feature)
+			}
+		}
+	}
 }
 
 type linter struct {
@@ -129,7 +156,7 @@ func stem(feature string) string {
 // its stem, prefixed by the stem and an underscore, or listed in the manifest.
 func inFamily(table, feature string, families map[string][]string) bool {
 	st := stem(feature)
-	if table == feature || table == st || strings.HasPrefix(table, st+"_") {
+	if table == feature || table == st || strings.HasPrefix(table, st+"_") || strings.HasPrefix(table, feature+"_") {
 		return true
 	}
 	for _, t := range families[feature] {

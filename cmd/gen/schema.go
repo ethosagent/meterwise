@@ -44,7 +44,8 @@ var (
 		regexp.MustCompile(`(?is)DROP\s+(?:MATERIALIZED\s+)?(?:TABLE|VIEW)\s+(?:IF\s+EXISTS\s+)?` + id),
 		regexp.MustCompile(`(?is)CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:\S+\s+)?ON\s+(?:ONLY\s+)?` + id),
 		regexp.MustCompile(`(?is)INSERT\s+INTO\s+` + id),
-		regexp.MustCompile(`(?is)(?:^|[;\s])UPDATE\s+(?:ONLY\s+)?` + id + `\s+SET`),
+		regexp.MustCompile(`(?is)(?:^|[;\s])UPDATE\s+(?:ONLY\s+)?` + id + `(?:\s+(?:AS\s+)?[a-z_][a-z0-9_]*)?\s+SET\b`),
+		regexp.MustCompile(`(?is)(?:^|[;\s])COPY\s+` + id + `\s*(?:\(|FROM\b)`),
 		regexp.MustCompile(`(?is)DELETE\s+FROM\s+(?:ONLY\s+)?` + id),
 		regexp.MustCompile(`(?is)MERGE\s+INTO\s+(?:ONLY\s+)?` + id),
 		regexp.MustCompile(`(?is)TRUNCATE\s+(?:TABLE\s+)?(?:ONLY\s+)?` + id),
@@ -59,7 +60,7 @@ var (
 		regexp.MustCompile(`(?is)PARTITION\s+OF\s+` + id),
 		regexp.MustCompile(`(?is)CREATE\s+OR\s+REPLACE\s+VIEW\s+` + id),
 	}
-	lineComment = regexp.MustCompile(`(?m)--[^\n]*`)
+	lineComment = regexp.MustCompile(`(?s)/\*.*?\*/|--[^\n]*`)
 )
 
 // splitGoose returns the Up and Down halves of a goose migration.
@@ -129,8 +130,8 @@ func parseMigration(file, sql string) migration {
 		m.Feature = f[2]
 	}
 	upRaw, down := splitGoose(sql)
-	m.HasDown = strings.TrimSpace(lineComment.ReplaceAllString(down, "")) != ""
-	up := lineComment.ReplaceAllString(upRaw, "")
+	m.HasDown = strings.TrimSpace(lineComment.ReplaceAllString(down, " ")) != ""
+	up := lineComment.ReplaceAllString(upRaw, " ")
 	for _, loc := range createRe.FindAllStringSubmatchIndex(up, -1) {
 		name := up[loc[2]:loc[3]]
 		m.Created = append(m.Created, name)
@@ -199,22 +200,41 @@ func loadMigrations(fsys fs.FS, dir string) (out []migration, stray []string, er
 
 // loadFamilies reads internal/store/migration-families.txt: lines of
 // `<feature> <table> [<table>...]` naming tables a feature owns although the
-// table name does not start with the feature's stem (for example the ledger
-// feature owning calls and sessions). A protected path.
-func loadFamilies(fsys fs.FS) (map[string][]string, error) {
+// table name does not start with the feature's name (for example the ledger
+// feature owning calls and sessions). A protected path. problems lists garbage
+// lines and tables listed twice; lintFamilies checks the rest against the migrations.
+func loadFamilies(fsys fs.FS) (fam map[string][]string, problems []string, err error) {
 	b, err := fs.ReadFile(fsys, familiesFile)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("gen: read %s: %w", familiesFile, err)
+		return nil, nil, fmt.Errorf("gen: read %s: %w", familiesFile, err)
 	}
-	fam := map[string][]string{}
-	for _, line := range strings.Split(string(b), "\n") {
+	fam = map[string][]string{}
+	listed := map[string]string{}
+	for n, line := range strings.Split(string(b), "\n") {
 		f := strings.Fields(strings.SplitN(line, "#", 2)[0])
-		if len(f) >= 2 {
-			fam[f[0]] = append(fam[f[0]], f[1:]...)
+		if len(f) == 0 {
+			continue
+		}
+		if len(f) < 2 || !identRe.MatchString(f[0]) {
+			problems = append(problems, fmt.Sprintf("%s:%d: want `<feature> <table> [<table>...]`, got %q", familiesFile, n+1, strings.TrimSpace(line)))
+			continue
+		}
+		for _, t := range f[1:] {
+			switch {
+			case !identRe.MatchString(t):
+				problems = append(problems, fmt.Sprintf("%s:%d: %q is not a table name", familiesFile, n+1, t))
+			case listed[t] != "":
+				problems = append(problems, fmt.Sprintf("%s:%d: table %s is already listed under feature %s", familiesFile, n+1, t, listed[t]))
+			default:
+				listed[t] = f[0]
+				fam[f[0]] = append(fam[f[0]], t)
+			}
 		}
 	}
-	return fam, nil
+	return fam, problems, nil
 }
+
+var identRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)

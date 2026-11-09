@@ -82,10 +82,14 @@ func runLint(root string, stdout, stderr io.Writer) (failed bool) {
 		fmt.Fprintln(stdout, "SKIP migrations lint: internal/store/migrations has no migrations yet (goes live with the first one)")
 		return false
 	}
-	families, err := loadFamilies(os.DirFS(root))
+	families, famProblems, err := loadFamilies(os.DirFS(root))
 	if err != nil {
 		fmt.Fprintln(stderr, "✗", err)
 		return true
+	}
+	for _, p := range famProblems {
+		fmt.Fprintln(stderr, "✗", p)
+		failed = true
 	}
 	for _, p := range lintMigrations(ms, stray, families) {
 		fmt.Fprintln(stderr, "✗", p)

@@ -172,11 +172,59 @@ func TestFamilyManifestAllowsAnOwnedTable(t *testing.T) {
 	if code, _, errs := gen(t, root, "migrations"); code != 1 || !strings.Contains(errs, "table calls does not belong") {
 		t.Fatalf("without a manifest entry: %d %q", code, errs)
 	}
-	if err := os.WriteFile(filepath.Join(root, "internal/store/migration-families.txt"), []byte("# owners\nledger calls sessions # the ledger\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "internal/store/migration-families.txt"), []byte("# owners\nledger calls # the ledger\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if code, _, errs := gen(t, root, "migrations"); code != 0 {
 		t.Fatalf("with a manifest entry: %q", errs)
+	}
+}
+
+func TestFamilyManifestCannotLaunderMigrations(t *testing.T) {
+	four := "-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\nCREATE TABLE audit_log (id int);\nCREATE TABLE calls (id int);\nCREATE TABLE orgs (id int);\n-- +goose Down\nDROP TABLE orgs;\nDROP TABLE calls;\nDROP TABLE audit_log;\nDROP TABLE workspaces;\n"
+	ledger := "-- feature: ledger\n-- +goose Up\nCREATE TABLE calls (id int);\n-- +goose Down\nDROP TABLE calls;\n"
+	tests := []struct {
+		name, migration, file, manifest, want string
+	}{
+		{"the one-line launder of a four-table migration", four, "0001_workspaces.sql", "workspaces audit_log calls orgs\n", "ledger table audit_log may only belong to feature ledger or audit"},
+		{"ledger table for a non-owner", four, "0001_workspaces.sql", "workspaces calls\n", "ledger table calls may only belong"},
+		{"stale entry", ledger, "0001_ledger.sql", "ledger calls ghosts\n", "no migration creates it (stale entry)"},
+		{"table owned by another feature", ledger, "0001_ledger.sql", "audit calls\n", "but feature ledger created it"},
+		{"table listed twice", ledger, "0001_ledger.sql", "ledger calls\nledger calls\n", "already listed under feature ledger"},
+		{"garbage line", ledger, "0001_ledger.sql", "ledger\n", "want `<feature> <table>"},
+		{"bad table name", ledger, "0001_ledger.sql", "ledger Calls!\n", "is not a table name"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeMigration(t, root, tc.file, tc.migration)
+			if err := os.WriteFile(filepath.Join(root, "internal/store/migration-families.txt"), []byte(tc.manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if code, _, errs := gen(t, root, "migrations"); code != 1 || !strings.Contains(errs, tc.want) {
+				t.Fatalf("want exit 1 mentioning %q, got %d %q", tc.want, code, errs)
+			}
+		})
+	}
+}
+
+func TestFeaturePrefixIsAFamily(t *testing.T) {
+	root := t.TempDir()
+	writeMigration(t, root, "0001_calls.sql", "-- feature: calls\n-- +goose Up\nCREATE TABLE calls (id int);\nCREATE TABLE calls_2026 (id int);\n-- +goose Down\nDROP TABLE calls_2026;\nDROP TABLE calls;\n")
+	writeMigration(t, root, "0002_workspaces.sql", "-- feature: workspaces\n-- +goose Up\nCREATE TABLE workspaces (id int);\nCREATE TABLE workspaces_v (id int);\n-- +goose Down\nDROP TABLE workspaces_v;\nDROP TABLE workspaces;\n")
+	if code, _, errs := gen(t, root, "migrations"); code != 0 {
+		t.Fatalf("calls_2026 and workspaces_v must pass: %s", errs)
+	}
+}
+
+func TestAliasedUpdateAndBlockCommentsAreSeen(t *testing.T) {
+	root := t.TempDir()
+	writeMigration(t, root, "0001_orgs.sql", goodMigration("orgs"))
+	for _, stmt := range []string{"UPDATE orgs o SET name = 'x';", "UPDATE ONLY orgs AS o SET name = 'x';", "ALTER/**/TABLE orgs ADD COLUMN y int;", "COPY orgs FROM STDIN;"} {
+		writeMigration(t, root, "0002_workspaces.sql", wsWith(stmt))
+		if code, _, errs := gen(t, root, "migrations"); code != 1 || !strings.Contains(errs, "touches table orgs") {
+			t.Errorf("%s not flagged: %d %q", stmt, code, errs)
+		}
 	}
 }
 
