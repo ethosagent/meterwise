@@ -23,6 +23,33 @@ type AuditLog struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type Call struct {
+	ID              string
+	OrgID           pgtype.UUID
+	WorkspaceID     pgtype.UUID
+	SessionID       string
+	CallIndex       int32
+	StartedAt       pgtype.Timestamptz
+	Provider        string
+	Model           string
+	Wire            string
+	Stream          bool
+	Status          int32
+	Finish          string
+	InputTokens     int64
+	OutputTokens    int64
+	CachedTokens    int64
+	ReasoningTokens int64
+	CostUsd         pgtype.Numeric
+	TtfbMs          int32
+	DurationMs      int32
+	ToolCalls       []byte
+	Blocked         bool
+	NotesInjected   int32
+	Client          pgtype.Text
+	CreatedAt       pgtype.Timestamptz
+}
+
 type Group struct {
 	ID        pgtype.UUID
 	OrgID     pgtype.UUID
@@ -73,6 +100,25 @@ type Membership struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type MonitorEvent struct {
+	ID             int64
+	OrgID          pgtype.UUID
+	WorkspaceID    pgtype.UUID
+	SessionID      string
+	CallID         string
+	CallIndex      int32
+	Ts             pgtype.Timestamptz
+	Monitor        string
+	Mode           string
+	Action         string
+	Evidence       []byte
+	EstSavedTokens int64
+	EstSavedUsd    pgtype.Numeric
+	Confidence     string
+	Feedback       pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+}
+
 type Organization struct {
 	ID        pgtype.UUID
 	Name      string
@@ -88,6 +134,17 @@ type OrganizationPermission struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type Pricing struct {
+	Provider      string
+	Model         string
+	InputPerM     int64
+	OutputPerM    int64
+	CachedPerM    pgtype.Int8
+	ReasoningPerM pgtype.Int8
+	EffectiveFrom pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+}
+
 type ResourcePermission struct {
 	ID           pgtype.UUID
 	OrgID        pgtype.UUID
@@ -96,6 +153,27 @@ type ResourcePermission struct {
 	ResourceID   pgtype.Text
 	Action       string
 	CreatedAt    pgtype.Timestamptz
+}
+
+type Session struct {
+	ID                      string
+	OrgID                   pgtype.UUID
+	WorkspaceID             pgtype.UUID
+	Source                  string
+	StartedAt               pgtype.Timestamptz
+	LastSeenAt              pgtype.Timestamptz
+	ClosedAt                pgtype.Timestamptz
+	Calls                   int32
+	InputTokens             int64
+	OutputTokens            int64
+	CostUsd                 pgtype.Numeric
+	SavedUsd                pgtype.Numeric
+	LikelySavedUsd          pgtype.Numeric
+	Outcome                 string
+	Client                  pgtype.Text
+	FirstUserMessagePreview pgtype.Text
+	LastFinish              string
+	LastHadText             bool
 }
 
 type User struct {

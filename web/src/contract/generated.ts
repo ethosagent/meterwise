@@ -273,11 +273,76 @@ export interface AuditList {
   nextCursor: string | null;
 }
 
+export interface Session {
+  id: string;
+  workspaceId: string;
+  source: string;
+  startedAt: string;
+  lastSeenAt: string;
+  closedAt: string | null;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: string | null;
+  savedUsd: string;
+  likelySavedUsd: string;
+  outcome: string;
+  client: string | null;
+}
+
+export interface Call {
+  id: string;
+  callIndex: number;
+  startedAt: string;
+  provider: string;
+  model: string;
+  wire: string;
+  stream: boolean;
+  status: number;
+  finish: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  reasoningTokens: number;
+  costUsd: string | null;
+  ttfbMs: number;
+  durationMs: number;
+  toolCalls: string[];
+  blocked: boolean;
+  notesInjected: number;
+}
+
+export interface SessionList {
+  items: Session[];
+  nextCursor: string | null;
+}
+
+export interface SessionDetail {
+  session: Session;
+  calls: Call[];
+}
+
+export interface StatsDay {
+  day: string;
+  spendUsd: string;
+  calls: number;
+  sessions: number;
+}
+
+export interface Stats {
+  spendUsd: string;
+  calls: number;
+  sessions: number;
+  avgCallsPerSession: number;
+  byDay: StatsDay[];
+}
+
 export interface RouteSpec {
   method: string;
   pattern: string;
   permission: string;
   workspaceParam?: string;
+  workspaceQuery?: string;
   public: boolean;
 }
 
@@ -311,13 +376,16 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "PATCH", pattern: "/api/members/{userId}", permission: "admin", public: false },
   { method: "GET", pattern: "/api/organization/permissions", permission: "member:read", public: false },
   { method: "PUT", pattern: "/api/organization/permissions", permission: "admin", public: false },
+  { method: "GET", pattern: "/api/sessions/{id}", permission: "session:read", workspaceQuery: "workspaceId", public: false },
   { method: "GET", pattern: "/api/v1/version", permission: "", public: true },
   { method: "POST", pattern: "/api/webhooks/clerk", permission: "", public: true },
   { method: "GET", pattern: "/api/workspaces", permission: "member", public: false },
   { method: "POST", pattern: "/api/workspaces", permission: "member", public: false },
   { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "workspace:manage", workspaceParam: "id", public: false },
   { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "workspace:write", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/sessions", permission: "session:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/setup", permission: "workspace_url:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/stats", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/switch", permission: "workspace:read", workspaceParam: "id", public: false },
   { method: "PUT", pattern: "/api/workspaces/{id}/url/allowed-cidrs", permission: "workspace_url:manage", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/url/reset", permission: "workspace_url:manage", workspaceParam: "id", public: false },

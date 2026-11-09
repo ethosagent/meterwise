@@ -168,6 +168,101 @@
         ],
         "type": "object"
       },
+      "Call": {
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "cachedTokens": {
+            "type": "integer"
+          },
+          "callIndex": {
+            "type": "integer"
+          },
+          "costUsd": {
+            "oneOf": [
+              {
+                "description": "decimal USD, six places",
+                "pattern": "^-?\\d+\\.\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "finish": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inputTokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "notesInjected": {
+            "type": "integer"
+          },
+          "outputTokens": {
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reasoningTokens": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "toolCalls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ttfbMs": {
+            "type": "integer"
+          },
+          "wire": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "callIndex",
+          "startedAt",
+          "provider",
+          "model",
+          "wire",
+          "stream",
+          "status",
+          "finish",
+          "inputTokens",
+          "outputTokens",
+          "cachedTokens",
+          "reasoningTokens",
+          "costUsd",
+          "ttfbMs",
+          "durationMs",
+          "toolCalls",
+          "blocked",
+          "notesInjected"
+        ],
+        "type": "object"
+      },
       "CreateInvitationRequest": {
         "properties": {
           "email": {
@@ -622,6 +717,139 @@
         ],
         "type": "object"
       },
+      "Session": {
+        "properties": {
+          "calls": {
+            "type": "integer"
+          },
+          "client": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costUsd": {
+            "oneOf": [
+              {
+                "description": "decimal USD, six places",
+                "pattern": "^-?\\d+\\.\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "inputTokens": {
+            "type": "integer"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "outputTokens": {
+            "type": "integer"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "source",
+          "startedAt",
+          "lastSeenAt",
+          "closedAt",
+          "calls",
+          "inputTokens",
+          "outputTokens",
+          "costUsd",
+          "savedUsd",
+          "likelySavedUsd",
+          "outcome",
+          "client"
+        ],
+        "type": "object"
+      },
+      "SessionDetail": {
+        "properties": {
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/Call"
+            },
+            "type": "array"
+          },
+          "session": {
+            "$ref": "#/components/schemas/Session"
+          }
+        },
+        "required": [
+          "session",
+          "calls"
+        ],
+        "type": "object"
+      },
+      "SessionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "Setup": {
         "properties": {
           "proxyUrl": {
@@ -698,6 +926,63 @@
           "firstCallAt",
           "lastCallAt",
           "callsToday"
+        ],
+        "type": "object"
+      },
+      "Stats": {
+        "properties": {
+          "avgCallsPerSession": {
+            "type": "number"
+          },
+          "byDay": {
+            "items": {
+              "$ref": "#/components/schemas/StatsDay"
+            },
+            "type": "array"
+          },
+          "calls": {
+            "type": "integer"
+          },
+          "sessions": {
+            "type": "integer"
+          },
+          "spendUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spendUsd",
+          "calls",
+          "sessions",
+          "avgCallsPerSession",
+          "byDay"
+        ],
+        "type": "object"
+      },
+      "StatsDay": {
+        "properties": {
+          "calls": {
+            "type": "integer"
+          },
+          "day": {
+            "type": "string"
+          },
+          "sessions": {
+            "type": "integer"
+          },
+          "spendUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "spendUsd",
+          "calls",
+          "sessions"
         ],
         "type": "object"
       },
@@ -1874,6 +2159,41 @@
         "x-permission": "admin"
       }
     },
+    "/api/sessions/{id}": {
+      "get": {
+        "operationId": "getApiSessionsId",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One session with its calls; workspaceId is required and authorizes the read; 404 when the session is not in that workspace",
+        "x-permission": "session:read",
+        "x-workspace-query": "workspaceId"
+      }
+    },
     "/api/v1/version": {
       "get": {
         "operationId": "getApiV1Version",
@@ -2072,6 +2392,41 @@
         "x-workspace-param": "id"
       }
     },
+    "/api/workspaces/{id}/sessions": {
+      "get": {
+        "operationId": "getApiWorkspacesIdSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200)",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
     "/api/workspaces/{id}/setup": {
       "get": {
         "operationId": "getApiWorkspacesIdSetup",
@@ -2104,6 +2459,41 @@
         ],
         "summary": "The proxy URL, ready-made client snippets and the connection status of a workspace",
         "x-permission": "workspace_url:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/stats": {
+      "get": {
+        "operationId": "getApiWorkspacesIdStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Stats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Spend, calls, sessions and the per-day series for range=7d|30d (default 7d)",
+        "x-permission": "savings:read",
         "x-workspace-param": "id"
       }
     },

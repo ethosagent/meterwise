@@ -50,6 +50,10 @@ type Route struct {
 	// resource parameter and a resolver from resource id to workspace; rows that use
 	// WorkspaceParam do not change.
 	WorkspaceParam string `json:"workspaceParam,omitempty"`
+	// WorkspaceQuery names the query parameter that carries the workspace id for a route whose
+	// path names another resource (GET /api/sessions/{id}?workspaceId=). The gateway requires it
+	// (422 when missing) and authorizes against that workspace before the handler reads anything.
+	WorkspaceQuery string `json:"workspaceQuery,omitempty"`
 	Public         bool   `json:"public"`
 	Summary        string `json:"summary"`
 	Request        string `json:"request,omitempty"` // DTO name of the JSON body, if any
@@ -75,6 +79,9 @@ var routes = []Route{
 	{Method: "POST", Pattern: "/api/workspaces/{id}/url/reset", Permission: PermWorkspaceURLManage, WorkspaceParam: "id", Summary: "Give the workspace a new proxy URL; the old one keeps working for graceMinutes (0-1440, default 10)", Request: "ResetURLRequest", Response: "ResetURLResponse"},
 	{Method: "POST", Pattern: "/api/workspaces/{id}/url/retire-previous", Permission: PermWorkspaceURLManage, WorkspaceParam: "id", Summary: "End the grace window of every previous proxy URL now", Status: 204},
 	{Method: "PUT", Pattern: "/api/workspaces/{id}/url/allowed-cidrs", Permission: PermWorkspaceURLManage, WorkspaceParam: "id", Summary: "Set the source networks the proxy accepts for the workspace ([] means any); 422 for a bad CIDR", Request: "AllowedCIDRs", Response: "AllowedCIDRs"},
+	{Method: "GET", Pattern: "/api/workspaces/{id}/sessions", Permission: PermSessionRead, WorkspaceParam: "id", Summary: "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200)", Response: "SessionList"},
+	{Method: "GET", Pattern: "/api/sessions/{id}", Permission: PermSessionRead, WorkspaceQuery: "workspaceId", Summary: "One session with its calls; workspaceId is required and authorizes the read; 404 when the session is not in that workspace", Response: "SessionDetail"},
+	{Method: "GET", Pattern: "/api/workspaces/{id}/stats", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "Spend, calls, sessions and the per-day series for range=7d|30d (default 7d)", Response: "Stats"},
 	{Method: "GET", Pattern: "/api/audit-log", Permission: PermAuditLogRead, Summary: "The audit log, newest first; filter by action and workspaceId, page with the opaque cursor; 422 for an unknown action", Response: "AuditList"},
 	{Method: "GET", Pattern: "/api/invitations", Permission: PermMemberManage, Summary: "List invitations", Response: "InvitationList"},
 	{Method: "POST", Pattern: "/api/invitations", Permission: PermMemberManage, Summary: "Invite an email into the organization; 409 already_member for an active member; role admin needs an admin", Request: "CreateInvitationRequest", Response: "Invitation", Status: 201},
