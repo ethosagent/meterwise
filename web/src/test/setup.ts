@@ -1,6 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+// Under load the first render in a file (cold antd) and parallel files stretch async waits well past
+// the 1000 ms default; a real break still fails, after 5 s instead of 1 s.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom lacks matchMedia and ResizeObserver, which antd's responsive pieces need.
 export function installMatchMedia(matches: (query: string) => boolean = () => false) {
