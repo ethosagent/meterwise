@@ -1,4 +1,5 @@
 # GO_VERSION must stay equal to the toolchain line in go.mod (scripts/check-docs.sh checks it).
+ARG GO_VERSION=1.27.3
 # One image: the meterwised binary plus the built web app (decision D1).
 FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
@@ -7,7 +8,6 @@ RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-ARG GO_VERSION=1.27.3
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 ARG TARGETOS TARGETARCH VERSION=dev COMMIT=unknown
 WORKDIR /src
