@@ -28,6 +28,12 @@ reads only the User-Agent product token (no version, lower-case, at most 64 byte
 token and the UI groups them as stored. Only User-Agent strings present in committed fixtures are named in
 tests; none is guessed.
 
+`dataplane.HookChain` owns the serve hook order (wsauth, history, monitors, injected, ledger) so `cmd/demo-traffic`
+builds the same chain as `serve`. `dataplane` (rank 3) therefore imports `history` and `monitors` (rank 3, pure,
+allowed by H2/H3) and `wsauth` (rank 2), and takes the ledger as a `tollgate.Hook` argument, never importing it.
+That "never the ledger package" rule is a doc comment, not an archtest rule; a per-package allow-list for
+`dataplane` is a protected-path change for the owner.
+
 ## Consequences
 
 Easier: one source of money, every figure traces to event rows, no refresh lag. Harder: every read is an
