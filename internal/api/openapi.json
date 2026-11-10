@@ -263,6 +263,174 @@
         ],
         "type": "object"
       },
+      "CauseView": {
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "fires": {
+            "type": "integer"
+          },
+          "likelySavedTokens": {
+            "type": "integer"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "savedTokens": {
+            "type": "integer"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "topClient": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "topPath": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "topPathHash": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "topRepeatCount": {
+            "type": "integer"
+          },
+          "topTool": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "wouldSaveTokens": {
+            "type": "integer"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "monitor",
+          "mode",
+          "confidence",
+          "fires",
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldSaveUsd",
+          "savedTokens",
+          "likelySavedTokens",
+          "wouldSaveTokens",
+          "topClient",
+          "topTool",
+          "topPath",
+          "topPathHash",
+          "topRepeatCount"
+        ],
+        "type": "object"
+      },
+      "ClientRow": {
+        "properties": {
+          "avgCallsPerSession": {
+            "type": "number"
+          },
+          "blocked": {
+            "type": "integer"
+          },
+          "calls": {
+            "type": "integer"
+          },
+          "client": {
+            "type": "string"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "prevAvgCallsPerSession": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savedBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "sessions": {
+            "type": "integer"
+          },
+          "spentUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "calls",
+          "sessions",
+          "blocked",
+          "spentUsd",
+          "savedUsd",
+          "likelySavedUsd",
+          "savedBp",
+          "avgCallsPerSession",
+          "prevAvgCallsPerSession"
+        ],
+        "type": "object"
+      },
       "CreateInvitationRequest": {
         "properties": {
           "email": {
@@ -1145,6 +1313,309 @@
         ],
         "type": "object"
       },
+      "SaveList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SaveRow"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "SaveRow": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "callId": {
+            "type": "string"
+          },
+          "callIndex": {
+            "type": "integer"
+          },
+          "client": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "estSavedTokens": {
+            "type": "integer"
+          },
+          "estSavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "sessionId",
+          "callId",
+          "callIndex",
+          "ts",
+          "monitor",
+          "action",
+          "confidence",
+          "estSavedUsd",
+          "estSavedTokens",
+          "client",
+          "model"
+        ],
+        "type": "object"
+      },
+      "SavingsCauses": {
+        "properties": {
+          "causes": {
+            "items": {
+              "$ref": "#/components/schemas/CauseView"
+            },
+            "type": "array"
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientRow"
+            },
+            "type": "array"
+          },
+          "from": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/Suggestion"
+            },
+            "type": "array"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "timezone",
+          "causes",
+          "clients",
+          "suggestions"
+        ],
+        "type": "object"
+      },
+      "SavingsDay": {
+        "properties": {
+          "calls": {
+            "type": "integer"
+          },
+          "day": {
+            "type": "string"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "paidUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "sessions": {
+            "type": "integer"
+          },
+          "wouldHavePaidUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "paidUsd",
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldHavePaidUsd",
+          "calls",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "SavingsHero": {
+        "properties": {
+          "likelySavedTokens": {
+            "type": "integer"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "paidUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "savedBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savedTokens": {
+            "type": "integer"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "unpricedCalls": {
+            "type": "integer"
+          },
+          "wouldHavePaidUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "wouldSaveTokens": {
+            "type": "integer"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldSaveUsd",
+          "paidUsd",
+          "wouldHavePaidUsd",
+          "savedTokens",
+          "likelySavedTokens",
+          "wouldSaveTokens",
+          "savedBp",
+          "unpricedCalls"
+        ],
+        "type": "object"
+      },
+      "SavingsOverview": {
+        "properties": {
+          "byCause": {
+            "items": {
+              "$ref": "#/components/schemas/CauseView"
+            },
+            "type": "array"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsDay"
+            },
+            "type": "array"
+          },
+          "firstCallAt": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from": {
+            "type": "string"
+          },
+          "hero": {
+            "$ref": "#/components/schemas/SavingsHero"
+          },
+          "range": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "upsell": {
+            "items": {
+              "$ref": "#/components/schemas/UpsellView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "timezone",
+          "state",
+          "firstCallAt",
+          "hero",
+          "days",
+          "byCause",
+          "upsell"
+        ],
+        "type": "object"
+      },
       "SecondGuessingConfig": {
         "properties": {
           "minPhrases": {
@@ -1270,6 +1741,9 @@
             },
             "type": "array"
           },
+          "insight": {
+            "$ref": "#/components/schemas/SessionInsight"
+          },
           "monitorEvents": {
             "items": {
               "$ref": "#/components/schemas/MonitorEvent"
@@ -1287,7 +1761,33 @@
           "session",
           "calls",
           "truncated",
-          "monitorEvents"
+          "monitorEvents",
+          "insight"
+        ],
+        "type": "object"
+      },
+      "SessionInsight": {
+        "properties": {
+          "repeats": {
+            "items": {
+              "$ref": "#/components/schemas/Suggestion"
+            },
+            "type": "array"
+          },
+          "suggestion": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "repeats",
+          "suggestion"
         ],
         "type": "object"
       },
@@ -1491,6 +1991,51 @@
         "required": [],
         "type": "object"
       },
+      "Suggestion": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "path": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pathHash": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "monitor",
+          "tool",
+          "path",
+          "pathHash",
+          "count",
+          "text"
+        ],
+        "type": "object"
+      },
       "SwitchWorkspaceResponse": {
         "properties": {
           "activeWorkspaceId": {
@@ -1528,6 +2073,31 @@
           }
         },
         "required": [],
+        "type": "object"
+      },
+      "UpsellView": {
+        "properties": {
+          "fires": {
+            "type": "integer"
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "wouldSaveTokens": {
+            "type": "integer"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "monitor",
+          "wouldSaveUsd",
+          "wouldSaveTokens",
+          "fires"
+        ],
         "type": "object"
       },
       "Version": {

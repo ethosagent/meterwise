@@ -55,6 +55,7 @@ type SessionDetail struct {
 	Calls         []CallView         `json:"calls"`
 	Truncated     bool               `json:"truncated"`
 	MonitorEvents []MonitorEventView `json:"monitorEvents"` // call order, at most MonitorEventCap
+	Insight       SessionInsight     `json:"insight"`
 }
 
 // StatsDayView is one UTC day of the stats response; Day is YYYY-MM-DD.

@@ -327,6 +327,7 @@ export interface SessionDetail {
   calls: Call[];
   truncated: boolean;
   monitorEvents: MonitorEvent[];
+  insight: SessionInsight;
 }
 
 export interface StatsDay {
@@ -487,6 +488,124 @@ export interface MonitorStats {
   likelySavedUsd: string;
   wouldSaveUsd: string;
   monitors: MonitorStatsRow[];
+}
+
+export interface SavingsHero {
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldSaveUsd: string;
+  paidUsd: string;
+  wouldHavePaidUsd: string;
+  savedTokens: number;
+  likelySavedTokens: number;
+  wouldSaveTokens: number;
+  savedBp: number | null;
+  unpricedCalls: number;
+}
+
+export interface SavingsDay {
+  day: string;
+  paidUsd: string;
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldHavePaidUsd: string;
+  calls: number;
+  sessions: number;
+}
+
+export interface CauseView {
+  monitor: string;
+  mode: string;
+  confidence: string;
+  fires: number;
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldSaveUsd: string;
+  savedTokens: number;
+  likelySavedTokens: number;
+  wouldSaveTokens: number;
+  topClient: string | null;
+  topTool: string | null;
+  topPath: string | null;
+  topPathHash: string | null;
+  topRepeatCount: number;
+}
+
+export interface UpsellView {
+  monitor: string;
+  wouldSaveUsd: string;
+  wouldSaveTokens: number;
+  fires: number;
+}
+
+export interface SavingsOverview {
+  range: string;
+  from: string;
+  to: string;
+  timezone: string;
+  state: string;
+  firstCallAt: string | null;
+  hero: SavingsHero;
+  days: SavingsDay[];
+  byCause: CauseView[];
+  upsell: UpsellView[];
+}
+
+export interface ClientRow {
+  client: string;
+  calls: number;
+  sessions: number;
+  blocked: number;
+  spentUsd: string;
+  savedUsd: string;
+  likelySavedUsd: string;
+  savedBp: number | null;
+  avgCallsPerSession: number;
+  prevAvgCallsPerSession: number | null;
+}
+
+export interface Suggestion {
+  monitor: string;
+  tool: string;
+  path: string | null;
+  pathHash: string | null;
+  count: number;
+  text: string;
+}
+
+export interface SavingsCauses {
+  range: string;
+  from: string;
+  to: string;
+  timezone: string;
+  causes: CauseView[];
+  clients: ClientRow[];
+  suggestions: Suggestion[];
+}
+
+export interface SaveRow {
+  eventId: string;
+  sessionId: string;
+  callId: string;
+  callIndex: number;
+  ts: string;
+  monitor: string;
+  action: string;
+  confidence: string;
+  estSavedUsd: string;
+  estSavedTokens: number;
+  client: string | null;
+  model: string;
+}
+
+export interface SaveList {
+  items: SaveRow[];
+  nextCursor: string | null;
+}
+
+export interface SessionInsight {
+  repeats: Suggestion[];
+  suggestion: string | null;
 }
 
 export interface RouteSpec {

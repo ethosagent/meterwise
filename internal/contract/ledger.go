@@ -84,6 +84,8 @@ type SessionQuery struct {
 	Cursor      string
 	From, To    time.Time
 	Limit       int
+	Client      string // exact match on the client family; "" = any
+	Outcome     string // completed|abandoned|open; "" = any
 }
 
 // SessionPage is one page of sessions; NextCursor is "" on the last page.
