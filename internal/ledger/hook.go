@@ -123,6 +123,7 @@ func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
 		h.q.skipped.Add(1)
 		return
 	}
+	h.attachVerdicts(c, m, &rec)
 	h.q.enqueue(item{call: &rec})
 }
 

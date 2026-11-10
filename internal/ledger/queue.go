@@ -40,8 +40,11 @@ type Options struct {
 	RetryWindow time.Duration
 	// RetryBackoffMax caps the doubled backoff; default 5 s.
 	RetryBackoffMax time.Duration
-	Log             *slog.Logger
-	Now             func() time.Time
+	// Estimator prices what a verdict saves (savings.Estimate when the host wires it); nil finds nothing:
+	// zero tokens, confidence none, so verdicts are recorded without a saving.
+	Estimator Estimator
+	Log       *slog.Logger
+	Now       func() time.Time
 }
 
 // Defaults of the zero Options values.
@@ -71,6 +74,9 @@ func (o Options) withDefaults() (Options, error) {
 	o.RetryBackoff = cmp.Or(max(o.RetryBackoff, 0), defaultRetryBackoff)
 	o.RetryWindow = cmp.Or(max(o.RetryWindow, 0), defaultRetryWindow)
 	o.RetryBackoffMax = cmp.Or(max(o.RetryBackoffMax, 0), defaultRetryBackoffMax)
+	if o.Estimator == nil {
+		o.Estimator = zeroEstimate
+	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
@@ -99,6 +105,9 @@ type queue struct {
 	abort  context.CancelFunc // ends the batcher's writes when Close's context expires
 
 	enqueued, dropped, flushed, duplicates, lost, lostCloses, skipped, wrongOrg, unpriced, sessionsClosed, flushErrors atomic.Int64
+	// blocksDowngraded counts block verdicts on a call that already had usage (the upstream was reached first);
+	// invalidVerdicts counts verdicts dropped for a name, mode or action outside the fixed sets.
+	blocksDowngraded, invalidVerdicts atomic.Int64
 
 	// refused counts calls refused before the upstream, indexed by HTTP status (a status outside 0..599 is 0).
 	refused [maxStatus]atomic.Int64

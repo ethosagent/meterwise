@@ -47,7 +47,13 @@ INSERT INTO workspace_public_ids (public_id, org_id, workspace_id)
 VALUES (sqlc.arg(public_id), sqlc.arg(org_id)::text::uuid, sqlc.arg(workspace_id)::text::uuid);
 
 -- name: UpdateWorkspace :one
-UPDATE workspaces SET name = COALESCE(sqlc.narg(name), name), settings = COALESCE(sqlc.narg(settings)::jsonb, settings)
+-- A settings replacement keeps settings.monitors (Plan 06): the monitors have their own validated route, so the
+-- replacement's own "monitors" key is dropped and the stored one is put back, atomically in this statement.
+UPDATE workspaces SET name = COALESCE(sqlc.narg(name), name),
+    settings = CASE WHEN sqlc.narg(settings)::jsonb IS NULL THEN settings
+                    ELSE (sqlc.narg(settings)::jsonb - 'monitors')
+                         || CASE WHEN settings->'monitors' IS NOT NULL THEN jsonb_build_object('monitors', settings->'monitors')
+                                 ELSE '{}'::jsonb END END
 WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
 RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
           last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs;
@@ -82,3 +88,15 @@ WHERE org_id = sqlc.arg(org_id)::text::uuid AND workspace_id = sqlc.arg(workspac
 UPDATE workspaces SET allowed_client_cidrs = sqlc.arg(cidrs)::text[]::cidr[]
 WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
 RETURNING allowed_client_cidrs::text[] AS allowed_client_cidrs;
+
+-- name: LockWorkspaceSettings :one
+-- The settings of one org workspace, row-locked for a read-modify-write of one key (the monitors).
+SELECT settings FROM workspaces
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
+FOR UPDATE;
+
+-- name: SetWorkspaceMonitors :one
+-- Replace only settings.monitors; every other key of the settings is kept.
+UPDATE workspaces SET settings = jsonb_set(settings, '{monitors}', sqlc.arg(monitors)::jsonb, true)
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
+RETURNING settings;

@@ -30,6 +30,8 @@ type Tenancy interface {
 	ResetURL(ctx context.Context, p contract.Principal, workspaceID string, grace time.Duration) (contract.URLReset, error)
 	RetirePreviousURL(ctx context.Context, p contract.Principal, workspaceID string) error
 	SetAllowedCIDRs(ctx context.Context, p contract.Principal, workspaceID string, cidrs []string) ([]string, error)
+	MonitorConfig(ctx context.Context, p contract.Principal, workspaceID string) (contract.MonitorConfig, error)
+	UpdateMonitorConfig(ctx context.Context, p contract.Principal, workspaceID string, patch contract.MonitorConfigPatch) (contract.MonitorConfig, error)
 
 	ListInvitations(ctx context.Context, p contract.Principal) ([]contract.Invitation, error)
 	CreateInvitation(ctx context.Context, p contract.Principal, email string, role contract.Role) (contract.Invitation, error)

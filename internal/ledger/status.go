@@ -36,7 +36,7 @@ func (q *queue) counters() []struct {
 		{"enqueued", &q.enqueued}, {"dropped", &q.dropped}, {"flushed", &q.flushed}, {"duplicates", &q.duplicates},
 		{"lost", &q.lost}, {"lost_closes", &q.lostCloses}, {"skipped_wrong_org", &q.wrongOrg},
 		{"skipped_unattributed", &q.skipped}, {"unpriced_calls", &q.unpriced}, {"sessions_closed", &q.sessionsClosed},
-		{"flush_errors", &q.flushErrors},
+		{"flush_errors", &q.flushErrors}, {"blocks_downgraded", &q.blocksDowngraded}, {"invalid_verdicts", &q.invalidVerdicts},
 	}
 }
 

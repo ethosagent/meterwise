@@ -13,6 +13,8 @@ type Ledger interface {
 	ListSessions(ctx context.Context, q contract.SessionQuery) (contract.SessionPage, error)
 	Session(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, err error)
 	Stats(ctx context.Context, workspaceID string, from, to time.Time) (contract.Stats, error)
+	SessionMonitorEvents(ctx context.Context, workspaceID, sessionID string) ([]contract.MonitorEventRecord, error)
+	MonitorStats(ctx context.Context, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error)
 }
 
 // registerLedger wires the Plan 05 read routes. The gateway has already authorized the workspace
@@ -78,9 +80,19 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	if err != nil {
 		return contract.SessionDetail{}, err
 	}
-	out := contract.SessionDetail{Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: truncated}
+	events, err := led.SessionMonitorEvents(c.Ctx, c.Query("workspaceId"), c.Path("id"))
+	if err != nil {
+		return contract.SessionDetail{}, err
+	}
+	out := contract.SessionDetail{
+		Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: truncated,
+		MonitorEvents: make([]contract.MonitorEventView, len(events)),
+	}
 	for i, r := range calls {
 		out.Calls[i] = callView(r)
+	}
+	for i, e := range events {
+		out.MonitorEvents[i] = e.View()
 	}
 	return out, nil
 }
@@ -157,7 +169,10 @@ func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
 	if err != nil {
 		return contract.StatsView{}, err
 	}
-	out := contract.StatsView{SpendUsd: st.Spend, Calls: st.Calls, Sessions: st.Sessions, ByDay: fillDays(from, days, st.ByDay)}
+	out := contract.StatsView{
+		SpendUsd: st.Spend, Calls: st.Calls, Sessions: st.Sessions, ByDay: fillDays(from, days, st.ByDay),
+		SavedUsd: st.Saved, LikelySavedUsd: st.Likely, // two numbers, never a total
+	}
 	if st.Sessions > 0 {
 		out.AvgCallsPerSession = float64(st.Calls) / float64(st.Sessions)
 	}

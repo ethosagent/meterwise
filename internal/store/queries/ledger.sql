@@ -20,19 +20,24 @@ RETURNING id;
 -- session, sorted so concurrent batches lock rows in one order). The ledger passes the aggregate of the calls a
 -- batch really inserted (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed
 -- session. started_at is the keyset sort key of the session list: set by the first insert, never changed. A missing
--- "cost" is NULL (all calls unpriced). Money converts from micro-USD to numeric(14,6) here; times are unix microseconds.
+-- "cost" is NULL (all calls unpriced). "saved" and "likely" are the two savings numbers of the inserted calls (monitor
+-- events that acted, by confidence; never summed, never observe). Money converts from micro-USD to numeric(14,6)
+-- here; times are unix microseconds.
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
-                      client, first_user_message_preview, last_finish, last_had_text)
+                      client, first_user_message_preview, last_finish, last_had_text, saved_usd, likely_saved_usd)
 SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'source',
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond',
        timestamptz 'epoch' + (r.j->>'lastSeenUs')::bigint * interval '1 microsecond',
        (r.j->>'calls')::int, (r.j->>'input')::bigint, (r.j->>'output')::bigint, (r.j->>'cost')::numeric / 1000000,
-       NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool
+       NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool,
+       (r.j->>'saved')::numeric / 1000000, (r.j->>'likely')::numeric / 1000000
 FROM jsonb_array_elements(sqlc.arg(sessions_json)::jsonb) AS r(j)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
     calls = sessions.calls + EXCLUDED.calls,
     input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
     output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
+    saved_usd = sessions.saved_usd + EXCLUDED.saved_usd,
+    likely_saved_usd = sessions.likely_saved_usd + EXCLUDED.likely_saved_usd,
     cost_usd = CASE WHEN sessions.cost_usd IS NULL AND EXCLUDED.cost_usd IS NULL THEN NULL
                     ELSE COALESCE(sessions.cost_usd, 0) + COALESCE(EXCLUDED.cost_usd, 0) END,
     client = COALESCE(sessions.client, EXCLUDED.client),
@@ -61,3 +66,24 @@ SET last_call_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 mi
 FROM jsonb_array_elements(sqlc.arg(touches_json)::jsonb) AS t(j)
 WHERE w.id = (t.j->>'workspaceId')::uuid AND w.org_id = (t.j->>'orgId')::uuid
   AND (w.last_call_at IS NULL OR w.last_call_at < timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond');
+
+-- name: InsertMonitorEvents :execrows
+-- The only INSERT into monitor_events (H4): one statement for the verdicts of the calls a batch really inserted (a
+-- JSON array of event objects), idempotent on (workspace_id, call_id, monitor). ts is the call's start;
+-- "estMicro" is micro-USD, converted to numeric(14,6) here.
+INSERT INTO monitor_events (org_id, workspace_id, session_id, call_id, call_index, ts, monitor, mode, action, evidence,
+                            est_saved_tokens, est_saved_usd, confidence)
+SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId', (r.j->>'callIndex')::int,
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'monitor', r.j->>'mode', r.j->>'action',
+       r.j->'evidence', (r.j->>'estTokens')::bigint, (r.j->>'estMicro')::numeric / 1000000, r.j->>'confidence'
+FROM jsonb_array_elements(sqlc.arg(events_json)::jsonb) AS r(j)
+ON CONFLICT (workspace_id, call_id, monitor) DO NOTHING;
+
+-- name: SetMonitorEventFeedback :one
+-- The only UPDATE of monitor_events (H4): feedback on one event of one workspace; a foreign or unknown id matches no
+-- row (the store reports not_found). A NULL feedback clears it.
+UPDATE monitor_events
+SET feedback = sqlc.narg(feedback)::text
+WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND id = sqlc.arg(id)::bigint
+RETURNING id, org_id::text AS org_id, workspace_id::text AS workspace_id, session_id, call_id, call_index, ts, monitor, mode, action,
+          evidence, est_saved_tokens, (est_saved_usd * 1000000)::bigint AS est_saved_micro, confidence, feedback, created_at;

@@ -27,8 +27,10 @@ type sessionAgg struct {
 	in, out   int64
 	costMicro int64
 	priced    bool
-	preview   string
-	client    string
+	// saved and likely are the two savings numbers of the batch's calls (R6): verdicts that acted, by confidence.
+	savedMicro, likelyMicro int64
+	preview                 string
+	client                  string
 }
 
 // WriteCalls writes a batch of completed calls in one transaction: INSERT calls ON CONFLICT (id)
@@ -62,6 +64,9 @@ func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (Wri
 			}
 		}
 		res = WriteResult{Inserted: len(fresh), Duplicates: len(recs) - len(fresh)}
+		if err := writeMonitorEvents(ctx, q, fresh); err != nil {
+			return err
+		}
 		return s.writeSessions(ctx, q, fresh)
 	})
 	if err != nil {
@@ -158,6 +163,17 @@ func (a *sessionAgg) add(r contract.CallRecord, end time.Time) {
 		a.costMicro += int64(*r.Cost)
 		a.priced = true
 	}
+	for _, v := range r.Verdicts {
+		if !v.CountsAsSaved() { // observe is would-save: in neither number
+			continue
+		}
+		switch v.Confidence {
+		case contract.ConfidenceCertain:
+			a.savedMicro += int64(v.EstUSD)
+		case contract.ConfidenceLikely:
+			a.likelyMicro += int64(v.EstUSD)
+		}
+	}
 	if a.preview == "" {
 		a.preview = r.Preview
 	}
@@ -182,6 +198,8 @@ type sessionJSON struct {
 	Preview     string `json:"preview"`
 	LastFinish  string `json:"lastFinish"`
 	LastHadText bool   `json:"lastHadText"`
+	Saved       int64  `json:"saved"`
+	Likely      int64  `json:"likely"`
 }
 
 func (a *sessionAgg) json(k sessionKey) sessionJSON {
@@ -193,6 +211,7 @@ func (a *sessionAgg) json(k sessionKey) sessionJSON {
 		ID: k.id, OrgID: a.rec.OrgID, WorkspaceID: k.ws, Source: a.rec.SessionSource, StartedUs: a.started.UnixMicro(),
 		LastSeenUs: a.lastSeen.UnixMicro(), Calls: clampInt32(int64(a.calls)), Input: a.in, Output: a.out, Cost: cost,
 		Client: a.client, Preview: a.preview, LastFinish: a.rec.Finish, LastHadText: a.rec.LastHadText,
+		Saved: a.savedMicro, Likely: a.likelyMicro,
 	}
 }
 

@@ -129,7 +129,8 @@ func (s *Store) Session(ctx context.Context, workspaceID, id string) (sess contr
 }
 
 // Stats sums a workspace's priced spend, calls and distinct sessions over [from, to) and per UTC
-// day (only days with calls are returned; the caller zero-fills).
+// day (only days with calls are returned; the caller zero-fills), plus the two savings numbers of the
+// range (saved and likely, separate: never summed).
 func (s *Store) Stats(ctx context.Context, workspaceID string, from, to time.Time) (contract.Stats, error) {
 	if !validID(workspaceID) {
 		return contract.Stats{}, contract.Invalid("workspaceId", "must be a workspace id")
@@ -146,6 +147,11 @@ func (s *Store) Stats(ctx context.Context, workspaceID string, from, to time.Tim
 		}
 		st.ByDay = append(st.ByDay, contract.StatsDay{Day: r.Day.Time.UTC(), Spend: contract.MicroUSD(r.SpendMicro), Calls: int(r.Calls), Sessions: int(r.Sessions)})
 	}
+	sv, err := s.q.MonitorSavedTotals(ctx, sqlc.MonitorSavedTotalsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
+	if err != nil {
+		return contract.Stats{}, queryErr(err)
+	}
+	st.Saved, st.Likely = contract.MicroUSD(sv.SavedMicro), contract.MicroUSD(sv.LikelyMicro)
 	return st, nil
 }
 

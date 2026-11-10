@@ -40,6 +40,9 @@ type CallRecord struct {
 	Blocked       bool
 	NotesInjected int
 	Client        string
+	// Verdicts are the monitor verdicts of the call, priced (R6); the ledger writes one monitor_events row each,
+	// in the same transaction as the call. Blocked and NotesInjected above are derived from them.
+	Verdicts []PricedVerdict
 
 	// Session facts the ledger carries to the sessions upsert; not stored on the call row.
 	SessionSource string // header|predicted
@@ -103,6 +106,10 @@ type Stats struct {
 	Calls    int
 	Sessions int
 	ByDay    []StatsDay
+	// Saved and Likely are the two savings numbers of the range (monitor events that acted, by confidence);
+	// they are never summed.
+	Saved  MicroUSD
+	Likely MicroUSD
 }
 
 // SetupState is what the tenancy service knows about a workspace's setup: its current public id and

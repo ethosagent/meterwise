@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const closeSessions = `-- name: CloseSessions :execrows
@@ -66,6 +68,86 @@ func (q *Queries) InsertCalls(ctx context.Context, callsJson []byte) ([]string, 
 	return items, nil
 }
 
+const insertMonitorEvents = `-- name: InsertMonitorEvents :execrows
+INSERT INTO monitor_events (org_id, workspace_id, session_id, call_id, call_index, ts, monitor, mode, action, evidence,
+                            est_saved_tokens, est_saved_usd, confidence)
+SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId', (r.j->>'callIndex')::int,
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'monitor', r.j->>'mode', r.j->>'action',
+       r.j->'evidence', (r.j->>'estTokens')::bigint, (r.j->>'estMicro')::numeric / 1000000, r.j->>'confidence'
+FROM jsonb_array_elements($1::jsonb) AS r(j)
+ON CONFLICT (workspace_id, call_id, monitor) DO NOTHING
+`
+
+// The only INSERT into monitor_events (H4): one statement for the verdicts of the calls a batch really inserted (a
+// JSON array of event objects), idempotent on (workspace_id, call_id, monitor). ts is the call's start;
+// "estMicro" is micro-USD, converted to numeric(14,6) here.
+func (q *Queries) InsertMonitorEvents(ctx context.Context, eventsJson []byte) (int64, error) {
+	result, err := q.db.Exec(ctx, insertMonitorEvents, eventsJson)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setMonitorEventFeedback = `-- name: SetMonitorEventFeedback :one
+UPDATE monitor_events
+SET feedback = $1::text
+WHERE workspace_id = $2::text::uuid AND id = $3::bigint
+RETURNING id, org_id::text AS org_id, workspace_id::text AS workspace_id, session_id, call_id, call_index, ts, monitor, mode, action,
+          evidence, est_saved_tokens, (est_saved_usd * 1000000)::bigint AS est_saved_micro, confidence, feedback, created_at
+`
+
+type SetMonitorEventFeedbackParams struct {
+	Feedback    pgtype.Text
+	WorkspaceID string
+	ID          int64
+}
+
+type SetMonitorEventFeedbackRow struct {
+	ID             int64
+	OrgID          string
+	WorkspaceID    string
+	SessionID      string
+	CallID         string
+	CallIndex      int32
+	Ts             pgtype.Timestamptz
+	Monitor        string
+	Mode           string
+	Action         string
+	Evidence       []byte
+	EstSavedTokens int64
+	EstSavedMicro  int64
+	Confidence     string
+	Feedback       pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+}
+
+// The only UPDATE of monitor_events (H4): feedback on one event of one workspace; a foreign or unknown id matches no
+// row (the store reports not_found). A NULL feedback clears it.
+func (q *Queries) SetMonitorEventFeedback(ctx context.Context, arg SetMonitorEventFeedbackParams) (SetMonitorEventFeedbackRow, error) {
+	row := q.db.QueryRow(ctx, setMonitorEventFeedback, arg.Feedback, arg.WorkspaceID, arg.ID)
+	var i SetMonitorEventFeedbackRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.WorkspaceID,
+		&i.SessionID,
+		&i.CallID,
+		&i.CallIndex,
+		&i.Ts,
+		&i.Monitor,
+		&i.Mode,
+		&i.Action,
+		&i.Evidence,
+		&i.EstSavedTokens,
+		&i.EstSavedMicro,
+		&i.Confidence,
+		&i.Feedback,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const touchWorkspacesLastCall = `-- name: TouchWorkspacesLastCall :exec
 UPDATE workspaces w
 SET last_call_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond'
@@ -83,17 +165,20 @@ func (q *Queries) TouchWorkspacesLastCall(ctx context.Context, touchesJson []byt
 
 const upsertSessions = `-- name: UpsertSessions :exec
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
-                      client, first_user_message_preview, last_finish, last_had_text)
+                      client, first_user_message_preview, last_finish, last_had_text, saved_usd, likely_saved_usd)
 SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'source',
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond',
        timestamptz 'epoch' + (r.j->>'lastSeenUs')::bigint * interval '1 microsecond',
        (r.j->>'calls')::int, (r.j->>'input')::bigint, (r.j->>'output')::bigint, (r.j->>'cost')::numeric / 1000000,
-       NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool
+       NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool,
+       (r.j->>'saved')::numeric / 1000000, (r.j->>'likely')::numeric / 1000000
 FROM jsonb_array_elements($1::jsonb) AS r(j)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
     calls = sessions.calls + EXCLUDED.calls,
     input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
     output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
+    saved_usd = sessions.saved_usd + EXCLUDED.saved_usd,
+    likely_saved_usd = sessions.likely_saved_usd + EXCLUDED.likely_saved_usd,
     cost_usd = CASE WHEN sessions.cost_usd IS NULL AND EXCLUDED.cost_usd IS NULL THEN NULL
                     ELSE COALESCE(sessions.cost_usd, 0) + COALESCE(EXCLUDED.cost_usd, 0) END,
     client = COALESCE(sessions.client, EXCLUDED.client),
@@ -109,7 +194,9 @@ ON CONFLICT (workspace_id, id) DO UPDATE SET
 // session, sorted so concurrent batches lock rows in one order). The ledger passes the aggregate of the calls a
 // batch really inserted (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed
 // session. started_at is the keyset sort key of the session list: set by the first insert, never changed. A missing
-// "cost" is NULL (all calls unpriced). Money converts from micro-USD to numeric(14,6) here; times are unix microseconds.
+// "cost" is NULL (all calls unpriced). "saved" and "likely" are the two savings numbers of the inserted calls (monitor
+// events that acted, by confidence; never summed, never observe). Money converts from micro-USD to numeric(14,6)
+// here; times are unix microseconds.
 func (q *Queries) UpsertSessions(ctx context.Context, sessionsJson []byte) error {
 	_, err := q.db.Exec(ctx, upsertSessions, sessionsJson)
 	return err
