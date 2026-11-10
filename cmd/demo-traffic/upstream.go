@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // scenarioHeader picks the canned reply of the loopback fake upstream; weightHeader scales its usage so
@@ -44,7 +46,7 @@ func openAIUsage(in, out int) string {
 	return fmt.Sprintf(`{"prompt_tokens":%d,"completion_tokens":%d,"total_tokens":%d}`, in, out, in+out)
 }
 
-var scenarios = []scenario{
+var plainScenarios = []scenario{
 	{"openai-tools", "/openai/v1/chat/completions", fmt.Sprintf(openAIRequest, true), func(in, out int) (int, string, string) {
 		return 200, "text/event-stream", openAIChunk(`{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_demo","type":"function","function":{"name":"read_file","arguments":""}}]}`, "null", "") +
 			openAIChunk(`{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":\"main.go\"}"}}]}`, "null", "") +
@@ -73,6 +75,9 @@ var scenarios = []scenario{
 	}},
 }
 
+// scenarios is every canned exchange: the plain ones above and one tool-call reply per looping-agent turn.
+var scenarios = append(slices.Clone(plainScenarios), loopScenarios()...)
+
 // scenarioByName finds a scenario; the script below is made of names.
 func scenarioByName(name string) (scenario, bool) {
 	for _, s := range scenarios {
@@ -83,9 +88,18 @@ func scenarioByName(name string) (scenario, bool) {
 	return scenario{}, false
 }
 
+// upstream is the loopback fake upstream. Hits counts the requests that reached it: a blocked call never
+// does, so the count against what the clients sent shows what the monitors kept off the provider.
+type upstream struct {
+	*httptest.Server
+	hits atomic.Int64
+}
+
 // newUpstream starts the loopback fake upstream.
-func newUpstream() *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func newUpstream() *upstream {
+	u := &upstream{}
+	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u.hits.Add(1)
 		s, ok := scenarioByName(r.Header.Get(scenarioHeader))
 		if !ok {
 			http.Error(w, "unknown demo scenario", http.StatusNotFound)
@@ -106,4 +120,5 @@ func newUpstream() *httptest.Server {
 		}
 		_, _ = w.Write([]byte(body))
 	}))
+	return u
 }
