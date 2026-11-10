@@ -2,8 +2,11 @@ package dataplane
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethosagent/tollgate"
@@ -37,6 +40,9 @@ type Admission struct {
 
 	mu    sync.RWMutex
 	byCap map[int]*concurrency.Limiter
+
+	// concurrency.Limiter exposes no counters (tollgate v0.1.0), so Admission keeps its own.
+	inFlight, rejected, abandoned, limiterErrs atomic.Int64
 }
 
 var _ tollgate.Admission = (*Admission)(nil)
@@ -63,11 +69,29 @@ func (a *Admission) Acquire(ctx context.Context, t tollgate.Tenant, c *tollgate.
 		if n, err := strconv.Atoi(s); err == nil && n > 0 && n != a.max {
 			var lerr error
 			if l, lerr = a.limiter(n); lerr != nil {
+				a.limiterErrs.Add(1) // fail closed to the default cap, and count it
 				l = a.def
 			}
 		}
 	}
-	return l.Acquire(ctx, t, c)
+	release, err := l.Acquire(ctx, t, c)
+	if err != nil {
+		var se interface{ HTTPStatus() int }
+		if errors.As(err, &se) && se.HTTPStatus() == http.StatusTooManyRequests {
+			a.rejected.Add(1)
+		} else {
+			a.abandoned.Add(1) // the caller went away while queued
+		}
+		return nil, err
+	}
+	a.inFlight.Add(1)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			a.inFlight.Add(-1)
+			release()
+		})
+	}, nil
 }
 
 func (a *Admission) limiter(n int) (*concurrency.Limiter, error) {
@@ -94,7 +118,11 @@ func (a *Admission) limiter(n int) (*concurrency.Limiter, error) {
 func (a *Admission) Status() map[string]any {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return map[string]any{"default_max": a.max, "limiters": len(a.byCap), "queue_timeout_ms": a.queue.Milliseconds()}
+	return map[string]any{
+		"default_max": a.max, "limiters": len(a.byCap), "queue_timeout_ms": a.queue.Milliseconds(),
+		"in_flight": a.inFlight.Load(), "rejected": a.rejected.Load(), "abandoned": a.abandoned.Load(),
+		"limiter_errors": a.limiterErrs.Load(),
+	}
 }
 
 // Name labels the source on /statusz.
