@@ -14,6 +14,6 @@ Rules first:
 ## Steps
 
 1. `make db-up && go run ./cmd/meterwised migrate` (or `make up` for the Docker stack).
-2. `make demo-traffic` (native `DATABASE_URL`), or `make docker-demo-traffic` (the Docker stack database).
+2. `make demo-traffic` (native `DATABASE_URL`; the same as `.agents/skills/demo-traffic/scripts/replay.sh`), or `make docker-demo-traffic` (the Docker stack database).
    `ROUNDS=20 WORKSPACE=<workspace uuid> make demo-traffic` picks the volume and the workspace (default: the default workspace).
 3. Open Setup: "connected - last call ... - N calls today"; `GET /api/workspaces/{id}/stats` shows spend.

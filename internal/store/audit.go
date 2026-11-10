@@ -13,8 +13,8 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-// Audit page sizes: a page holds DefaultAuditLimit rows unless the caller asks for fewer or more,
-// never more than contract.MaxAuditLimit.
+// DefaultAuditLimit is the page size when the caller does not ask; a page never holds more than
+// contract.MaxAuditLimit.
 const DefaultAuditLimit = 50
 
 // AppendAudit inserts one audit row. It is the only INSERT into audit_log (internal/audit calls it);

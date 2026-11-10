@@ -205,7 +205,9 @@ describe("SetupPage", () => {
     await act(async () => {
       window.dispatchEvent(new Event("visibilitychange"));
     });
-    await waitFor(() => expect(api.callsTo("GET", "/api/workspaces/ws_1/setup").length).toBeGreaterThan(seen));
+    await waitFor(() =>
+      expect(api.callsTo("GET", "/api/workspaces/ws_1/setup").length).toBeGreaterThan(seen),
+    );
   });
 });
 
