@@ -83,11 +83,18 @@ describe("Shell navigation", () => {
   it("redirects / to overview and /settings to profile", async () => {
     mockApi();
     const a = renderApp("/");
-    expect(await screen.findByRole("heading", { level: 2, name: "Overview" })).toBeInTheDocument();
+    // "/" renders the real Overview, whose first render loads the lazy chart chunk: give both waits and the
+    // test the headroom a loaded machine needs (the other full-app route tests use the same 60 s).
+    const slow = { timeout: 30_000 };
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Overview" }, slow),
+    ).toBeInTheDocument();
     a.unmount();
     renderApp("/settings");
-    expect(await screen.findByRole("heading", { level: 2, name: "Profile" })).toBeInTheDocument();
-  });
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Profile" }, slow),
+    ).toBeInTheDocument();
+  }, 60_000);
 
   it("shows a not-found page for an unknown address", async () => {
     mockApi();
