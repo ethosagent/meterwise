@@ -24,11 +24,11 @@ describe("savings routes in the app", () => {
     await userEvent.click(screen.getByRole("link", { name: "Sessions" }));
     expect(await screen.findByRole("heading", { level: 2, name: "Sessions" })).toBeInTheDocument();
     await waitFor(() => expect(document.title).toMatch(/^Sessions/));
-  }, 60_000);
+  });
 
   it("renders Monitors through the app", async () => {
     mockApi();
     renderAt(<AppRoutes />, "/monitors");
     expect(await screen.findByText("Duplicate tool call")).toBeInTheDocument();
-  }, 60_000);
+  });
 });

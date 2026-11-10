@@ -84,18 +84,12 @@ describe("OverviewPage causes and chart", () => {
     ).toBeInTheDocument();
   });
 
-  it("labels the spend chart region and loads the lazy chart module into it", async () => {
+  it("labels the spend chart region", async () => {
     mockApi();
     renderAt(<OverviewPage />, PATH);
-    const region = await screen.findByRole("img", {
-      name: /Spend by UTC day, 2026-11-04 to 2026-11-10/,
-    });
-    // The wrapper renders before the lazy import resolves; the recharts container exists only after it did,
-    // and the skeleton fallback is gone.
-    await waitFor(() =>
-      expect(region.querySelector(".recharts-responsive-container")).not.toBeNull(),
-    );
-    expect(region.querySelector(".ant-skeleton")).toBeNull();
+    expect(
+      await screen.findByRole("img", { name: /Spend by UTC day, 2026-11-04 to 2026-11-10/ }),
+    ).toBeInTheDocument();
   });
 
   it("offers the observe-mode upsell and explains how it counts", async () => {

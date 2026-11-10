@@ -74,7 +74,6 @@ describe("Shell navigation", () => {
 
   it("navigates when a menu item is clicked", async () => {
     mockApi();
-    // From Setup, not Overview: a real Overview page (chart module, tables) makes this click race the 15 s test limit under load.
     renderApp("/setup");
     await userEvent.click(await screen.findByText("Sessions"));
     expect(await screen.findByRole("heading", { level: 2, name: "Sessions" })).toBeInTheDocument();
@@ -83,18 +82,11 @@ describe("Shell navigation", () => {
   it("redirects / to overview and /settings to profile", async () => {
     mockApi();
     const a = renderApp("/");
-    // "/" renders the real Overview, whose first render loads the lazy chart chunk: give both waits and the
-    // test the headroom a loaded machine needs (the other full-app route tests use the same 60 s).
-    const slow = { timeout: 30_000 };
-    expect(
-      await screen.findByRole("heading", { level: 2, name: "Overview" }, slow),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Overview" })).toBeInTheDocument();
     a.unmount();
     renderApp("/settings");
-    expect(
-      await screen.findByRole("heading", { level: 2, name: "Profile" }, slow),
-    ).toBeInTheDocument();
-  }, 60_000);
+    expect(await screen.findByRole("heading", { level: 2, name: "Profile" })).toBeInTheDocument();
+  });
 
   it("shows a not-found page for an unknown address", async () => {
     mockApi();
