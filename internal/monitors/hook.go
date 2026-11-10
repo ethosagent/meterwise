@@ -128,6 +128,7 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 	}
 	p := h.decide(c, fired, cfg)
 	if ctx.Err() != nil { // the chain stopped waiting: nothing is delivered, so nothing is used up (S2)
+		h.giveBack(sessKey(c), p.held)
 		return nil, nil
 	}
 	h.commit(c, p)
@@ -258,9 +259,7 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 func (h *Hook) recordStream(c *tollgate.Call, vs *contract.CallVerdicts, v contract.MonitorVerdict) {
 	v.Action = contract.ModeObserve
 	if v.Mode != contract.ModeObserve {
-		key := sessKey(c)
-		if h.sess.markSeen(key, dedupKey(v)) {
-			h.sess.queue(key, noteText(v))
+		if h.sess.queue(sessKey(c), dedupKey(v), noteText(v)) {
 			v.Action = contract.ModeNote
 		}
 	}

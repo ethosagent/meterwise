@@ -6,8 +6,10 @@ import (
 	"sync/atomic"
 )
 
-// Per-session note state: notes waiting for the session's next call (stream monitors decide after
-// the response) and the keys already noted (dedup per monitor and subject). Both are bounded and
+// Per-session note state: notes waiting for the session's next call (stream monitors decide after the
+// response), and the dedup keys of what was noted or blocked (one per monitor and subject). A key is
+// reserved while its note is queued or being delivered, and used up once delivered (S2, K1, K2): a
+// reservation is released when the delivery fails, and the key then fires again. Both are bounded and
 // dropped when the session closes.
 const (
 	sessShards  = 16
@@ -15,9 +17,12 @@ const (
 	maxSeenKeys = 64
 )
 
+// queuedNote is a stream note waiting for the session's next call, with the key it reserves.
+type queuedNote struct{ key, text string }
+
 type sessEntry struct {
-	pending []string
-	seen    map[string]struct{}
+	pending []queuedNote
+	keys    map[string]bool // dedup key -> used up (true) or reserved (false)
 }
 
 type sessShard struct {
@@ -58,54 +63,78 @@ func (s *sessStore) entry(sh *sessShard, key string, create bool) *sessEntry {
 			break
 		}
 	}
-	e := &sessEntry{seen: map[string]struct{}{}}
+	e := &sessEntry{keys: map[string]bool{}}
 	sh.m[key] = e
 	return e
 }
 
-// markSeen records dedup key k for the session and reports whether it is new.
-func (s *sessStore) markSeen(key, k string) bool {
+// reserve takes dedup key k for the session unless it is already reserved or used up, and reports whether
+// it is now the caller's. The caller commits it once its note or block is delivered, or releases it.
+func (s *sessStore) reserve(key, k string) bool {
 	sh := s.shard(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	e := s.entry(sh, key, true)
-	if _, dup := e.seen[k]; dup {
+	return s.reserveLocked(s.entry(sh, key, true), k)
+}
+
+func (s *sessStore) reserveLocked(e *sessEntry, k string) bool {
+	if _, taken := e.keys[k]; taken {
 		return false
 	}
-	if len(e.seen) >= maxSeenKeys {
-		clear(e.seen)
+	if len(e.keys) >= maxSeenKeys {
+		for kk, used := range e.keys { // forget what was used up; reservations belong to calls in flight
+			if used {
+				delete(e.keys, kk)
+			}
+		}
 	}
-	e.seen[k] = struct{}{}
+	e.keys[k] = false
 	return true
 }
 
-// seen reports whether dedup key k was already recorded for the session, without recording it.
-func (s *sessStore) seen(key, k string) bool {
+// commit uses dedup key k up: its note or block was delivered.
+func (s *sessStore) commit(key, k string) {
 	sh := s.shard(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	e := s.entry(sh, key, false)
-	if e == nil {
-		return false
-	}
-	_, ok := e.seen[k]
-	return ok
+	s.entry(sh, key, true).keys[k] = true
 }
 
-// queue holds a note for the session's next call, oldest dropped beyond maxPending.
-func (s *sessStore) queue(key, text string) {
+// release gives back a reserved dedup key whose note or block was not delivered.
+func (s *sessStore) release(key, k string) {
+	sh := s.shard(key)
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	if e := s.entry(sh, key, false); e != nil && !e.keys[k] {
+		delete(e.keys, k)
+	}
+}
+
+// queue holds a stream note for the session's next call and reserves its key, unless the key is taken
+// (reported false). Beyond maxPending the oldest note is dropped and its key released.
+func (s *sessStore) queue(key, k, text string) bool {
 	sh := s.shard(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 	e := s.entry(sh, key, true)
-	e.pending = append(e.pending, text)
-	if len(e.pending) > maxPending {
-		e.pending = e.pending[len(e.pending)-maxPending:]
+	if !s.reserveLocked(e, k) {
+		return false
+	}
+	e.pending = append(e.pending, queuedNote{k, text})
+	e.trim()
+	return true
+}
+
+func (e *sessEntry) trim() {
+	for len(e.pending) > maxPending {
+		delete(e.keys, e.pending[0].key)
+		e.pending = e.pending[1:]
 	}
 }
 
-// peek returns up to n queued notes, oldest first, leaving them queued.
-func (s *sessStore) peek(key string, n int) []string {
+// take removes up to n queued notes, oldest first. Their keys stay reserved: the caller commits them once
+// delivered, or restores the notes.
+func (s *sessStore) take(key string, n int) []queuedNote {
 	if n <= 0 {
 		return nil
 	}
@@ -116,27 +145,23 @@ func (s *sessStore) peek(key string, n int) []string {
 	if e == nil || len(e.pending) == 0 {
 		return nil
 	}
-	return append([]string(nil), e.pending[:min(n, len(e.pending))]...)
+	n = min(n, len(e.pending))
+	out := append([]queuedNote(nil), e.pending[:n]...)
+	e.pending = e.pending[n:]
+	return out
 }
 
-// drop removes the notes peek returned from the front of the queue, as far as they are still there (a
-// concurrent call of the session may have taken them already).
-func (s *sessStore) drop(key string, taken []string) {
-	if len(taken) == 0 {
+// restore puts notes that were taken but not delivered back at the front of the queue.
+func (s *sessStore) restore(key string, notes []queuedNote) {
+	if len(notes) == 0 {
 		return
 	}
 	sh := s.shard(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	e := s.entry(sh, key, false)
-	if e == nil {
-		return
-	}
-	i := 0
-	for i < len(taken) && i < len(e.pending) && e.pending[i] == taken[i] {
-		i++
-	}
-	e.pending = e.pending[i:]
+	e := s.entry(sh, key, true)
+	e.pending = append(append([]queuedNote(nil), notes...), e.pending...)
+	e.trim()
 }
 
 func (s *sessStore) remove(key string) {

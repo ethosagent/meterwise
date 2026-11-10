@@ -13,10 +13,10 @@ type plan struct {
 	body     []byte
 	verdicts []contract.MonitorVerdict
 	notes    int
-	// What Before commits to the session once it knows the plan is delivered (S2): the dedup or block keys
-	// to mark as used, and the queued notes this call took (spliced or dropped).
-	marks  []string
-	queued []string
+	// What the plan holds in the session until Before knows it is delivered (S2): the dedup or block keys
+	// it reserved and the queued notes it took, for the notes spliced and the block built. Before commits
+	// them once the chain still waits, and aborts them (keys released, queued notes put back) otherwise.
+	held []noteItem
 }
 
 // effective is the action a verdict's mode allows. Only duplicate_tool_call and repeated_read can
@@ -42,7 +42,7 @@ func effective(v contract.MonitorVerdict, cfg contract.MonitorConfig) contract.M
 type noteItem struct {
 	text    string
 	verdict int    // index into the verdicts, -1 for a queued stream note
-	key     string // the verdict's dedup key; "" for a queued note
+	key     string // the dedup key it reserved
 }
 
 // decide turns fired verdicts into a plan: the first blockable one whose earlier identical result is in
@@ -58,14 +58,13 @@ func (h *Hook) decide(c *tollgate.Call, fired []contract.MonitorVerdict, cfg con
 			fired[i].Action = contract.ModeObserve
 		}
 		fired[at].Action = contract.ModeBlock
-		return plan{resp: resp, verdicts: fired, marks: []string{blockKey(fired[at])}}
+		return plan{resp: resp, verdicts: fired, held: []noteItem{{verdict: at, key: blockKey(fired[at])}}}
 	}
-	items, queued := h.collectNotes(c, fired, acts)
-	body, applied, marks := h.splice(c, items, acts)
+	body, held := h.splice(c, h.collectNotes(c, fired, acts), acts)
 	for i := range fired {
 		fired[i].Action = acts[i]
 	}
-	return plan{body: body, verdicts: fired, notes: applied, marks: marks, queued: queued}
+	return plan{body: body, verdicts: fired, notes: len(held), held: held}
 }
 
 // tryBlock answers the call itself with a terminal text turn that points at the earlier identical result
@@ -79,17 +78,19 @@ func (h *Hook) tryBlock(c *tollgate.Call, fired []contract.MonitorVerdict, acts 
 			continue
 		}
 		acts[i] = contract.ModeNote
-		if h.sess.seen(key, blockKey(v)) {
+		if !h.sess.reserve(key, blockKey(v)) {
 			h.blocksCapped.Add(1)
 			continue
 		}
 		loc, ok := earlierResult(c.Messages, matcher(c.Tenant.ID, v))
 		if !ok {
+			h.sess.release(key, blockKey(v))
 			h.blocksDegraded.Add(1)
 			continue
 		}
 		resp, err := h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, blockText(v, loc))
 		if err != nil {
+			h.sess.release(key, blockKey(v))
 			h.blocksDegraded.Add(1)
 			continue
 		}
@@ -100,66 +101,77 @@ func (h *Hook) tryBlock(c *tollgate.Call, fired []contract.MonitorVerdict, acts 
 }
 
 // collectNotes picks the notes this call carries (the session's queued notes first, then the fired
-// verdicts') and downgrades the verdicts that lose their note (over the cap, or already noted in this
-// session) to observe in acts. It changes no session state: Before commits what was delivered.
-func (h *Hook) collectNotes(c *tollgate.Call, fired []contract.MonitorVerdict, acts []contract.MonitorMode) ([]noteItem, []string) {
+// verdicts') and downgrades the verdicts that lose their note (over the cap, or the subject already noted
+// or being noted in this session) to observe in acts. Each note's key is reserved in the session; splice
+// delivers or gives them back.
+func (h *Hook) collectNotes(c *tollgate.Call, fired []contract.MonitorVerdict, acts []contract.MonitorMode) []noteItem {
 	key := sessKey(c)
-	queued := h.sess.peek(key, contract.MaxNotesPerCall)
-	items := make([]noteItem, 0, len(queued))
-	for _, t := range queued {
-		items = append(items, noteItem{text: t, verdict: -1})
+	var items []noteItem
+	for _, q := range h.sess.take(key, contract.MaxNotesPerCall) {
+		items = append(items, noteItem{text: q.text, verdict: -1, key: q.key})
 	}
-	taken := map[string]bool{}
 	for i, v := range fired {
 		if acts[i] != contract.ModeNote {
 			continue
 		}
 		k := dedupKey(v)
-		if len(items) >= contract.MaxNotesPerCall || taken[k] || h.sess.seen(key, k) {
+		if len(items) >= contract.MaxNotesPerCall || !h.sess.reserve(key, k) {
 			acts[i] = contract.ModeObserve
 			continue
 		}
-		taken[k] = true
 		items = append(items, noteItem{text: noteText(v), verdict: i, key: k})
 	}
-	return items, queued
+	return items
 }
 
 // splice adds each note to the body through the wire editor. A note that cannot be placed is dropped
-// (counted) and its verdict is recorded as observed; its subject stays unused. It returns the new body
-// (nil if unchanged), the notes applied and the dedup keys of the verdict notes applied.
-func (h *Hook) splice(c *tollgate.Call, items []noteItem, acts []contract.MonitorMode) ([]byte, int, []string) {
-	body, applied := c.Body, 0
-	var marks []string
+// (counted): its verdict is recorded as observed and its key released, and a queued note goes back to the
+// session's queue, so only the notes spliced in are used up (K1). It returns the new body (nil if
+// unchanged) and the notes spliced in.
+func (h *Hook) splice(c *tollgate.Call, items []noteItem, acts []contract.MonitorMode) ([]byte, []noteItem) {
+	body := c.Body
+	var held, undone []noteItem
 	for _, it := range items {
 		next, err := h.opt.Editor.AppendNote(c.Provider.Wire, body, it.text)
 		if err != nil {
 			h.notesDropped.Add(1)
+			undone = append(undone, it)
 			if it.verdict >= 0 {
 				acts[it.verdict] = contract.ModeObserve
 			}
 			continue
 		}
 		body = next
-		applied++
-		if it.key != "" {
-			marks = append(marks, it.key)
-		}
+		held = append(held, it)
 	}
-	if applied == 0 {
-		return nil, 0, nil
+	h.giveBack(sessKey(c), undone)
+	if len(held) == 0 {
+		return nil, nil
 	}
-	return body, applied, marks
+	return body, held
 }
 
-// commit records a delivered plan in the session: the subjects it noted or blocked are used up, and
-// the queued notes it took leave the queue. Before calls it last, once the chain still waits (S2).
+// giveBack returns what a plan held but did not deliver to the session: a verdict's key is released, a
+// queued note goes back to the front of the queue (its key stays reserved).
+func (h *Hook) giveBack(key string, items []noteItem) {
+	var queued []queuedNote
+	for _, it := range items {
+		if it.verdict >= 0 {
+			h.sess.release(key, it.key)
+		} else {
+			queued = append(queued, queuedNote{it.key, it.text})
+		}
+	}
+	h.sess.restore(key, queued)
+}
+
+// commit records a delivered plan in the session: the subjects it noted or blocked, and the queued notes
+// it spliced, are used up. Before calls it last, once the chain still waits (S2).
 func (h *Hook) commit(c *tollgate.Call, p plan) {
 	key := sessKey(c)
-	for _, k := range p.marks {
-		h.sess.markSeen(key, k)
+	for _, it := range p.held {
+		h.sess.commit(key, it.key)
 	}
-	h.sess.drop(key, p.queued)
 	h.notesInjected.Add(int64(p.notes))
 	if p.resp != nil {
 		h.blocks.Add(1)
