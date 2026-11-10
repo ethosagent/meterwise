@@ -26,7 +26,7 @@ describe("savings routes in the app", () => {
     await waitFor(() => expect(document.title).toMatch(/^Sessions/));
   }, 60_000);
 
-  it("renders Monitors and Sessions through the app", async () => {
+  it("renders Monitors through the app", async () => {
     mockApi();
     renderAt(<AppRoutes />, "/monitors");
     expect(await screen.findByText("Duplicate tool call")).toBeInTheDocument();
