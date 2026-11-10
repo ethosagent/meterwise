@@ -105,6 +105,18 @@ describe("OverviewPage causes and chart", () => {
     expect(screen.queryByTestId("hero-saved")).toBeNull(); // the overview is still pending
   });
 
+  it("a tab round trip reuses the cached savings instead of refetching them", async () => {
+    const api = mockApi();
+    renderAt(<OverviewPage />, PATH);
+    await screen.findByTestId("hero-saved");
+    await userEvent.click(screen.getByRole("tab", { name: "Where it came from" }));
+    await screen.findByTestId("cause-card-duplicate_tool_call");
+    await userEvent.click(screen.getByRole("tab", { name: "Summary" }));
+    await screen.findByTestId("hero-saved");
+    expect(api.callsTo("GET", /\/savings\/overview\?/)).toHaveLength(1);
+    expect(api.callsTo("GET", /\/savings\/saves\?/)).toHaveLength(1);
+  });
+
   it("offers the observe-mode upsell and explains how it counts", async () => {
     mockApi();
     renderAt(<OverviewPage />, PATH);
