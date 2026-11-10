@@ -168,28 +168,28 @@ func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsPara
 	return items, nil
 }
 
-const listSessionsAfter = `-- name: ListSessionsAfter :many
+const listSessions = `-- name: ListSessions :many
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
        COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
        (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
 FROM sessions
 WHERE workspace_id = $1::text::uuid
   AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-  AND (started_at, id) < ($4::timestamptz, $5::text)
+  AND (started_at, id) < (COALESCE($4::timestamptz, 'infinity'::timestamptz), COALESCE($5::text, ''))
 ORDER BY started_at DESC, id DESC
 LIMIT $6::int
 `
 
-type ListSessionsAfterParams struct {
+type ListSessionsParams struct {
 	WorkspaceID string
 	FromTs      pgtype.Timestamptz
 	ToTs        pgtype.Timestamptz
 	CursorAt    pgtype.Timestamptz
-	CursorID    string
+	CursorID    pgtype.Text
 	MaxRows     int32
 }
 
-type ListSessionsAfterRow struct {
+type ListSessionsRow struct {
 	ID               string
 	WorkspaceID      string
 	Source           string
@@ -207,9 +207,11 @@ type ListSessionsAfterRow struct {
 	Client           string
 }
 
-// The page after the keyset (cursor_at, cursor_id): rows strictly older in (started_at, id) order.
-func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterParams) ([]ListSessionsAfterRow, error) {
-	rows, err := q.db.Query(ctx, listSessionsAfter,
+// One page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
+// A NULL cursor is the first page: the keyset bound becomes ('infinity', ”), which every finite row is below,
+// so the planner still sees one row-comparison range on the (started_at, id) order.
+func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listSessions,
 		arg.WorkspaceID,
 		arg.FromTs,
 		arg.ToTs,
@@ -221,87 +223,9 @@ func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterPa
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSessionsAfterRow
+	var items []ListSessionsRow
 	for rows.Next() {
-		var i ListSessionsAfterRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Source,
-			&i.StartedAt,
-			&i.LastSeenAt,
-			&i.ClosedAt,
-			&i.Calls,
-			&i.InputTokens,
-			&i.OutputTokens,
-			&i.CostMicro,
-			&i.HasCost,
-			&i.SavedMicro,
-			&i.LikelySavedMicro,
-			&i.Outcome,
-			&i.Client,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSessionsFirst = `-- name: ListSessionsFirst :many
-SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
-       COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
-       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
-FROM sessions
-WHERE workspace_id = $1::text::uuid
-  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-ORDER BY started_at DESC, id DESC
-LIMIT $4::int
-`
-
-type ListSessionsFirstParams struct {
-	WorkspaceID string
-	FromTs      pgtype.Timestamptz
-	ToTs        pgtype.Timestamptz
-	MaxRows     int32
-}
-
-type ListSessionsFirstRow struct {
-	ID               string
-	WorkspaceID      string
-	Source           string
-	StartedAt        pgtype.Timestamptz
-	LastSeenAt       pgtype.Timestamptz
-	ClosedAt         pgtype.Timestamptz
-	Calls            int32
-	InputTokens      int64
-	OutputTokens     int64
-	CostMicro        int64
-	HasCost          bool
-	SavedMicro       int64
-	LikelySavedMicro int64
-	Outcome          string
-	Client           string
-}
-
-// First page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
-func (q *Queries) ListSessionsFirst(ctx context.Context, arg ListSessionsFirstParams) ([]ListSessionsFirstRow, error) {
-	rows, err := q.db.Query(ctx, listSessionsFirst,
-		arg.WorkspaceID,
-		arg.FromTs,
-		arg.ToTs,
-		arg.MaxRows,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListSessionsFirstRow
-	for rows.Next() {
-		var i ListSessionsFirstRow
+		var i ListSessionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,

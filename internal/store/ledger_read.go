@@ -66,21 +66,13 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 	if err != nil {
 		return contract.SessionPage{}, err
 	}
-	var rows []sessionRow
-	if q.Cursor == "" {
-		first, err := s.q.ListSessionsFirst(ctx, sqlc.ListSessionsFirstParams{WorkspaceID: q.WorkspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: int32(limit + 1)})
-		if err != nil {
-			return contract.SessionPage{}, queryErr(err)
-		}
-		rows = append(rows, first...)
-	} else {
-		after, err := s.q.ListSessionsAfter(ctx, sqlc.ListSessionsAfterParams{WorkspaceID: q.WorkspaceID, FromTs: pgts(from), ToTs: pgts(to), CursorAt: pgts(at), CursorID: id, MaxRows: int32(limit + 1)})
-		if err != nil {
-			return contract.SessionPage{}, queryErr(err)
-		}
-		for _, r := range after {
-			rows = append(rows, sessionRow(r))
-		}
+	params := sqlc.ListSessionsParams{WorkspaceID: q.WorkspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: clampInt32(int64(limit + 1))}
+	if q.Cursor != "" {
+		params.CursorAt, params.CursorID = pgts(at), pgtype.Text{String: id, Valid: true}
+	}
+	rows, err := s.q.ListSessions(ctx, params)
+	if err != nil {
+		return contract.SessionPage{}, queryErr(err)
 	}
 	page := contract.SessionPage{Items: make([]contract.SessionRecord, 0, min(len(rows), limit))}
 	for i, r := range rows {
@@ -95,7 +87,7 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 }
 
 // sessionRow is the shape every session query returns.
-type sessionRow = sqlc.ListSessionsFirstRow
+type sessionRow = sqlc.ListSessionsRow
 
 func sessionOf(r sessionRow) contract.SessionRecord {
 	return contract.SessionRecord{
