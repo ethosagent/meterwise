@@ -112,8 +112,11 @@ func TestBlockModeAnswersTheCallWithoutTheUpstream(t *testing.T) {
 					t.Fatalf("block = %+v, %v", resp, err)
 				}
 				wantType := map[bool]string{true: "text/event-stream", false: "application/json"}[stream]
-				if resp.Header["Content-Type"][0] != wantType || !strings.Contains(string(resp.Body), "get_weather") {
+				if resp.Header["Content-Type"][0] != wantType || !strings.Contains(string(resp.Body), "get_weather") || !strings.Contains(string(resp.Body), `call_2`) {
 					t.Errorf("response %s %s", resp.Header, resp.Body)
+				}
+				if b := string(resp.Body); strings.Contains(b, "tool_calls") || strings.Contains(b, "tool_use") {
+					t.Errorf("a block is a terminal text turn and names no tool: %s", b)
 				}
 				vs, notes := verdictsOf(c)
 				if notes != 0 || len(vs) != 1 || vs[0].Action != contract.ModeBlock || vs[0].Mode != contract.ModeBlock {
@@ -127,14 +130,16 @@ func TestBlockModeAnswersTheCallWithoutTheUpstream(t *testing.T) {
 	}
 }
 
-func TestBlockWithNothingToReplayDegradesToANote(t *testing.T) {
+func TestBlockWithNoEarlierIdenticalResultDegradesToANote(t *testing.T) {
 	h := newMon(monitors.Options{})
-	// Only two assistant turns: the repeat is right after itself, so there is no distinct turn to replay.
+	// The same call twice, but the earlier result differs: the state changed, so there is nothing to point at.
 	ring := fakeRing{
 		{Index: 1, Tools: []string{"get_weather"}, ArgsHashes: []uint64{parisHash}},
 		{Index: 2, Tools: []string{"get_weather"}, ArgsHashes: []uint64{parisHash}},
 	}
-	c := before(t, tollgate.WireOpenAIChat, ring, dupMode(contract.ModeBlock), 3, weatherTranscript(2))
+	msgs := weatherTranscript(2)
+	msgs[2].Text = "rainy, 12C"
+	c := before(t, tollgate.WireOpenAIChat, ring, dupMode(contract.ModeBlock), 3, msgs)
 	resp, _ := h.Before(bg, c)
 	vs, notes := verdictsOf(c)
 	if resp != nil || notes != 1 || len(vs) != 1 || vs[0].Action != contract.ModeNote || vs[0].Mode != contract.ModeBlock {

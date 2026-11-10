@@ -90,13 +90,10 @@ func TestAppendNoteTwiceKeepsBothAndValid(t *testing.T) {
 	}
 }
 
-var turn = []tollgate.Message{
-	{Role: tollgate.RoleUser, Text: "q"},
-	{Role: tollgate.RoleAssistant, Text: "let me read it", ToolCalls: []tollgate.ToolCall{{ID: "call_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"/a.go"}`)}}},
-}
+const blockText = "[proxy] Blocked: the result is already in this conversation."
 
-func TestBlockResponseOpenAIJSON(t *testing.T) {
-	r, err := wire.BlockResponse(tollgate.WireOpenAIChat, false, turn, note)
+func TestBlockResponseOpenAIJSONIsATerminalTextTurn(t *testing.T) {
+	r, err := wire.BlockResponse(tollgate.WireOpenAIChat, false, blockText)
 	if err != nil || r.Status != 200 || r.Header["Content-Type"][0] != "application/json" {
 		t.Fatalf("%v %+v", err, r)
 	}
@@ -105,10 +102,7 @@ func TestBlockResponseOpenAIJSON(t *testing.T) {
 			Message struct {
 				Role      string
 				Content   string
-				ToolCalls []struct {
-					ID       string
-					Function struct{ Name, Arguments string }
-				} `json:"tool_calls"`
+				ToolCalls []any `json:"tool_calls"`
 			}
 			FinishReason string `json:"finish_reason"`
 		}
@@ -120,11 +114,11 @@ func TestBlockResponseOpenAIJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := v.Choices[0].Message
-	if m.Role != "assistant" || m.Content != "let me read it\n\n"+note || v.Choices[0].FinishReason != "tool_calls" || v.Usage.TotalTokens != 0 {
+	if m.Role != "assistant" || m.Content != blockText || v.Choices[0].FinishReason != "stop" || v.Usage.TotalTokens != 0 || m.ToolCalls != nil {
 		t.Errorf("%+v", v)
 	}
-	if len(m.ToolCalls) != 1 || m.ToolCalls[0].ID != "call_1" || m.ToolCalls[0].Function.Name != "read_file" || m.ToolCalls[0].Function.Arguments != `{"path":"/a.go"}` {
-		t.Errorf("tool calls %+v", m.ToolCalls)
+	if strings.Contains(string(r.Body), "tool_calls") {
+		t.Errorf("a block names no tool: %s", r.Body)
 	}
 }
 
@@ -150,25 +144,22 @@ func dataFrames(t *testing.T, body []byte) (events []string, datas []string) {
 	return events, datas
 }
 
-func TestBlockResponseOpenAIStream(t *testing.T) {
-	r, err := wire.BlockResponse(tollgate.WireOpenAIChat, true, turn, note)
+func TestBlockResponseOpenAIStreamIsATerminalTextTurn(t *testing.T) {
+	r, err := wire.BlockResponse(tollgate.WireOpenAIChat, true, blockText)
 	if err != nil || r.Header["Content-Type"][0] != "text/event-stream" {
 		t.Fatalf("%v %+v", err, r)
 	}
 	_, datas := dataFrames(t, r.Body)
-	if len(datas) != 4 || datas[3] != "[DONE]" {
+	if len(datas) != 3 || datas[2] != "[DONE]" {
 		t.Fatalf("frames = %q", datas)
 	}
-	var text, args, finish string
-	for _, d := range datas[:3] {
+	var text, finish string
+	for _, d := range datas[:2] {
 		var c struct {
 			Choices []struct {
 				Delta struct {
 					Content   string
-					ToolCalls []struct {
-						Index    int
-						Function struct{ Name, Arguments string }
-					} `json:"tool_calls"`
+					ToolCalls []any `json:"tool_calls"`
 				}
 				FinishReason *string `json:"finish_reason"`
 			}
@@ -176,44 +167,40 @@ func TestBlockResponseOpenAIStream(t *testing.T) {
 		if err := json.Unmarshal([]byte(d), &c); err != nil {
 			t.Fatalf("frame %q: %v", d, err)
 		}
-		text += c.Choices[0].Delta.Content
-		for _, tc := range c.Choices[0].Delta.ToolCalls {
-			args += tc.Function.Arguments
+		if c.Choices[0].Delta.ToolCalls != nil {
+			t.Errorf("a block names no tool: %s", d)
 		}
+		text += c.Choices[0].Delta.Content
 		if c.Choices[0].FinishReason != nil {
 			finish = *c.Choices[0].FinishReason
 		}
 	}
-	if text != "let me read it\n\n"+note || args != `{"path":"/a.go"}` || finish != "tool_calls" {
-		t.Errorf("text %q args %q finish %q", text, args, finish)
+	if text != blockText || finish != "stop" {
+		t.Errorf("text %q finish %q", text, finish)
 	}
 }
 
-func TestBlockResponseAnthropic(t *testing.T) {
-	r, err := wire.BlockResponse(tollgate.WireAnthropicMessages, false, turn, note)
+func TestBlockResponseAnthropicIsATerminalTextTurn(t *testing.T) {
+	r, err := wire.BlockResponse(tollgate.WireAnthropicMessages, false, blockText)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var v struct {
 		StopReason string `json:"stop_reason"`
-		Content    []struct {
-			Type, Text, ID, Name string
-			Input                json.RawMessage
-		}
+		Content    []struct{ Type, Text string }
 	}
-	if err := json.Unmarshal(r.Body, &v); err != nil || v.StopReason != "tool_use" || len(v.Content) != 2 {
+	if err := json.Unmarshal(r.Body, &v); err != nil || v.StopReason != "end_turn" || len(v.Content) != 1 {
 		t.Fatalf("%v %+v", err, v)
 	}
-	if v.Content[0].Text != "let me read it\n\n"+note || v.Content[1].Type != "tool_use" || string(v.Content[1].Input) != `{"path":"/a.go"}` {
+	if v.Content[0].Type != "text" || v.Content[0].Text != blockText {
 		t.Errorf("%+v", v.Content)
 	}
-	rs, err := wire.BlockResponse(tollgate.WireAnthropicMessages, true, turn, note)
+	rs, err := wire.BlockResponse(tollgate.WireAnthropicMessages, true, blockText)
 	if err != nil {
 		t.Fatal(err)
 	}
 	events, datas := dataFrames(t, rs.Body)
-	want := []string{"message_start", "content_block_start", "content_block_delta", "content_block_stop",
-		"content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop"}
+	want := []string{"message_start", "content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop"}
 	if strings.Join(events, ",") != strings.Join(want, ",") {
 		t.Fatalf("events = %v", events)
 	}
@@ -223,21 +210,13 @@ func TestBlockResponseAnthropic(t *testing.T) {
 			t.Errorf("frame %d data %q does not carry type %q", i, d, events[i])
 		}
 	}
-	if !strings.Contains(datas[5], `"partial_json":"{\"path\":\"/a.go\"}"`) {
-		t.Errorf("tool args delta: %s", datas[5])
+	if !strings.Contains(datas[4], `"stop_reason":"end_turn"`) || strings.Contains(string(rs.Body), "tool_use") {
+		t.Errorf("message_delta must end the turn with no tool: %s", datas[4])
 	}
 }
 
-func TestBlockResponseNoTurnOrWire(t *testing.T) {
-	if _, err := wire.BlockResponse(tollgate.WireOpenAIChat, false, turn[:1], note); !errors.Is(err, wire.ErrNoTurn) {
-		t.Errorf("no assistant turn: %v", err)
-	}
-	if _, err := wire.BlockResponse(tollgate.WirePassthrough, false, turn, note); !errors.Is(err, wire.ErrUnsupportedWire) {
+func TestBlockResponseUnsupportedWire(t *testing.T) {
+	if _, err := wire.BlockResponse(tollgate.WirePassthrough, false, blockText); !errors.Is(err, wire.ErrUnsupportedWire) {
 		t.Errorf("passthrough: %v", err)
-	}
-	plain := []tollgate.Message{{Role: tollgate.RoleAssistant, Text: "done"}}
-	r, err := wire.BlockResponse(tollgate.WireOpenAIChat, false, plain, note)
-	if err != nil || !strings.Contains(string(r.Body), `"finish_reason":"stop"`) || strings.Contains(string(r.Body), "tool_calls") {
-		t.Errorf("text-only turn: %v %s", err, r.Body)
 	}
 }

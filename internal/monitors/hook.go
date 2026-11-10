@@ -17,7 +17,7 @@ import (
 // forbids this pure package from importing wire, so the host injects it (wire.Editor{}).
 type Editor interface {
 	AppendNote(w tollgate.WireFormat, body []byte, note string) ([]byte, error)
-	BlockResponse(w tollgate.WireFormat, stream bool, msgs []tollgate.Message, note string) (*tollgate.Response, error)
+	BlockResponse(w tollgate.WireFormat, stream bool, text string) (*tollgate.Response, error)
 }
 
 // errNoEditor is what a note or block attempt reports when no Editor was injected: the monitors then
@@ -31,7 +31,7 @@ func (noEditor) AppendNote(tollgate.WireFormat, []byte, string) ([]byte, error) 
 	return nil, errNoEditor
 }
 
-func (noEditor) BlockResponse(tollgate.WireFormat, bool, []tollgate.Message, string) (*tollgate.Response, error) {
+func (noEditor) BlockResponse(tollgate.WireFormat, bool, string) (*tollgate.Response, error) {
 	return nil, errNoEditor
 }
 
@@ -62,6 +62,7 @@ type Hook struct {
 	skipped         atomic.Int64
 	notesNotAdopted atomic.Int64
 	blocksDegraded  atomic.Int64
+	blocksCapped    atomic.Int64
 	blocks          atomic.Int64
 	notesInjected   atomic.Int64
 	notesDropped    atomic.Int64
@@ -263,7 +264,7 @@ func (h *Hook) OnSessionClosed(_ context.Context, s tollgate.Session) {
 func (h *Hook) Status() map[string]any {
 	m := map[string]any{
 		"skipped_deadline": h.skipped.Load(), "notes_not_adopted": h.notesNotAdopted.Load(),
-		"blocks_degraded": h.blocksDegraded.Load(), "blocks": h.blocks.Load(),
+		"blocks_degraded": h.blocksDegraded.Load(), "blocks_capped": h.blocksCapped.Load(), "blocks": h.blocks.Load(),
 		"notes_injected": h.notesInjected.Load(), "notes_dropped": h.notesDropped.Load(),
 		"sessions": h.sess.size(), "sessions_evicted": h.sess.evicted.Load(),
 	}

@@ -232,8 +232,9 @@ func TestMonitorsNoteAddsExactlyOneProxyNoteAndPATCHSwitchesModeWithoutARestart(
 	}
 }
 
-// The agent repeats itself; the third call degrades to a note (a block must never replay the pending turn),
-// the fourth is blocked: the upstream is not called and the client gets a whole answer in its own wire.
+// The agent repeats itself; the third call (the first repeat) is blocked: the upstream is not called and the
+// client gets a terminal text answer in its own wire. A fourth call that repeats the same subject is noted and
+// reaches the upstream: one block per session and subject.
 func TestMonitorsBlockAnswersWithoutTheUpstreamOnBothWiresAndFeedbackAndReconcile(t *testing.T) {
 	a := monitorBootAgent(t)
 	a.setMode(contract.ModeBlock)
@@ -243,20 +244,23 @@ func TestMonitorsBlockAnswersWithoutTheUpstreamOnBothWiresAndFeedbackAndReconcil
 		for _, stream := range []bool{false, true} {
 			session := fmt.Sprintf("blk-%s-%v", w.name, stream)
 			sessions[session] = true
-			for n := 0; n < 3; n++ {
+			for n := 0; n < 2; n++ {
 				if s := a.call(w, session, n, stream); s.status != 200 {
 					t.Fatalf("%s call %d: %d %s", session, n+1, s.status, s.body)
 				}
 			}
 			before := len(a.up.Requests())
-			s := a.call(w, session, 3, stream)
+			s := a.call(w, session, 2, stream)
 			if got := len(a.up.Requests()); got != before || s.upstream != nil {
 				t.Fatalf("%s: a blocked call reached the upstream (%d -> %d requests)", session, before, got)
 			}
+			if again := a.call(w, session, 3, stream); again.status != 200 || len(a.up.Requests()) != before+1 {
+				t.Fatalf("%s: the second repeat must be noted and reach the upstream: %d", session, again.status)
+			}
 			assertWholeAnswer(t, session, stream, s)
 			d := a.detail(session, 4)
-			if !d.Calls[3].Blocked || d.Calls[3].InputTokens != 0 || d.Calls[3].OutputTokens != 0 {
-				t.Fatalf("%s: call 4 %+v", session, d.Calls[3])
+			if !d.Calls[2].Blocked || d.Calls[2].InputTokens != 0 || d.Calls[2].OutputTokens != 0 || d.Calls[3].Blocked || d.Calls[3].NotesInjected != 1 {
+				t.Fatalf("%s: call 3 %+v, call 4 %+v", session, d.Calls[2], d.Calls[3])
 			}
 			var certain *contract.MonitorEventView
 			for i, ev := range d.MonitorEvents {
@@ -264,7 +268,7 @@ func TestMonitorsBlockAnswersWithoutTheUpstreamOnBothWiresAndFeedbackAndReconcil
 					certain = &d.MonitorEvents[i]
 				}
 			}
-			if certain == nil || certain.Confidence != contract.ConfidenceCertain || certain.CallIndex != 4 || certain.EstSavedTokens <= 0 || certain.EstSavedUsd <= 0 {
+			if certain == nil || certain.Confidence != contract.ConfidenceCertain || certain.CallIndex != 3 || certain.EstSavedTokens <= 0 || certain.EstSavedUsd <= 0 {
 				t.Fatalf("%s: no certain block event: %+v", session, d.MonitorEvents)
 			}
 			if d.Session.SavedUsd <= 0 {
@@ -305,6 +309,9 @@ func assertWholeAnswer(t *testing.T, name string, stream bool, s sent) {
 	ct, body := s.header.Get("Content-Type"), string(s.body)
 	if s.status != 200 || proxyNotes(s.body) != 1 || !strings.Contains(body, "get_weather") {
 		t.Fatalf("%s: block answer %d: %s", name, s.status, body)
+	}
+	if strings.Contains(body, "tool_calls") || strings.Contains(body, "tool_use") {
+		t.Fatalf("%s: a block is a terminal text turn and names no tool: %s", name, body)
 	}
 	if !stream {
 		var doc map[string]any

@@ -12,38 +12,23 @@ import (
 // blockModel names the model on a built response; the upstream was never called.
 const blockModel = "meterwise-block"
 
-// BlockResponse builds the answer a blocking monitor returns instead of calling the upstream: the
-// last assistant message of msgs (the turn to replay, taken from the current request, never from
-// memory) with note appended to its text. stream selects whole SSE frames (Content-Type
-// text/event-stream) over one JSON body. Usage is zero. It returns ErrNoTurn when msgs holds no
-// assistant message.
-func BlockResponse(w tollgate.WireFormat, stream bool, msgs []tollgate.Message, note string) (*tollgate.Response, error) {
-	var turn *tollgate.Message
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == tollgate.RoleAssistant {
-			turn = &msgs[i]
-			break
-		}
-	}
-	if turn == nil {
-		return nil, ErrNoTurn
-	}
-	text := turn.Text
-	if text != "" {
-		text += "\n\n"
-	}
-	text += note
+// BlockResponse builds the answer a blocking monitor returns instead of calling the upstream: one
+// terminal assistant turn holding only text (no tool call, finish_reason "stop" / stop_reason
+// "end_turn"), so an agent loop ends its turn on it instead of running a tool again. The text is built
+// by the caller from the current request only; nothing is replayed. stream selects whole SSE frames
+// (Content-Type text/event-stream) over one JSON body. Usage is zero.
+func BlockResponse(w tollgate.WireFormat, stream bool, text string) (*tollgate.Response, error) {
 	var body []byte
 	var err error
 	switch {
 	case w == tollgate.WireOpenAIChat && stream:
-		body, err = openAIStream(text, turn.ToolCalls)
+		body, err = openAIStream(text)
 	case w == tollgate.WireOpenAIChat:
-		body, err = openAIJSON(text, turn.ToolCalls)
+		body, err = openAIJSON(text)
 	case w == tollgate.WireAnthropicMessages && stream:
-		body, err = anthropicStream(text, turn.ToolCalls)
+		body, err = anthropicStream(text)
 	case w == tollgate.WireAnthropicMessages:
-		body, err = anthropicJSON(text, turn.ToolCalls)
+		body, err = anthropicJSON(text)
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedWire, w)
 	}
@@ -58,14 +43,6 @@ func BlockResponse(w tollgate.WireFormat, stream bool, msgs []tollgate.Message, 
 	}
 	hdr["Content-Type"] = []string{ct}
 	return &tollgate.Response{Status: 200, Header: hdr, Body: body}, nil
-}
-
-// argsOrEmpty returns tool arguments as JSON text, "{}" when empty or not valid JSON.
-func argsOrEmpty(a json.RawMessage) string {
-	if len(bytes.TrimSpace(a)) == 0 || !json.Valid(a) {
-		return "{}"
-	}
-	return string(a)
 }
 
 func marshal(v any) ([]byte, error) {

@@ -36,10 +36,23 @@ func noteText(v contract.MonitorVerdict) string {
 	return notePrefix + "monitor note"
 }
 
-// blockNote is the note appended to a replayed turn when a call is blocked.
-func blockNote(v contract.MonitorVerdict) string {
-	return fmt.Sprintf("%sBlocked by the %s monitor (seen %d times, calls %v): this request repeats an earlier state, so the earlier answer is replayed and the model was not called.",
-		notePrefix, v.Monitor, v.Evidence.Count, v.Evidence.MatchedCalls)
+// blockText is the whole answer of a blocked call: a [proxy] note that names the monitor's own facts and
+// where the earlier identical result is in the conversation (the tool call id that received it, a value
+// the client chose and already holds). It repeats nothing the model or the user wrote (ruling R7).
+func blockText(v contract.MonitorVerdict, loc resultLoc) string {
+	what := "this call"
+	if v.Evidence.Tool != "" {
+		what = fmt.Sprintf("the call to %q", v.Evidence.Tool)
+	}
+	return fmt.Sprintf("%sBlocked by the %s monitor: %s repeats an earlier call (seen %d times, calls %v) and got the same result. "+
+		"That result is already in this conversation, in the tool result for call id %q. The model was not called. "+
+		"Use that result to continue, or change the arguments if you need something different.",
+		notePrefix, v.Monitor, what, v.Evidence.Count, v.Evidence.MatchedCalls, loc.earlierID)
+}
+
+// blockKey identifies a block's subject per session: one block per session and subject (B1).
+func blockKey(v contract.MonitorVerdict) string {
+	return "block|" + v.Evidence.ArgsHash + "|" + v.Evidence.PathHash
 }
 
 // dedupKey identifies what a note is about, per session: the monitor plus its subject.

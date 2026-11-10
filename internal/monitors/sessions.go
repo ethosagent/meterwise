@@ -79,6 +79,19 @@ func (s *sessStore) markSeen(key, k string) bool {
 	return true
 }
 
+// seen reports whether dedup key k was already recorded for the session, without recording it.
+func (s *sessStore) seen(key, k string) bool {
+	sh := s.shard(key)
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	e := s.entry(sh, key, false)
+	if e == nil {
+		return false
+	}
+	_, ok := e.seen[k]
+	return ok
+}
+
 // queue holds a note for the session's next call, oldest dropped beyond maxPending.
 func (s *sessStore) queue(key, text string) {
 	sh := s.shard(key)

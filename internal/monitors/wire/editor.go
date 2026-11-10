@@ -12,6 +12,6 @@ func (Editor) AppendNote(w tollgate.WireFormat, body []byte, note string) ([]byt
 }
 
 // BlockResponse is BlockResponse.
-func (Editor) BlockResponse(w tollgate.WireFormat, stream bool, msgs []tollgate.Message, note string) (*tollgate.Response, error) {
-	return BlockResponse(w, stream, msgs, note)
+func (Editor) BlockResponse(w tollgate.WireFormat, stream bool, text string) (*tollgate.Response, error) {
+	return BlockResponse(w, stream, text)
 }

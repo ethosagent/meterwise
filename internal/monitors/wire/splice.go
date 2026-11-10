@@ -11,7 +11,6 @@ import (
 var (
 	ErrUnsupportedWire = errors.New("wire: unsupported wire format")
 	ErrNoSplice        = errors.New("wire: no place to splice the note")
-	ErrNoTurn          = errors.New("wire: no assistant turn to replay")
 )
 
 // span is a half-open byte range [start, end) of a JSON value.

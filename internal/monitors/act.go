@@ -40,8 +40,8 @@ type noteItem struct {
 	verdict int // index into the verdicts, -1 for a queued stream note
 }
 
-// decide turns fired verdicts into a plan: the first blockable one that can be replayed blocks the
-// call; the rest become notes (queued stream notes first, at most MaxNotesPerCall in all, deduped
+// decide turns fired verdicts into a plan: the first blockable one whose earlier identical result is in
+// the request, and whose subject was not blocked before in this session, blocks the call; the rest become notes (queued stream notes first, at most MaxNotesPerCall in all, deduped
 // per session) or stay observed.
 func (h *Hook) decide(c *tollgate.Call, fired []contract.MonitorVerdict, cfg contract.MonitorConfig) plan {
 	acts := make([]contract.MonitorMode, len(fired))
@@ -64,20 +64,34 @@ func (h *Hook) decide(c *tollgate.Call, fired []contract.MonitorVerdict, cfg con
 	return plan{body: body, verdicts: fired, notes: applied}
 }
 
-// tryBlock answers the call from the request's own messages. A block that cannot be built (no earlier
-// identical result, or a wire error) degrades to a note and is counted.
+// tryBlock answers the call itself with a terminal text turn that points at the earlier identical result
+// (B1): the agent ends its turn instead of running the tool again. At most one block per session and
+// subject: a later repeat of a subject already blocked degrades to a note (counted as capped). A block
+// with no earlier identical result in the request, or a wire error, degrades to a note (counted).
 func (h *Hook) tryBlock(c *tollgate.Call, fired []contract.MonitorVerdict, acts []contract.MonitorMode) (*tollgate.Response, int) {
+	key := sessKey(c)
 	for i, v := range fired {
 		if acts[i] != contract.ModeBlock {
 			continue
 		}
-		if turn, ok := replayTurn(c.Messages, matcher(c.Tenant.ID, v)); ok {
-			if resp, err := h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, []tollgate.Message{turn}, blockNote(v)); err == nil {
-				return resp, i
-			}
-		}
-		h.blocksDegraded.Add(1)
 		acts[i] = contract.ModeNote
+		if h.sess.seen(key, blockKey(v)) {
+			h.blocksCapped.Add(1)
+			continue
+		}
+		loc, ok := earlierResult(c.Messages, matcher(c.Tenant.ID, v))
+		if !ok {
+			h.blocksDegraded.Add(1)
+			continue
+		}
+		resp, err := h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, blockText(v, loc))
+		if err != nil {
+			h.blocksDegraded.Add(1)
+			continue
+		}
+		h.sess.markSeen(key, blockKey(v))
+		acts[i] = contract.ModeBlock
+		return resp, i
 	}
 	return nil, -1
 }

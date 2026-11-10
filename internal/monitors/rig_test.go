@@ -125,11 +125,21 @@ type rig struct {
 
 func newRig(t testing.TB, attrs map[string]string, opts monitors.Options) *rig {
 	t.Helper()
-	r := &rig{t: t, up: testkit.NewFakeUpstream(t, testkit.Options{}), hist: &swapHist{}, tap: &tap{ch: make(chan seen, 64)}, auth: &tenantAuth{}}
+	return newRigAt(t, attrs, opts, "")
+}
+
+// newRigAt is newRig with the upstream at upstreamURL ("" for testkit's FakeUpstream, which r.up then is).
+func newRigAt(t testing.TB, attrs map[string]string, opts monitors.Options, upstreamURL string) *rig {
+	t.Helper()
+	r := &rig{t: t, hist: &swapHist{}, tap: &tap{ch: make(chan seen, 64)}, auth: &tenantAuth{}}
+	if upstreamURL == "" {
+		r.up = testkit.NewFakeUpstream(t, testkit.Options{})
+		upstreamURL = r.up.URL
+	}
 	r.hist.cur.Store(history.New(history.Options{}))
 	r.setAttrs(attrs)
 	r.mon = newMon(opts)
-	base, _ := url.Parse(r.up.URL)
+	base, _ := url.Parse(upstreamURL)
 	p, err := tollgate.New(tollgate.Options{Auth: r.auth, Providers: resolver{base}, Sessions: &sessions{calls: map[string]*tollgate.Session{}, out: make(chan tollgate.Session)}})
 	if err != nil {
 		t.Fatal(err)

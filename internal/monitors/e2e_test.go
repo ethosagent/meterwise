@@ -118,15 +118,9 @@ func TestBlockAnswersWithoutCallingTheUpstream(t *testing.T) {
 	for _, v := range variants() {
 		t.Run(v.String(), func(t *testing.T) {
 			r := newRig(t, dupMode(contract.ModeBlock), monitors.Options{})
-			reps := walk(t, r, v, 3)
-			if d := r.mon.Status()["blocks_degraded"]; d != int64(1) {
-				t.Errorf("call 3 repeats right after itself, so its block degrades to a note: %v", d)
-			}
-			if reps[2].seen.notes != 1 || reps[2].seen.verdicts[0].Action != contract.ModeNote {
-				t.Errorf("call 3: %+v", reps[2].seen)
-			}
+			walk(t, r, v, 2)
 			upBefore := len(r.up.Requests())
-			blocked := r.call(v.wire, v.stream, weatherTranscript(3))
+			blocked := r.call(v.wire, v.stream, weatherTranscript(2))
 			if got := len(r.up.Requests()); got != upBefore {
 				t.Fatalf("a blocked call must not reach the upstream: %d -> %d requests", upBefore, got)
 			}
@@ -144,6 +138,14 @@ func TestBlockAnswersWithoutCallingTheUpstream(t *testing.T) {
 			if s := vs[0].Basis; s.PriorInputTokens == 0 && s.BodyDeltaBytes == 0 {
 				t.Errorf("the estimate basis must be filled: %+v", s)
 			}
+			// the same subject again in this session: noted, sent upstream, never a second block
+			again := r.call(v.wire, v.stream, weatherTranscript(3))
+			if len(r.up.Requests()) != upBefore+1 || again.seen.notes != 1 || again.seen.verdicts[0].Action != contract.ModeNote {
+				t.Errorf("the second repeat must be a note that reaches the upstream: %+v", again.seen)
+			}
+			if c := r.mon.Status()["blocks_capped"]; c != int64(1) {
+				t.Errorf("blocks_capped = %v", c)
+			}
 		})
 	}
 }
@@ -153,8 +155,11 @@ func assertBlockResponse(t *testing.T, v variant, rep reply) {
 	t.Helper()
 	ct := rep.header.Get("Content-Type")
 	body := string(rep.body)
-	if countProxy(rep.body) != 1 || !strings.Contains(body, "get_weather") || !strings.Contains(body, `Paris`) {
-		t.Errorf("block body lacks the replayed turn or the note: %s", body)
+	if countProxy(rep.body) != 1 || !strings.Contains(body, "get_weather") || !strings.Contains(body, "call_1") {
+		t.Errorf("block body lacks the note or the earlier result's location: %s", body)
+	}
+	if strings.Contains(body, "tool_calls") || strings.Contains(body, "tool_use") || strings.Contains(body, "Paris") {
+		t.Errorf("a block is a terminal text turn: no tool call, nothing replayed: %s", body)
 	}
 	if !v.stream {
 		var doc map[string]any
@@ -181,7 +186,7 @@ func TestRecreatedHistoryGivesTheSameVerdictsAndBlock(t *testing.T) {
 			run := func(restartAfter int) reply {
 				r := newRig(t, dupMode(contract.ModeBlock), monitors.Options{})
 				var last reply
-				for k := 1; k <= 4; k++ {
+				for k := 1; k <= 3; k++ {
 					if k == restartAfter+1 {
 						r.hist.cur.Store(newHistory()) // the process died and came back mid-session
 					}
@@ -189,7 +194,7 @@ func TestRecreatedHistoryGivesTheSameVerdictsAndBlock(t *testing.T) {
 				}
 				return last
 			}
-			cont, restarted := run(0), run(3)
+			cont, restarted := run(0), run(2)
 			strip := func(vs []contract.MonitorVerdict) []contract.MonitorVerdict {
 				for i := range vs {
 					vs[i].Basis = contract.EstBasis{} // token counts are not recoverable from messages
