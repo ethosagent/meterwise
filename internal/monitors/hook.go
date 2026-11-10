@@ -59,7 +59,7 @@ type Hook struct {
 	sess *sessStore
 	ctr  *counters
 
-	skipped, notesNotAdopted, blocks, blocksDegraded, blocksCapped, notesInjected, notesDropped *atomic.Int64
+	skipped, notesNotAdopted, blocks, blocksDegraded, blocksCapped, notesInjected, notesDropped, unfoldSkips *atomic.Int64
 }
 
 // New builds a Hook.
@@ -80,7 +80,7 @@ func New(o Options) *Hook {
 	h := &Hook{opt: o, cfgs: newConfigMemo(), sess: newSessStore(o.MaxSessions), ctr: ctr,
 		skipped: ctr.of(ctrSkipped), notesNotAdopted: ctr.of(ctrNotesNotAdopted), blocks: ctr.of(ctrBlocks),
 		notesInjected: ctr.of(ctrNotesInjected), notesDropped: ctr.of(ctrNotesDropped),
-		blocksDegraded: ctr.of(ctrBlocksDegraded), blocksCapped: ctr.of(ctrBlocksCapped)}
+		unfoldSkips: ctr.of(ctrUnfoldSkips), blocksDegraded: ctr.of(ctrBlocksDegraded), blocksCapped: ctr.of(ctrBlocksCapped)}
 	return h
 }
 
@@ -161,8 +161,13 @@ func (h *Hook) late(ctx context.Context) bool {
 // detect runs the Before detectors in registry order and fills each verdict's estimate basis.
 func (h *Hook) detect(c *tollgate.Call, ring contract.RingView, cfg contract.MonitorConfig) []contract.MonitorVerdict {
 	var out []contract.MonitorVerdict
+	unfolded := unfoldedCall(c, ring)
 	for _, d := range beforeDetectors {
 		if v, ok := d.Detect(c, ring, cfg); ok {
+			if unfolded && (v.Monitor == contract.MonitorDuplicateToolCall || v.Monitor == contract.MonitorRepeatedRead) {
+				h.unfoldSkips.Add(1) // the repeat is the model asking for a result the trim hook folded
+				continue
+			}
 			out = append(out, v)
 		}
 	}
@@ -178,6 +183,22 @@ func (h *Hook) detect(c *tollgate.Call, ring contract.RingView, cfg contract.Mon
 		}
 	}
 	return out
+}
+
+// unfoldedCall reports whether the tool call whose result is pending is one the trim hook listed in
+// Meta[MetaTrimUnfold]: its earlier result was folded, so asking again is not waste.
+func unfoldedCall(c *tollgate.Call, ring contract.RingView) bool {
+	u, _ := c.Meta[contract.MetaTrimUnfold].(contract.TrimUnfold)
+	calls := ring.Calls()
+	if len(u.ArgsHashes) == 0 || len(calls) == 0 {
+		return false
+	}
+	for _, h := range calls[len(calls)-1].ArgsHashes {
+		if slices.Contains(u.ArgsHashes, h) {
+			return true
+		}
+	}
+	return false
 }
 
 // basisOf is what the estimator needs to price a verdict: the previous call's input tokens, how much

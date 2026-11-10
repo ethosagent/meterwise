@@ -15,6 +15,7 @@ const (
 	ctrBlocks          = "blocks"
 	ctrNotesInjected   = "notes_injected"
 	ctrNotesDropped    = "notes_dropped"
+	ctrUnfoldSkips     = "unfold_skips"
 )
 
 // counters is the one table of the hook's counters: Status reports every entry, and the hook keeps the
@@ -23,7 +24,7 @@ type counters struct{ m map[string]*atomic.Int64 }
 
 func newCounters() *counters {
 	c := &counters{m: map[string]*atomic.Int64{}}
-	for _, n := range []string{ctrSkipped, ctrNotesNotAdopted, ctrBlocksDegraded, ctrBlocksCapped, ctrBlocks, ctrNotesInjected, ctrNotesDropped} {
+	for _, n := range []string{ctrSkipped, ctrNotesNotAdopted, ctrBlocksDegraded, ctrBlocksCapped, ctrBlocks, ctrNotesInjected, ctrNotesDropped, ctrUnfoldSkips} {
 		c.m[n] = new(atomic.Int64)
 	}
 	for _, n := range contract.MonitorNames() {
