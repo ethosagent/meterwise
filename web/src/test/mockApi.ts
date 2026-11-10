@@ -18,6 +18,7 @@ import {
   forbidden,
   jsonResponse as json,
 } from "./mockAccess";
+import { createSavingsMock, type SavingsInit, type SavingsMock } from "./mockSavings";
 import { createUrlMock, type UrlMock } from "./mockUrl";
 
 export { errorResponse };
@@ -71,6 +72,8 @@ export interface MockApi {
   access: AccessMock;
   /** The Plan 04 in-memory server: setup status, audit log, URL reset and allowed CIDRs. */
   url: UrlMock;
+  /** The Plan 07 in-memory server: savings, sessions, feedback and monitor settings. */
+  savings: SavingsMock;
   /** From now on every authenticated route answers 401 (the session ended). */
   expireSession: () => void;
 }
@@ -96,6 +99,8 @@ interface Options {
   /** Plan 04 state: seeded audit rows (newest first) and the Setup status. */
   audit?: AuditEntry[];
   setupStatus?: SetupStatus;
+  /** Plan 07 state: savings payloads, sessions, monitor settings (defaults: test/fixtures). */
+  savings?: SavingsInit;
 }
 
 /** Stubs global fetch with the Plan 01 and Plan 02 endpoints, backed by a small in-memory server. */
@@ -124,6 +129,7 @@ export function mockApi(opts: Options = {}): MockApi {
     },
     { audit: opts.audit, status: opts.setupStatus },
   );
+  const savings = createSavingsMock(access, opts.savings);
   const notInvited = () => errorResponse(403, "not_invited", "no invitation");
   const notFound = () => errorResponse(404, "not_found", "no such thing");
 
@@ -156,6 +162,8 @@ export function mockApi(opts: Options = {}): MockApi {
     if (granted) return granted;
     const urlRoute = url.route(method, path, body);
     if (urlRoute) return urlRoute;
+    const savingsRoute = savings.route(method, path, body);
+    if (savingsRoute) return savingsRoute;
     const ws = /^\/api\/workspaces\/([^/]+)(\/switch)?$/.exec(path);
     if (path === "/api/workspaces" && method === "GET") {
       listFetches++;
@@ -254,6 +262,7 @@ export function mockApi(opts: Options = {}): MockApi {
     patches,
     access,
     url,
+    savings,
     calls,
     callsTo: (method, path) =>
       calls.filter(

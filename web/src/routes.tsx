@@ -8,6 +8,7 @@ import { OrganizationPage } from "./features/organization/Page";
 import { OverviewPage } from "./features/overview/Page";
 import { ProfilePage } from "./features/profile/Page";
 import { SessionsPage } from "./features/sessions/Page";
+import { SessionDetailPage } from "./features/sessions/SessionDetailPage";
 import { SetupPage } from "./features/setup/Page";
 import { WorkspacePage } from "./features/workspace/Page";
 import { NotFound } from "./shell/NotFound";
@@ -63,6 +64,14 @@ export function AppRoutes() {
               }
             />
           ))}
+          <Route
+            path="/sessions/:sessionId"
+            element={
+              <WorkspaceGate>
+                <SessionDetailPage />
+              </WorkspaceGate>
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>

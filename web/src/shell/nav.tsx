@@ -115,6 +115,10 @@ export function pageByKey(key: NavKey): NavPage {
   return page;
 }
 
+/** The page a pathname belongs to: an exact match, or a page's sub-route (`/sessions/abc` is Sessions). */
 export function pageByPath(pathname: string): NavPage | undefined {
-  return ALL_PAGES.find((p) => p.path === pathname);
+  return (
+    ALL_PAGES.find((p) => p.path === pathname) ??
+    ALL_PAGES.find((p) => pathname.startsWith(`${p.path}/`))
+  );
 }
