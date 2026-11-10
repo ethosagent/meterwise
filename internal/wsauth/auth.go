@@ -27,6 +27,7 @@ const (
 	AttrOrgID         = "org_id"
 	AttrPublicID      = "public_id"
 	AttrMaxConcurrent = "max_concurrent" // settings.maxConcurrent, when set and valid (decimal)
+	AttrMonitors      = "monitors"       // canonical JSON of settings.monitors with defaults filled (contract.MonitorConfig.Attr)
 )
 
 // Directory is the lookup the authenticator needs. tenancy.Directory implements it over its cache:
@@ -150,6 +151,7 @@ func Resolve(ws contract.Workspace) any {
 	if ws.Retired {
 		attrs[MetaURLRetired] = "true"
 	}
+	attrs[AttrMonitors] = contract.MonitorConfigFrom(ws.Settings["monitors"]).Attr()
 	if canonicalUUID(ws.ID) && canonicalUUID(ws.OrgID) {
 		attrs[AttrTenantOK] = "true"
 	}
