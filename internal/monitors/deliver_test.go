@@ -35,11 +35,11 @@ func (e *flakyEditor) trip() error {
 	return nil
 }
 
-func (e *flakyEditor) AppendNote(w tollgate.WireFormat, body []byte, text string) ([]byte, error) {
+func (e *flakyEditor) AppendNotes(w tollgate.WireFormat, body []byte, notes []string) ([]byte, error) {
 	if err := e.trip(); err != nil {
 		return nil, err
 	}
-	return e.Editor.AppendNote(w, body, text)
+	return e.Editor.AppendNotes(w, body, notes)
 }
 
 func (e *flakyEditor) BlockResponse(w tollgate.WireFormat, stream bool, text string) (*tollgate.Response, error) {

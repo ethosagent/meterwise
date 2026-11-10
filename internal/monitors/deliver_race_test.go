@@ -60,9 +60,9 @@ func (e *gateEditor) gate() {
 	}
 }
 
-func (e *gateEditor) AppendNote(w tollgate.WireFormat, body []byte, text string) ([]byte, error) {
+func (e *gateEditor) AppendNotes(w tollgate.WireFormat, body []byte, notes []string) ([]byte, error) {
 	e.gate()
-	return e.Editor.AppendNote(w, body, text)
+	return e.Editor.AppendNotes(w, body, notes)
 }
 
 func (e *gateEditor) BlockResponse(w tollgate.WireFormat, stream bool, text string) (*tollgate.Response, error) {

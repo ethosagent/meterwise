@@ -124,31 +124,30 @@ func (h *Hook) collectNotes(c *tollgate.Call, fired []contract.MonitorVerdict, a
 	return items
 }
 
-// splice adds each note to the body through the wire editor. A note that cannot be placed is dropped
-// (counted): its verdict is recorded as observed and its key released, and a queued note goes back to the
-// session's queue, so only the notes spliced in are used up (K1). It returns the new body (nil if
-// unchanged) and the notes spliced in.
+// splice adds the notes to the body through the wire editor, in one edit. If the editor cannot place them
+// they are all dropped (counted): their verdicts are recorded as observed and their keys released, and the
+// queued notes go back to the session's queue, so only the notes spliced in are used up (K1). It returns the
+// new body (nil if unchanged) and the notes spliced in.
 func (h *Hook) splice(c *tollgate.Call, items []noteItem, acts []contract.MonitorMode) ([]byte, []noteItem) {
-	body := c.Body
-	var held, undone []noteItem
-	for _, it := range items {
-		next, err := h.opt.Editor.AppendNote(c.Provider.Wire, body, it.text)
-		if err != nil {
-			h.notesDropped.Add(1)
-			undone = append(undone, it)
+	if len(items) == 0 {
+		return nil, nil
+	}
+	texts := make([]string, len(items))
+	for i, it := range items {
+		texts[i] = it.text
+	}
+	body, err := h.opt.Editor.AppendNotes(c.Provider.Wire, c.Body, texts)
+	if err != nil {
+		h.notesDropped.Add(int64(len(items)))
+		for _, it := range items {
 			if it.verdict >= 0 {
 				acts[it.verdict] = contract.ModeObserve
 			}
-			continue
 		}
-		body = next
-		held = append(held, it)
-	}
-	h.giveBack(sessKey(c), undone)
-	if len(held) == 0 {
+		h.giveBack(sessKey(c), items)
 		return nil, nil
 	}
-	return body, held
+	return body, items
 }
 
 // giveBack returns what a plan held but did not deliver to the session: a verdict's key is released, a

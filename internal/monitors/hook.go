@@ -16,7 +16,7 @@ import (
 // Editor edits provider JSON for notes and blocks. The monitors/wire package implements it; archtest H3
 // forbids this pure package from importing wire, so the host injects it (wire.Editor{}).
 type Editor interface {
-	AppendNote(w tollgate.WireFormat, body []byte, note string) ([]byte, error)
+	AppendNotes(w tollgate.WireFormat, body []byte, notes []string) ([]byte, error)
 	BlockResponse(w tollgate.WireFormat, stream bool, text string) (*tollgate.Response, error)
 }
 
@@ -27,7 +27,7 @@ var errNoEditor = errors.New("monitors: no wire editor injected")
 // noEditor is the Editor used when Options.Editor is nil.
 type noEditor struct{}
 
-func (noEditor) AppendNote(tollgate.WireFormat, []byte, string) ([]byte, error) {
+func (noEditor) AppendNotes(tollgate.WireFormat, []byte, []string) ([]byte, error) {
 	return nil, errNoEditor
 }
 
