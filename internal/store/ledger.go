@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,40 +45,26 @@ func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (Wri
 	if len(recs) == 0 {
 		return WriteResult{}, nil
 	}
+	payload, err := json.Marshal(callJSONs(recs))
+	if err != nil {
+		return WriteResult{}, fail(ClassPool, "store: calls are not JSON")
+	}
 	var res WriteResult
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		params := make([]sqlc.InsertCallParams, len(recs))
-		for i, r := range recs {
-			p, err := insertParams(r)
-			if err != nil {
-				return err
-			}
-			params[i] = p
+		ids, err := q.InsertCalls(ctx, payload)
+		if err != nil {
+			return err
 		}
-		inserted := make([]bool, len(recs))
-		var firstErr error
-		br := q.InsertCall(ctx, params)
-		br.QueryRow(func(i int, _ string, err error) {
-			switch {
-			case err == nil:
-				inserted[i] = true
-			case err == pgx.ErrNoRows:
-				// a repeat of a call id: nothing inserted, nothing to count
-			case firstErr == nil:
-				firstErr = err
-			}
-		})
-		if err := br.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		got := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			got[id] = true
 		}
-		if firstErr != nil {
-			return firstErr
-		}
-		fresh := make([]contract.CallRecord, 0, len(recs))
-		for i, r := range recs {
-			if inserted[i] {
+		fresh := make([]contract.CallRecord, 0, len(ids))
+		for _, r := range recs {
+			if got[r.ID] { // a duplicate id inside the batch is inserted once: count its first occurrence only
 				fresh = append(fresh, r)
+				got[r.ID] = false
 			}
 		}
 		res = WriteResult{Inserted: len(fresh), Duplicates: len(recs) - len(fresh)}
@@ -89,22 +76,54 @@ func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (Wri
 	return res, nil
 }
 
-func insertParams(r contract.CallRecord) (sqlc.InsertCallParams, error) {
-	tools := r.ToolCalls
-	if tools == nil {
-		tools = []string{}
+// callJSON is one element of the InsertCalls array. Cost is omitted for an unpriced call.
+type callJSON struct {
+	ID            string   `json:"id"`
+	OrgID         string   `json:"orgId"`
+	WorkspaceID   string   `json:"workspaceId"`
+	SessionID     string   `json:"sessionId"`
+	CallIndex     int32    `json:"callIndex"`
+	StartedUs     int64    `json:"startedUs"`
+	Provider      string   `json:"provider"`
+	Model         string   `json:"model"`
+	Wire          string   `json:"wire"`
+	Stream        bool     `json:"stream"`
+	Status        int32    `json:"status"`
+	Finish        string   `json:"finish"`
+	Input         int64    `json:"input"`
+	Output        int64    `json:"output"`
+	Cached        int64    `json:"cached"`
+	Reasoning     int64    `json:"reasoning"`
+	Cost          *int64   `json:"cost,omitempty"`
+	TTFBMs        int32    `json:"ttfbMs"`
+	DurationMs    int32    `json:"durationMs"`
+	ToolCalls     []string `json:"toolCalls"`
+	Blocked       bool     `json:"blocked"`
+	NotesInjected int32    `json:"notesInjected"`
+	Client        string   `json:"client"`
+}
+
+func callJSONs(recs []contract.CallRecord) []callJSON {
+	out := make([]callJSON, len(recs))
+	for i, r := range recs {
+		tools := r.ToolCalls
+		if tools == nil {
+			tools = []string{}
+		}
+		var cost *int64
+		if r.Cost != nil {
+			c := int64(*r.Cost)
+			cost = &c
+		}
+		out[i] = callJSON{
+			ID: r.ID, OrgID: r.OrgID, WorkspaceID: r.WorkspaceID, SessionID: r.SessionID, CallIndex: clampInt32(int64(r.CallIndex)),
+			StartedUs: r.StartedAt.UnixMicro(), Provider: r.Provider, Model: r.Model, Wire: r.Wire, Stream: r.Stream,
+			Status: clampInt32(int64(r.Status)), Finish: r.Finish, Input: r.Usage.Input, Output: r.Usage.Output, Cached: r.Usage.Cached,
+			Reasoning: r.Usage.Reasoning, Cost: cost, TTFBMs: clampInt32(r.TTFBMs), DurationMs: clampInt32(r.DurationMs), ToolCalls: tools,
+			Blocked: r.Blocked, NotesInjected: clampInt32(int64(r.NotesInjected)), Client: r.Client,
+		}
 	}
-	tc, err := json.Marshal(tools)
-	if err != nil {
-		return sqlc.InsertCallParams{}, fail(ClassPool, "store: tool call names are not JSON")
-	}
-	return sqlc.InsertCallParams{
-		ID: r.ID, OrgID: r.OrgID, WorkspaceID: r.WorkspaceID, SessionID: r.SessionID, CallIndex: int32(r.CallIndex),
-		StartedAt: pgts(r.StartedAt), Provider: r.Provider, Model: r.Model, Wire: r.Wire, Stream: r.Stream, Status: int32(r.Status),
-		Finish: r.Finish, InputTokens: r.Usage.Input, OutputTokens: r.Usage.Output, CachedTokens: r.Usage.Cached,
-		ReasoningTokens: r.Usage.Reasoning, CostMicro: pgMicro(r.Cost), TtfbMs: clampInt32(r.TTFBMs), DurationMs: clampInt32(r.DurationMs),
-		ToolCalls: tc, Blocked: r.Blocked, NotesInjected: int32(r.NotesInjected), Client: r.Client,
-	}, nil
+	return out
 }
 
 func pgMicro(m *contract.MicroUSD) pgtype.Int8 {
@@ -116,90 +135,89 @@ func pgMicro(m *contract.MicroUSD) pgtype.Int8 {
 
 func clampInt32(v int64) int32 {
 	switch {
-	case v > 1<<31-1:
-		return 1<<31 - 1
+	case v > math.MaxInt32:
+		return math.MaxInt32
 	case v < 0:
 		return 0
 	}
 	return int32(v)
 }
 
-// writeSessions folds the inserted calls into per-session aggregates and upserts each, then touches
-// last_call_at once per workspace.
-func (s *Store) writeSessions(ctx context.Context, q *sqlc.Queries, fresh []contract.CallRecord) error {
-	type key struct{ ws, id string }
-	aggs := map[key]*sessionAgg{}
-	type wsTouch struct {
-		org string
-		at  time.Time
-	}
+// sessionKey identifies a session across workspaces.
+type sessionKey struct{ ws, id string }
+
+// foldSessions aggregates the inserted calls per session and finds each workspace's newest call end.
+func foldSessions(fresh []contract.CallRecord) (map[sessionKey]*sessionAgg, map[string]wsTouch) {
+	aggs := map[sessionKey]*sessionAgg{}
 	touches := map[string]wsTouch{}
 	for _, r := range fresh {
 		end := r.StartedAt.Add(time.Duration(r.DurationMs) * time.Millisecond)
-		k := key{r.WorkspaceID, r.SessionID}
+		k := sessionKey{r.WorkspaceID, r.SessionID}
 		a := aggs[k]
 		if a == nil {
 			a = &sessionAgg{rec: r, started: r.SessionStart, lastSeen: end}
 			aggs[k] = a
 		}
-		if r.SessionStart.Before(a.started) {
-			a.started = r.SessionStart
-		}
-		if !end.Before(a.lastSeen) {
-			a.rec, a.lastSeen = r, end
-		}
-		a.calls++
-		a.in += r.Usage.Input
-		a.out += r.Usage.Output
-		if r.Cost != nil {
-			a.costMicro += int64(*r.Cost)
-			a.priced = true
-		}
-		if a.preview == "" {
-			a.preview = r.Preview
-		}
-		if a.client == "" {
-			a.client = r.Client
-		}
-		t := touches[r.WorkspaceID]
-		if end.After(t.at) {
+		a.add(r, end)
+		if t := touches[r.WorkspaceID]; end.After(t.at) {
 			touches[r.WorkspaceID] = wsTouch{org: r.OrgID, at: end}
 		}
 	}
-	keys := make([]key, 0, len(aggs))
+	return aggs, touches
+}
+
+type wsTouch struct {
+	org string
+	at  time.Time
+}
+
+func (a *sessionAgg) add(r contract.CallRecord, end time.Time) {
+	if r.SessionStart.Before(a.started) {
+		a.started = r.SessionStart
+	}
+	if !end.Before(a.lastSeen) {
+		a.rec, a.lastSeen = r, end
+	}
+	a.calls++
+	a.in += r.Usage.Input
+	a.out += r.Usage.Output
+	if r.Cost != nil {
+		a.costMicro += int64(*r.Cost)
+		a.priced = true
+	}
+	if a.preview == "" {
+		a.preview = r.Preview
+	}
+	if a.client == "" {
+		a.client = r.Client
+	}
+}
+
+func (a *sessionAgg) params(k sessionKey) sqlc.UpsertSessionParams {
+	var cost *contract.MicroUSD
+	if a.priced {
+		c := contract.MicroUSD(a.costMicro)
+		cost = &c
+	}
+	return sqlc.UpsertSessionParams{
+		ID: k.id, OrgID: a.rec.OrgID, WorkspaceID: k.ws, Source: a.rec.SessionSource, StartedAt: pgts(a.started),
+		LastSeenAt: pgts(a.lastSeen), Calls: clampInt32(int64(a.calls)), InputTokens: a.in, OutputTokens: a.out, CostMicro: pgMicro(cost),
+		Client: a.client, Preview: a.preview, LastFinish: a.rec.Finish, LastHadText: a.rec.LastHadText,
+	}
+}
+
+// writeSessions upserts one row per session of the inserted calls, then touches last_call_at once per
+// workspace. Keys are sorted so concurrent batches lock rows in the same order.
+func (s *Store) writeSessions(ctx context.Context, q *sqlc.Queries, fresh []contract.CallRecord) error {
+	aggs, touches := foldSessions(fresh)
+	keys := make([]sessionKey, 0, len(aggs))
 	for k := range aggs {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool { // a stable lock order across concurrent batches
-		return keys[i].ws+"/"+keys[i].id < keys[j].ws+"/"+keys[j].id
-	})
-	ups := make([]sqlc.UpsertSessionParams, 0, len(keys))
+	sort.Slice(keys, func(i, j int) bool { return keys[i].ws+"/"+keys[i].id < keys[j].ws+"/"+keys[j].id })
 	for _, k := range keys {
-		a := aggs[k]
-		var cost *contract.MicroUSD
-		if a.priced {
-			c := contract.MicroUSD(a.costMicro)
-			cost = &c
-		}
-		ups = append(ups, sqlc.UpsertSessionParams{
-			ID: k.id, OrgID: a.rec.OrgID, WorkspaceID: k.ws, Source: a.rec.SessionSource, StartedAt: pgts(a.started),
-			LastSeenAt: pgts(a.lastSeen), Calls: int32(a.calls), InputTokens: a.in, OutputTokens: a.out, CostMicro: pgMicro(cost),
-			Client: a.client, Preview: a.preview, LastFinish: a.rec.Finish, LastHadText: a.rec.LastHadText,
-		})
-	}
-	if len(ups) > 0 {
-		br := q.UpsertSession(ctx, ups)
-		var first error
-		br.Exec(func(_ int, err error) {
-			if err != nil && first == nil {
-				first = err
-			}
-		})
-		if err := br.Close(); err != nil && first == nil {
-			first = err
-		}
-		if first != nil {
-			return first
+		if err := q.UpsertSession(ctx, aggs[k].params(k)); err != nil {
+			return err
 		}
 	}
 	wss := make([]string, 0, len(touches))
@@ -301,9 +319,7 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 		if err != nil {
 			return contract.SessionPage{}, queryErr(err)
 		}
-		for _, r := range first {
-			rows = append(rows, sessionRow(r))
-		}
+		rows = append(rows, first...)
 	} else {
 		after, err := s.q.ListSessionsAfter(ctx, sqlc.ListSessionsAfterParams{WorkspaceID: q.WorkspaceID, FromTs: pgts(from), ToTs: pgts(to), CursorAt: pgts(at), CursorID: id, MaxRows: int32(limit + 1)})
 		if err != nil {

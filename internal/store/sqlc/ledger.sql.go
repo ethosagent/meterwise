@@ -34,6 +34,44 @@ func (q *Queries) CloseSession(ctx context.Context, arg CloseSessionParams) (int
 	return result.RowsAffected(), nil
 }
 
+const insertCalls = `-- name: InsertCalls :many
+INSERT INTO calls (id, org_id, workspace_id, session_id, call_index, started_at, provider, model, wire, stream, status, finish,
+                   input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd, ttfb_ms, duration_ms, tool_calls,
+                   blocked, notes_injected, client)
+SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', (r.j->>'callIndex')::int,
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'provider', r.j->>'model', r.j->>'wire',
+       (r.j->>'stream')::bool, (r.j->>'status')::int, r.j->>'finish', (r.j->>'input')::bigint, (r.j->>'output')::bigint,
+       (r.j->>'cached')::bigint, (r.j->>'reasoning')::bigint, (r.j->>'cost')::numeric / 1000000, (r.j->>'ttfbMs')::int,
+       (r.j->>'durationMs')::int, r.j->'toolCalls', (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
+FROM jsonb_array_elements($1::jsonb) AS r(j)
+ON CONFLICT (id) DO NOTHING
+RETURNING id
+`
+
+// The only INSERT into calls (H4). One statement for a whole batch (a JSON array of call objects),
+// idempotent on the tollgate call id: a repeat inserts nothing and returns no id, which is how the
+// ledger knows not to count the call into its session twice. A missing "cost" is NULL (a model with no
+// price). Money converts from micro-USD to numeric(14,6) here; "startedUs" is unix microseconds.
+func (q *Queries) InsertCalls(ctx context.Context, callsJson []byte) ([]string, error) {
+	rows, err := q.db.Query(ctx, insertCalls, callsJson)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchWorkspaceLastCall = `-- name: TouchWorkspaceLastCall :exec
 UPDATE workspaces
 SET last_call_at = GREATEST(COALESCE(last_call_at, $1::timestamptz), $1::timestamptz)
@@ -49,5 +87,68 @@ type TouchWorkspaceLastCallParams struct {
 // One coalesced touch per workspace per batch; never moves last_call_at backwards.
 func (q *Queries) TouchWorkspaceLastCall(ctx context.Context, arg TouchWorkspaceLastCallParams) error {
 	_, err := q.db.Exec(ctx, touchWorkspaceLastCall, arg.At, arg.WorkspaceID, arg.OrgID)
+	return err
+}
+
+const upsertSession = `-- name: UpsertSession :exec
+INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
+                      client, first_user_message_preview, last_finish, last_had_text)
+VALUES ($1::text, $2::text::uuid, $3::text::uuid, $4::text,
+        $5::timestamptz, $6::timestamptz, $7::int,
+        $8::bigint, $9::bigint, $10::bigint::numeric / 1000000,
+        NULLIF($11::text, ''), NULLIF($12::text, ''), $13::text,
+        $14::bool)
+ON CONFLICT (workspace_id, id) DO UPDATE SET
+    started_at = LEAST(sessions.started_at, EXCLUDED.started_at),
+    calls = sessions.calls + EXCLUDED.calls,
+    input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
+    output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
+    cost_usd = CASE WHEN sessions.cost_usd IS NULL AND EXCLUDED.cost_usd IS NULL THEN NULL
+                    ELSE COALESCE(sessions.cost_usd, 0) + COALESCE(EXCLUDED.cost_usd, 0) END,
+    client = COALESCE(sessions.client, EXCLUDED.client),
+    first_user_message_preview = COALESCE(sessions.first_user_message_preview, EXCLUDED.first_user_message_preview),
+    last_finish = CASE WHEN EXCLUDED.last_seen_at >= sessions.last_seen_at THEN EXCLUDED.last_finish ELSE sessions.last_finish END,
+    last_had_text = CASE WHEN EXCLUDED.last_seen_at >= sessions.last_seen_at THEN EXCLUDED.last_had_text ELSE sessions.last_had_text END,
+    closed_at = CASE WHEN EXCLUDED.last_seen_at > sessions.last_seen_at THEN NULL ELSE sessions.closed_at END,
+    outcome = CASE WHEN EXCLUDED.last_seen_at > sessions.last_seen_at THEN 'open' ELSE sessions.outcome END,
+    last_seen_at = GREATEST(sessions.last_seen_at, EXCLUDED.last_seen_at)
+`
+
+type UpsertSessionParams struct {
+	ID           string
+	OrgID        string
+	WorkspaceID  string
+	Source       string
+	StartedAt    pgtype.Timestamptz
+	LastSeenAt   pgtype.Timestamptz
+	Calls        int32
+	InputTokens  int64
+	OutputTokens int64
+	CostMicro    pgtype.Int8
+	Client       string
+	Preview      string
+	LastFinish   string
+	LastHadText  bool
+}
+
+// The only INSERT into sessions (H4). The ledger passes the aggregate of the calls a batch really inserted
+// (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed session.
+func (q *Queries) UpsertSession(ctx context.Context, arg UpsertSessionParams) error {
+	_, err := q.db.Exec(ctx, upsertSession,
+		arg.ID,
+		arg.OrgID,
+		arg.WorkspaceID,
+		arg.Source,
+		arg.StartedAt,
+		arg.LastSeenAt,
+		arg.Calls,
+		arg.InputTokens,
+		arg.OutputTokens,
+		arg.CostMicro,
+		arg.Client,
+		arg.Preview,
+		arg.LastFinish,
+		arg.LastHadText,
+	)
 	return err
 }

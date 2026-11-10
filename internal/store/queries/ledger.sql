@@ -1,21 +1,21 @@
--- name: InsertCall :batchone
--- The only INSERT into calls (H4). Idempotent on the tollgate call id: a repeat inserts nothing and
--- returns no row, which is how the ledger knows not to count the call into its session twice.
--- cost_micro is NULL for a model with no price. Money converts from micro-USD to numeric(14,6) here.
+-- name: InsertCalls :many
+-- The only INSERT into calls (H4). One statement for a whole batch (a JSON array of call objects),
+-- idempotent on the tollgate call id: a repeat inserts nothing and returns no id, which is how the
+-- ledger knows not to count the call into its session twice. A missing "cost" is NULL (a model with no
+-- price). Money converts from micro-USD to numeric(14,6) here; "startedUs" is unix microseconds.
 INSERT INTO calls (id, org_id, workspace_id, session_id, call_index, started_at, provider, model, wire, stream, status, finish,
                    input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd, ttfb_ms, duration_ms, tool_calls,
                    blocked, notes_injected, client)
-VALUES (sqlc.arg(id)::text, sqlc.arg(org_id)::text::uuid, sqlc.arg(workspace_id)::text::uuid, sqlc.arg(session_id)::text,
-        sqlc.arg(call_index)::int, sqlc.arg(started_at)::timestamptz, sqlc.arg(provider)::text, sqlc.arg(model)::text,
-        sqlc.arg(wire)::text, sqlc.arg(stream)::bool, sqlc.arg(status)::int, sqlc.arg(finish)::text,
-        sqlc.arg(input_tokens)::bigint, sqlc.arg(output_tokens)::bigint, sqlc.arg(cached_tokens)::bigint,
-        sqlc.arg(reasoning_tokens)::bigint, sqlc.narg(cost_micro)::bigint::numeric / 1000000, sqlc.arg(ttfb_ms)::int,
-        sqlc.arg(duration_ms)::int, sqlc.arg(tool_calls)::jsonb, sqlc.arg(blocked)::bool, sqlc.arg(notes_injected)::int,
-        NULLIF(sqlc.arg(client)::text, ''))
+SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', (r.j->>'callIndex')::int,
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'provider', r.j->>'model', r.j->>'wire',
+       (r.j->>'stream')::bool, (r.j->>'status')::int, r.j->>'finish', (r.j->>'input')::bigint, (r.j->>'output')::bigint,
+       (r.j->>'cached')::bigint, (r.j->>'reasoning')::bigint, (r.j->>'cost')::numeric / 1000000, (r.j->>'ttfbMs')::int,
+       (r.j->>'durationMs')::int, r.j->'toolCalls', (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
+FROM jsonb_array_elements(sqlc.arg(calls_json)::jsonb) AS r(j)
 ON CONFLICT (id) DO NOTHING
 RETURNING id;
 
--- name: UpsertSession :batchexec
+-- name: UpsertSession :exec
 -- The only INSERT into sessions (H4). The ledger passes the aggregate of the calls a batch really inserted
 -- (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed session.
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,

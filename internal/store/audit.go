@@ -88,7 +88,7 @@ func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQue
 func (s *Store) auditRows(ctx context.Context, orgID string, q contract.AuditQuery, maxRows int, at time.Time, id int64) ([]sqlc.ListAuditAfterRow, error) {
 	if id == 0 {
 		first, err := s.q.ListAuditFirst(ctx, sqlc.ListAuditFirstParams{
-			OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, MaxRows: int32(maxRows),
+			OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, MaxRows: clampInt32(int64(maxRows)),
 		})
 		if err != nil {
 			return nil, err
@@ -100,7 +100,7 @@ func (s *Store) auditRows(ctx context.Context, orgID string, q contract.AuditQue
 		return rows, nil
 	}
 	return s.q.ListAuditAfter(ctx, sqlc.ListAuditAfterParams{
-		OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, CursorID: id, CursorAt: pgts(at), MaxRows: int32(maxRows),
+		OrgID: orgID, Action: string(q.Action), WorkspaceID: q.WorkspaceID, CursorID: id, CursorAt: pgts(at), MaxRows: clampInt32(int64(maxRows)),
 	})
 }
 

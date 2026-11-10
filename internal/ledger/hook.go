@@ -52,15 +52,16 @@ type callState struct {
 	preview string
 }
 
-// New builds the hook and starts its batcher. Pricer and Writer are required.
-func New(o Options) (*Hook, error) {
+// New builds the hook and starts its batcher. Pricer and Writer are required. ctx supplies values
+// (not cancellation) to the batcher; stop it with Close.
+func New(ctx context.Context, o Options) (*Hook, error) {
 	o, err := o.withDefaults()
 	if err != nil {
 		return nil, err
 	}
 	h := &Hook{opt: o, pr: o.Pricer}
 	h.q = newQueue(o)
-	h.q.start()
+	h.q.start(ctx)
 	return h, nil
 }
 
@@ -119,8 +120,8 @@ func (h *Hook) OnEvent(_ context.Context, c *tollgate.Call, e tollgate.Event) {
 }
 
 // After enqueues one record and returns at once; a full queue drops it and counts the drop.
-func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
-	rec, ok := h.record(c, m)
+func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
+	rec, ok := h.record(ctx, c, m)
 	if !ok {
 		h.q.skipped.Add(1)
 		return
@@ -146,7 +147,7 @@ func (h *Hook) Status() map[string]any { return h.q.status() }
 
 // record builds the calls row from the neutral Call and Metric. It reports false for a call that
 // cannot be attributed to a workspace (no tenant uuid or org: the dev NoAuth tenant).
-func (h *Hook) record(c *tollgate.Call, m tollgate.Metric) (contract.CallRecord, bool) {
+func (h *Hook) record(ctx context.Context, c *tollgate.Call, m tollgate.Metric) (contract.CallRecord, bool) {
 	ws, org := c.Tenant.ID, c.Tenant.Attrs["org_id"]
 	if !uuidRe.MatchString(ws) || !uuidRe.MatchString(org) || m.CallID == "" {
 		return contract.CallRecord{}, false
@@ -163,15 +164,7 @@ func (h *Hook) record(c *tollgate.Call, m tollgate.Metric) (contract.CallRecord,
 	if idx < 1 {
 		idx = max(c.Session.Calls, 1)
 	}
-	st, _ := c.Meta[metaState].(*callState)
-	var tools []string
-	var sawText bool
-	var preview string
-	if st != nil {
-		st.mu.Lock()
-		tools, sawText, preview = append([]string(nil), st.tools...), st.text, st.preview
-		st.mu.Unlock()
-	}
+	tools, sawText, preview := stateOf(c)
 	u := contract.Usage{Input: m.Usage.InputTokens, Output: m.Usage.OutputTokens, Cached: m.Usage.CachedInputTokens, Reasoning: m.Usage.ReasoningTokens}
 	provider, model := clean(m.Provider, maxFieldLen), clean(m.Model, maxFieldLen)
 	var cost *contract.MicroUSD
@@ -179,7 +172,7 @@ func (h *Hook) record(c *tollgate.Call, m tollgate.Metric) (contract.CallRecord,
 		cost = &v
 	} else {
 		h.q.unpriced.Add(1)
-		h.reportUnpriced(provider, model)
+		h.reportUnpriced(ctx, provider, model)
 	}
 	sid, src := c.Session.ID, contract.SessionSourcePredicted
 	if c.Session.Source == tollgate.SessionFromHeader {
@@ -203,18 +196,29 @@ func (h *Hook) record(c *tollgate.Call, m tollgate.Metric) (contract.CallRecord,
 	}, true
 }
 
+// stateOf reads what Before and OnEvent learned about the call.
+func stateOf(c *tollgate.Call) (tools []string, sawText bool, preview string) {
+	st, _ := c.Meta[metaState].(*callState)
+	if st == nil {
+		return nil, false, ""
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return append([]string(nil), st.tools...), st.text, st.preview
+}
+
 func nonNeg(u contract.Usage) contract.Usage {
 	return contract.Usage{Input: max(u.Input, 0), Output: max(u.Output, 0), Cached: max(u.Cached, 0), Reasoning: max(u.Reasoning, 0)}
 }
 
 // reportUnpriced logs each unpriced model once (bounded), so a missing price is visible, not silent.
-func (h *Hook) reportUnpriced(provider, model string) {
+func (h *Hook) reportUnpriced(ctx context.Context, provider, model string) {
 	if h.nwrn.Load() >= 256 {
 		return
 	}
 	if _, seen := h.warn.LoadOrStore(provider+"/"+model, true); !seen {
 		h.nwrn.Add(1)
-		h.opt.Log.LogAttrs(context.Background(), slog.LevelWarn, "ledger: no price for model; call cost is NULL",
+		h.opt.Log.LogAttrs(ctx, slog.LevelWarn, "ledger: no price for model; call cost is NULL",
 			slog.String("provider", provider), slog.String("model", model))
 	}
 }

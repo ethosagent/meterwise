@@ -110,7 +110,7 @@ func newHook(t testing.TB, w ledger.Writer, mod func(*ledger.Options)) *ledger.H
 	if mod != nil {
 		mod(&o)
 	}
-	h, err := ledger.New(o)
+	h, err := ledger.New(context.Background(), o)
 	if err != nil {
 		t.Fatal(err)
 	}

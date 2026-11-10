@@ -88,7 +88,8 @@ func newQueue(o Options) *queue {
 	return &queue{o: o, ch: make(chan item, o.QueueSize), stop: make(chan struct{}), done: make(chan struct{})}
 }
 
-func (q *queue) start() { go q.run() }
+// start runs the batcher. ctx is detached from the caller's cancellation: a flush must outlive it until Close.
+func (q *queue) start(ctx context.Context) { go q.run(context.WithoutCancel(ctx)) }
 
 // enqueue never blocks: a full or closed queue drops the item and counts it.
 func (q *queue) enqueue(it item) {
@@ -121,7 +122,7 @@ func (q *queue) close(ctx context.Context) error {
 	}
 }
 
-func (q *queue) run() {
+func (q *queue) run(ctx context.Context) {
 	defer close(q.done)
 	tick := time.NewTicker(q.o.FlushInterval)
 	defer tick.Stop()
@@ -129,32 +130,41 @@ func (q *queue) run() {
 	for {
 		select {
 		case it := <-q.ch:
-			buf = append(buf, it)
-			if len(buf) >= q.o.BatchSize {
-				q.flush(buf, false)
-				buf = buf[:0]
-			}
+			buf = q.add(ctx, buf, it, false)
 		case <-tick.C:
 			if len(buf) > 0 {
-				q.flush(buf, false)
+				q.flush(ctx, buf, false)
 				buf = buf[:0]
 			}
 		case <-q.stop:
-			for { // close() holds the write lock before stop, so nothing more is enqueued: drain what is there
-				select {
-				case it := <-q.ch:
-					buf = append(buf, it)
-					if len(buf) >= q.o.BatchSize {
-						q.flush(buf, true)
-						buf = buf[:0]
-					}
-				default:
-					if len(buf) > 0 {
-						q.flush(buf, true)
-					}
-					return
-				}
+			q.drain(ctx, buf)
+			return
+		}
+	}
+}
+
+// add appends it and flushes a full batch.
+func (q *queue) add(ctx context.Context, buf []item, it item, final bool) []item {
+	buf = append(buf, it)
+	if len(buf) >= q.o.BatchSize {
+		q.flush(ctx, buf, final)
+		buf = buf[:0]
+	}
+	return buf
+}
+
+// drain writes everything still queued; close() holds the write lock before stop, so nothing more
+// can be enqueued.
+func (q *queue) drain(ctx context.Context, buf []item) {
+	for {
+		select {
+		case it := <-q.ch:
+			buf = q.add(ctx, buf, it, true)
+		default:
+			if len(buf) > 0 {
+				q.flush(ctx, buf, true)
 			}
+			return
 		}
 	}
 }
@@ -162,14 +172,14 @@ func (q *queue) run() {
 // flush writes the calls of buf in one transaction, then applies its session closes. A failed batch
 // is retried with backoff (not when shutting down); one that keeps failing for a reason other than an
 // unreachable database is retried record by record so a single poison record cannot sink the rest.
-func (q *queue) flush(buf []item, final bool) {
+func (q *queue) flush(parent context.Context, buf []item, final bool) {
 	var calls []contract.CallRecord
 	for _, it := range buf {
 		if it.call != nil {
 			calls = append(calls, *it.call)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	if len(calls) > 0 {
 		q.writeCalls(ctx, calls, final)
@@ -179,7 +189,7 @@ func (q *queue) flush(buf []item, final bool) {
 			continue
 		}
 		if ok, err := q.o.Writer.CloseSession(ctx, it.closeWS, it.closeID, it.closeAt); err != nil {
-			q.fail(err)
+			q.fail(ctx, err)
 		} else if ok {
 			q.sessionsClosed.Add(1)
 		}
@@ -196,7 +206,7 @@ func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, fin
 			q.ok()
 			return
 		}
-		q.fail(err)
+		q.fail(ctx, err)
 		if final || attempt == q.o.Retries {
 			break
 		}
@@ -205,7 +215,7 @@ func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, fin
 	if len(calls) > 1 && store.ClassOf(err) != store.ClassUnreachable {
 		for _, c := range calls { // isolate the record the database refuses
 			if res, e := q.o.Writer.WriteCalls(ctx, []contract.CallRecord{c}); e != nil {
-				q.fail(e)
+				q.fail(ctx, e)
 				q.lost.Add(1)
 			} else {
 				q.flushed.Add(int64(res.Inserted))
@@ -217,12 +227,12 @@ func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, fin
 	q.lost.Add(int64(len(calls)))
 }
 
-func (q *queue) fail(err error) {
+func (q *queue) fail(ctx context.Context, err error) {
 	q.flushErrors.Add(1)
 	q.errMu.Lock()
 	q.lastErr = err.Error()
 	q.errMu.Unlock()
-	q.o.Log.LogAttrs(context.Background(), slog.LevelError, "ledger: flush failed", slog.String("err", err.Error()))
+	q.o.Log.LogAttrs(ctx, slog.LevelError, "ledger: flush failed", slog.String("err", err.Error()))
 }
 
 func (q *queue) ok() {

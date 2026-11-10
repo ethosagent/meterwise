@@ -52,8 +52,10 @@ worktree:
 	git worktree add ../meterwise-$(PLAN) -b wave/$(PLAN)
 	cd ../meterwise-$(PLAN) && scripts/install-hooks.sh
 
+# Replays synthetic agent sessions through an in-process proxy with the ledger into DATABASE_URL
+# (loopback fake upstream, no provider keys). ROUNDS=n sessions; WORKSPACE=<uuid> optional.
 demo-traffic:
-	.agents/skills/demo-traffic/scripts/replay.sh
+	go run ./cmd/demo-traffic -rounds $(or $(ROUNDS),5) $(if $(WORKSPACE),-workspace $(WORKSPACE))
 
 clean:
 	rm -rf bin .logs web/dist web/coverage

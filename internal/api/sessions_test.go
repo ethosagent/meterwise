@@ -14,7 +14,7 @@ import (
 func microp(v int64) *contract.MicroUSD { m := contract.MicroUSD(v); return &m }
 
 // seedCalls writes ledger rows the way internal/ledger does (through the store's one writer).
-func (s *stack) seedCalls(t *testing.T, ws string, recs ...contract.CallRecord) {
+func (s *stack) seedCalls(t *testing.T, recs ...contract.CallRecord) {
 	t.Helper()
 	if _, err := s.db.WriteCalls(context.Background(), recs); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestSessionsListDetailAndStats(t *testing.T) {
 	admin := s.admin(t, "user_admin")
 	_, ws := s.defaultWorkspace(t, admin.tok)
 	now := time.Now().UTC()
-	s.seedCalls(t, ws,
+	s.seedCalls(t,
 		callRec(ws, "a1", "sess-a", 1, now.Add(-3*time.Hour), microp(1_500_000)),
 		callRec(ws, "a2", "sess-a", 2, now.Add(-2*time.Hour), nil),
 		callRec(ws, "b1", "sess-b", 1, now.Add(-time.Hour), microp(250_000)),
@@ -102,8 +102,8 @@ func TestSessionValidationAndScoping(t *testing.T) {
 	_, ws := s.defaultWorkspace(t, admin.tok)
 	other := s.newWorkspace(t, admin.tok, "Other")
 	now := time.Now().UTC()
-	s.seedCalls(t, ws, callRec(ws, "x1", "shared", 1, now, nil))
-	s.seedCalls(t, other, callRec(other, "y1", "shared", 1, now, nil))
+	s.seedCalls(t, callRec(ws, "x1", "shared", 1, now, nil))
+	s.seedCalls(t, callRec(other, "y1", "shared", 1, now, nil))
 
 	for _, q := range []string{"limit=0", "limit=abc", "limit=201", "from=yesterday", "to=nope", "cursor=not-a-cursor", "from=2030-01-02T00:00:00Z&to=2030-01-01T00:00:00Z"} {
 		code, b := s.call(t, "GET", "/api/workspaces/"+ws+"/sessions?"+q, admin.tok, "")
@@ -135,7 +135,7 @@ func TestSessionAndStatsPermissions(t *testing.T) {
 	admin := s.admin(t, "user_admin")
 	m := s.invited(t, admin.tok, "user_m", contract.RoleMember)
 	_, ws := s.defaultWorkspace(t, admin.tok)
-	s.seedCalls(t, ws, callRec(ws, "z1", "sz", 1, time.Now().UTC(), microp(10)))
+	s.seedCalls(t, callRec(ws, "z1", "sz", 1, time.Now().UTC(), microp(10)))
 	routes := []string{"/api/workspaces/" + ws + "/sessions", "/api/sessions/sz?workspaceId=" + ws, "/api/workspaces/" + ws + "/stats"}
 
 	put := func(grants ...string) {

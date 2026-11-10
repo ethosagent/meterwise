@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -96,7 +94,7 @@ func allText(t testing.TB, s *store.Store) string {
 		`SELECT coalesce(string_agg(to_jsonb(w)::text, ' '), '') FROM workspaces w`,
 	} {
 		var part string
-		if err := s.Pool().QueryRow(ctx, q).Scan(&part); err != nil && err != pgx.ErrNoRows {
+		if err := s.Pool().QueryRow(ctx, q).Scan(&part); err != nil {
 			t.Fatal(err)
 		}
 		b.WriteString(part)
