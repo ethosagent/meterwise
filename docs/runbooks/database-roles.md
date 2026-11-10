@@ -58,7 +58,7 @@ SELECT tableowner FROM pg_tables WHERE tablename = 'audit_log';      -- meterwis
 SELECT has_table_privilege('meterwise_app', 'audit_log', 'UPDATE');  -- false
 ```
 
-Group membership counts: if `meterwise_app` is a member of `meterwise_owner` (or of any role that
+Group membership counts, inherited or not (`GRANT meterwise_owner TO meterwise_app WITH INHERIT FALSE`, or a `NOINHERIT` role, can still `SET ROLE` to the owner): if `meterwise_app` is a member of `meterwise_owner` (or of any role that
 owns `audit_log`) the guard treats it as an owner and refuses; membership of any superuser role
 (`GRANT postgres TO meterwise_app`) or of any `BYPASSRLS` role is refused the same way. In dev (`APP_ENV=dev`) the guard is
 off so the compose Postgres superuser works.

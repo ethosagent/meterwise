@@ -169,3 +169,44 @@ func TestCheckRoleFindsAuditLogWhateverTheSearchPath(t *testing.T) {
 		t.Fatalf("owner of audit_log outside the search_path: %+v, %v", rc, err)
 	}
 }
+
+// TestCheckRoleRefusesANonInheritingMemberOfTheOwner: a role granted the audit_log owner WITH INHERIT
+// FALSE (or one with the NOINHERIT attribute) does not inherit the owner's privileges, but it can
+// SET ROLE to the owner and then drop the append-only trigger. It must still count as owning.
+func TestCheckRoleRefusesANonInheritingMemberOfTheOwner(t *testing.T) {
+	admin := pgtest.DSN(t)
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	sfx := hex.EncodeToString(b[:])
+	app, owner := "mw_app_"+sfx, "mw_owner_"+sfx
+	adminExec(t, admin,
+		"CREATE ROLE "+app+" LOGIN PASSWORD 'pw'",
+		"CREATE ROLE "+owner+" NOLOGIN")
+	t.Cleanup(func() {
+		adminExec(t, admin, "DROP ROLE IF EXISTS "+app, "DROP ROLE IF EXISTS "+owner)
+	})
+	dsn := pgtest.NewDatabase(t)
+	if _, err := store.Migrate(context.Background(), dsn); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	check := func() store.RoleCheck {
+		rc, err := asRole(ctx, t, dsn, app).CheckRole(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rc
+	}
+	adminExec(t, dsn, "ALTER TABLE audit_log OWNER TO "+owner, "GRANT "+owner+" TO "+app+" WITH INHERIT FALSE")
+	if rc := check(); !rc.OwnsAuditLog {
+		t.Fatalf("GRANT owner TO app WITH INHERIT FALSE: the role can SET ROLE to the owner and must count as owning: %+v", rc)
+	}
+	adminExec(t, dsn, "REVOKE "+owner+" FROM "+app, "ALTER ROLE "+app+" NOINHERIT", "GRANT "+owner+" TO "+app)
+	if rc := check(); !rc.OwnsAuditLog {
+		t.Fatalf("a NOINHERIT role that is a member of the owner must count as owning: %+v", rc)
+	}
+	adminExec(t, dsn, "REVOKE "+owner+" FROM "+app)
+	if rc := check(); rc.OwnsAuditLog {
+		t.Fatalf("after the revoke: %+v", rc)
+	}
+}
