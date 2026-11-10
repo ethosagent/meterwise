@@ -19,10 +19,12 @@ const (
 
 // ring is one session's state: its entries keyed and ordered by call index (ascending, at most RingDepth,
 // immutable once published: every change copies) and top, the highest call index whose After has run,
-// finished or failed. Catch-up fills only indexes above both.
+// finished or failed. Catch-up fills only indexes above both. size is what the entries are charged against
+// the byte budget, kept up to date by with as a delta instead of being counted again at every update.
 type ring struct {
 	calls []contract.CallSummary
 	top   int
+	size  int64
 }
 
 // newest is the highest index the ring knows of: its newest entry or top.
@@ -72,13 +74,11 @@ const (
 	summaryOverhead = 216 // a CallSummary: ints and seven slice headers
 )
 
-func ringBytes(key string, r ring) int64 {
-	n := int64(entryOverhead + len(key) + cap(r.calls)*summaryOverhead)
-	for _, c := range r.calls {
-		n += int64(8 * (len(c.ArgsHashes) + len(c.ReadHashes) + len(c.WroteHashes) + len(c.Shingles)))
-		for _, t := range c.Tools {
-			n += int64(16 + len(t))
-		}
+// entryBytes is what one ring entry is charged: its struct and what its slices and tool names hold.
+func entryBytes(c contract.CallSummary) int64 {
+	n := int64(summaryOverhead + 8*(len(c.ArgsHashes)+len(c.ReadHashes)+len(c.WroteHashes)+len(c.Shingles)))
+	for _, t := range c.Tools {
+		n += int64(16 + len(t))
 	}
 	return n
 }
@@ -116,7 +116,7 @@ func (s *store) update(key string, fn func(cur ring) ring) ring {
 	}
 	e := el.Value.(*entry)
 	e.r = fn(e.r)
-	b := ringBytes(key, e.r)
+	b := int64(entryOverhead+len(key)) + e.r.size
 	sh.bytes += b - e.bytes
 	e.bytes = b
 	for sh.lru.Len() > 1 && (sh.lru.Len() > sh.cap || sh.bytes > sh.budget) {
@@ -163,38 +163,50 @@ func (s *store) size() int {
 	return n
 }
 
-// put returns a new ring slice: cur with each of add at its call index (ascending order, one entry per
-// index), at most RingDepth entries and only indexes within RingDepth of the newest, only the newest
-// ringShingles keeping their shingles. cur is not modified.
+// with returns a new ring: r with each of add at its call index (ascending order, one entry per index), at
+// most RingDepth entries and only indexes within RingDepth of the newest, only the newest ringShingles
+// keeping their shingles. r is not modified: its entries are copied once (a published ring is a snapshot
+// the monitors read, and dropping an older entry's shingles must not show in it).
 //
 // fill marks add as read from a request's messages (catch-up or rebuild): it never overwrites an entry
 // with content, only an empty one (a call answered without a stream, such as a block), keeping that
 // entry's token counts. Otherwise add comes from the call's own After and replaces the entry, except that
 // an After with no content (no stream) keeps the content a catch-up already found.
-func put(cur []contract.CallSummary, add []contract.CallSummary, fill bool) []contract.CallSummary {
-	out := make([]contract.CallSummary, len(cur), len(cur)+len(add))
-	copy(out, cur)
-	n := len(out)
+func (r ring) with(add []contract.CallSummary, fill bool) ring {
+	out := make([]contract.CallSummary, len(r.calls), len(r.calls)+len(add))
+	copy(out, r.calls)
+	n, size, ordered := len(out), r.size, true
 	for _, s := range add {
 		if i, found := slices.BinarySearchFunc(out[:n], s.Index, byIndex); found {
+			size -= entryBytes(out[i])
 			out[i] = merge(out[i], s, fill)
+			size += entryBytes(out[i])
 			continue
 		}
+		ordered = ordered && (len(out) == 0 || s.Index > out[len(out)-1].Index)
 		out = append(out, s)
+		size += entryBytes(s)
 	}
-	if len(out) > n {
+	if len(out) > n && !ordered {
 		slices.SortStableFunc(out, func(a, b contract.CallSummary) int { return cmp.Compare(a.Index, b.Index) })
+		for i := 1; i < len(out); i++ { // one entry per index: the first of equal indexes stays
+			if out[i].Index == out[i-1].Index {
+				size -= entryBytes(out[i])
+			}
+		}
 		out = slices.CompactFunc(out, func(a, b contract.CallSummary) bool { return a.Index == b.Index })
 	}
 	lo := 0
 	for lo < len(out) && (len(out)-lo > RingDepth || out[lo].Index <= out[len(out)-1].Index-RingDepth) {
+		size -= entryBytes(out[lo])
 		lo++
 	}
 	out = out[lo:]
 	for j := 0; j < len(out)-ringShingles; j++ {
+		size -= int64(8 * len(out[j].Shingles))
 		out[j].Shingles = nil
 	}
-	return out
+	return ring{calls: out, top: r.top, size: size}
 }
 
 func byIndex(e contract.CallSummary, idx int) int { return cmp.Compare(e.Index, idx) }

@@ -97,12 +97,9 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 	}
 	k := key(c.Tenant.ID, c.Session.ID)
 	cur, ok := h.st.get(k)
-	fills := h.missing(cur, ok, c, h.late(ctx))
+	fills := h.missing(ctx, cur, ok, c)
 	if !ok || len(fills) > 0 {
-		cur = h.st.update(k, func(r ring) ring {
-			r.calls = put(r.calls, fills, true)
-			return r
-		})
+		cur = h.st.update(k, func(r ring) ring { return r.with(fills, true) })
 	}
 	c.Meta[contract.MetaRing] = ringView(cur.calls)
 	c.Meta[contract.MetaMonitors] = &contract.CallVerdicts{}
@@ -113,10 +110,11 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 // missing reads, from the call's messages, the ring entries the session lacks: all of them when it has no
 // ring, else the indexes above the newest it knows (at most RingDepth back) and the previous call's entry
 // when it is empty.
-func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call, late func() bool) []contract.CallSummary {
+func (h *Hook) missing(ctx context.Context, cur ring, ok bool, c *tollgate.Call) []contract.CallSummary {
 	n, msgs := c.Session.Calls, window(c.Messages)
+	all := func(int) bool { return true }
 	if !ok {
-		fills := readBack(msgs, n, n-RingDepth, n-1, func(int) bool { return true }, late)
+		fills := readBack(msgs, n, n-RingDepth, n-1, all, h.late(ctx), ringShingles)
 		h.read.Add(int64(len(fills)))
 		if len(fills) > 0 {
 			h.rebuilt.Add(1)
@@ -125,22 +123,24 @@ func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call, late func() bool) []
 	}
 	lo := max(cur.newest()+1, n-RingDepth)
 	heal := emptyAt(cur.calls, n-1)
-	if (lo <= n-1 || heal) && !aligned(cur.calls, msgs, n, late) {
-		h.unhealed.Add(1) // a side request's turns are neither a catch-up nor a heal (K3, S1)
-		return nil
+	catch := lo <= n-1
+	if !catch && !heal {
+		return nil // the common case: the ring is current, nothing is read and no deadline is asked
 	}
-	if lo > n-1 && !heal {
+	late := h.late(ctx)
+	if !aligned(cur.calls, msgs, n, late) {
+		h.unhealed.Add(1) // a side request's turns are neither a catch-up nor a heal (K3, S1)
 		return nil
 	}
 	from := lo
 	if heal {
 		from = min(lo, n-1)
 	}
-	fills := readBack(msgs, n, from, n-1, func(i int) bool { return i >= lo || (heal && i == n-1) }, late)
+	fills := readBack(msgs, n, from, n-1, func(i int) bool { return i >= lo || (heal && i == n-1) }, late, ringShingles)
 	h.read.Add(int64(len(fills)))
 	switch {
 	case len(fills) == 0:
-	case lo <= n-1:
+	case catch:
 		h.caughtUp.Add(1)
 	default:
 		h.healed.Add(1)
@@ -152,13 +152,12 @@ func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call, late func() bool) []
 // deadline is nearer than MinDeadline. The first time it is true is counted (skipped_deadline when the
 // read had not started, cut_deadline when it stops a read part way).
 func (h *Hook) late(ctx context.Context) func() bool {
-	d, ok := ctx.Deadline()
-	if !ok {
+	if _, ok := ctx.Deadline(); !ok {
 		return func() bool { return false }
 	}
 	asked := false
 	return func() bool {
-		if d.Sub(h.opt.Now()) >= h.opt.MinDeadline {
+		if !contract.NearDeadline(ctx, h.opt.Now(), h.opt.MinDeadline) {
 			asked = true
 			return false
 		}
@@ -189,7 +188,7 @@ func aligned(calls []contract.CallSummary, msgs []tollgate.Message, n int, late 
 	if len(want) == 0 {
 		return true
 	}
-	got := readBack(msgs, n, lo, hi, func(i int) bool { _, ok := want[i]; return ok }, late)
+	got := readBack(msgs, n, lo, hi, func(i int) bool { _, ok := want[i]; return ok }, late, 0)
 	if len(got) != len(want) {
 		return false
 	}
@@ -251,7 +250,7 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 		return
 	}
 	l.mu.Lock()
-	s := l.finish().summary()
+	s := l.finish().summary(true)
 	l.mu.Unlock()
 	s.Index = l.index
 	s.Input = m.Usage.InputTokens + m.Usage.CachedInputTokens
@@ -259,8 +258,7 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 	s.BodyBytes = len(c.Body)
 	h.st.update(k, func(r ring) ring {
 		r.top = max(r.top, l.index)
-		r.calls = put(r.calls, []contract.CallSummary{s}, false)
-		return r
+		return r.with([]contract.CallSummary{s}, false)
 	})
 	h.appended.Add(1)
 }
