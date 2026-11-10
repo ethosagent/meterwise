@@ -151,7 +151,7 @@ func (s *server) listWorkspaces(c Call, _ none) (contract.WorkspaceList, error) 
 	if err != nil {
 		return contract.WorkspaceList{}, err
 	}
-	views, err := s.workspaceViews(c, v, list)
+	views, err := s.workspaceViews(v, list)
 	return contract.WorkspaceList{Items: views}, err
 }
 
