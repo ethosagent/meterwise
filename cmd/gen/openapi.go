@@ -22,7 +22,7 @@ func enumSchema[T ~string](vals []T) map[string]any {
 func schemaFor(t reflect.Type) (map[string]any, error) {
 	switch t {
 	case reflect.TypeFor[contract.MicroUSD]():
-		return map[string]any{"type": "string", "pattern": `^-?\d+\.\d{6}$`, "description": "decimal USD, six places"}, nil
+		return map[string]any{"type": "integer", "format": "int64", "description": "micro-USD (millionths of a US dollar)"}, nil
 	case reflect.TypeFor[contract.Theme]():
 		return enumSchema(contract.Themes()), nil
 	case reflect.TypeFor[contract.Role]():

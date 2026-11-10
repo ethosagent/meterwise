@@ -1,6 +1,6 @@
 package contract
 
-// SessionView is one session as the API sends it. Money is a decimal string (ruling R12); CostUsd is
+// SessionView is one session as the API sends it. Money is a JSON integer of micro-USD (interface 05); CostUsd is
 // null when no call of the session could be priced.
 type SessionView struct {
 	ID             string    `json:"id"`

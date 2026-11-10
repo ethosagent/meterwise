@@ -18,8 +18,8 @@ by rates in int64 (overflow returns "unknown"), sums, and divides once, rounding
 model or a time before the first price row is `ok=false` and the call's `cost_usd` is NULL (flagged,
 counted in Status, logged once per model), never 0. Ledger columns keep the `*_usd` names as
 `numeric(14,6)`, which holds a micro-dollar exactly; queries convert at the edge. The API sends money as
-a decimal string (`"1.500000"`), never a JSON number (the interface note "serialises as an integer" is
-overridden by R12). A model name matches a price row exactly or as row name plus a date, `-latest`, or
+a JSON integer of micro-USD (`1500000` is $1.50), per interface 05 (fix round 1 reversed the earlier
+decimal-string choice; ARCHITECTURE.md invariant 7 still says decimal string and needs a maintainer edit). A model name matches a price row exactly or as row name plus a date, `-latest`, or
 a `:`/`@` qualifier, so `claude-opus-4-5` never inherits the `claude-opus-4` price.
 
 ## Consequences

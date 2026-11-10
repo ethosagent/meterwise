@@ -55,8 +55,8 @@ func TestSessionsListDetailAndStats(t *testing.T) {
 		a.Client == nil || *a.Client != "opencode/1.2" || a.WorkspaceID != ws || a.SavedUsd != 0 || a.LikelySavedUsd != 0 {
 		t.Fatalf("session a = %+v", a)
 	}
-	if !strings.Contains(string(raw), `"costUsd":"1.500000"`) || !strings.Contains(string(raw), `"savedUsd":"0.000000"`) {
-		t.Errorf("money must be decimal strings: %s", raw)
+	if !strings.Contains(string(raw), `"costUsd":1500000`) || !strings.Contains(string(raw), `"savedUsd":0`) {
+		t.Errorf("money must be JSON integers (micro-USD): %s", raw)
 	}
 	p2 := decodeAs[contract.SessionList](t, s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/sessions?limit=2&cursor="+*list.NextCursor, "", 200))
 	if len(p2.Items) != 1 || p2.Items[0].ID != "sess-old" || p2.NextCursor != nil {

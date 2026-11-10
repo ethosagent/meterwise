@@ -17,7 +17,7 @@ func tsType(t reflect.Type) (string, error) {
 	case reflect.TypeFor[contract.Code]():
 		return "ErrorCode", nil
 	case reflect.TypeFor[contract.MicroUSD]():
-		return "string", nil // decimal string (ruling R12)
+		return "number", nil // integer micro-USD
 	case reflect.TypeFor[contract.Theme]():
 		return "Theme", nil
 	case reflect.TypeFor[contract.Role]():
