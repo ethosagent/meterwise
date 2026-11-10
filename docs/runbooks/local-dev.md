@@ -62,6 +62,10 @@ make demo-traffic           # native DB          make docker-demo-traffic   # th
 export ANTHROPIC_BASE_URL="<proxy URL from Setup>"      # real agent, your own key; OpenAI: OPENAI_BASE_URL
 ```
 
+In the Docker stack the proxy reaches the real provider hosts (api.openai.com, api.anthropic.com). Traffic you send
+through it with your own key is real and billed by the provider, and even a call without a key goes out (and gets a
+401). Only `make demo-traffic` / `make docker-demo-traffic` stay offline: they use a loopback fake upstream.
+
 Dev without a workspace URL: the proxy accepts one tenant at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`).
 
 ## 5. Read it back
@@ -70,11 +74,16 @@ Dev without a workspace URL: the proxy accepts one tenant at `http://127.0.0.1:8
 API=http://127.0.0.1:8081; WS=<workspace id>
 # Docker: mint a token (native needs no header at all)
 TOKEN=$(curl -s "http://127.0.0.1:9444/mint?email=admin@meterwise.local" | jq -r .token); H="Authorization: Bearer $TOKEN"
+curl -s -X POST -H "$H" "$API/api/auth/complete-signup" | jq .email              # Docker, once: see the note below
 curl -s -H "$H" "$API/api/workspaces" | jq '.items[0].id'                       # the workspace id
 curl -s -H "$H" "$API/api/workspaces/$WS/sessions" | jq                          # session list
 curl -s -H "$H" "$API/api/sessions/<sessionId>?workspaceId=$WS" | jq             # one session
 curl -s -H "$H" "$API/api/workspaces/$WS/stats" | jq                             # totals (spend, calls, sessions, by day)
 ```
+
+Docker: the curls above answer `403 not_invited` until the user has completed sign-up, which happens when you sign in
+once in the browser (http://127.0.0.1:8081) or when you run the `complete-signup` curl above with that token. Run it
+once per token.
 
 ## Troubleshooting
 
