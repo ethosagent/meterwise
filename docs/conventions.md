@@ -21,7 +21,7 @@
 ## Money
 
 - Go: `contract.MicroUSD` (int64 millionths of a dollar). Never `float32`/`float64` for money.
-- Postgres: `numeric(14,6)`, column names end `_usd`. JSON: an integer count of micro-USD such as `1500`.
+- Postgres: `numeric(14,6)`, column names end `_usd`. JSON: a decimal string such as `"0.001500"`.
 - Saved (blocked calls, certain) and likely saved (estimated) are separate fields everywhere and never added together.
 
 ## TypeScript

@@ -55,8 +55,8 @@ func TestSessionsListDetailAndStats(t *testing.T) {
 		a.Client == nil || *a.Client != "opencode/1.2" || a.WorkspaceID != ws || a.SavedUsd != 0 || a.LikelySavedUsd != 0 {
 		t.Fatalf("session a = %+v", a)
 	}
-	if !strings.Contains(string(raw), `"costUsd":1500000`) || !strings.Contains(string(raw), `"savedUsd":0`) {
-		t.Errorf("money must be JSON integers (micro-USD): %s", raw)
+	if !strings.Contains(string(raw), `"costUsd":"1.500000"`) || !strings.Contains(string(raw), `"savedUsd":"0.000000"`) {
+		t.Errorf("money must be decimal strings: %s", raw)
 	}
 	p2 := decodeAs[contract.SessionList](t, s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/sessions?limit=2&cursor="+*list.NextCursor, "", 200))
 	if len(p2.Items) != 1 || p2.Items[0].ID != "sess-old" || p2.NextCursor != nil {
@@ -178,5 +178,26 @@ func TestLedgerRoutesAnswerNotAvailableWhenTheLedgerIsNotWired(t *testing.T) {
 	for _, path := range []string{"/api/workspaces/w/sessions", "/api/sessions/s?workspaceId=w", "/api/workspaces/w/stats"} {
 		resp, b := f.do(t, "GET", path, "")
 		wantErr(t, resp.StatusCode, b, 501, contract.CodeNotAvailable)
+	}
+}
+
+// The wire form of money is a decimal string with six places (R12, ARCHITECTURE.md invariant 7):
+// 1500 micro-USD is "0.001500" for a session cost and for stats spend.
+func TestMoneyOnTheWireIsTheExactDecimalString(t *testing.T) {
+	s := newStack(t)
+	admin := s.admin(t, "user_admin")
+	_, ws := s.defaultWorkspace(t, admin.tok)
+	s.seedCalls(t, callRec(ws, "m1", "sess-m", 1, time.Now().UTC().Add(-time.Hour), microp(1500)))
+	list := string(s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/sessions", "", 200))
+	if !strings.Contains(list, `"costUsd":"0.001500"`) || !strings.Contains(list, `"savedUsd":"0.000000"`) {
+		t.Errorf("session money: %s", list)
+	}
+	detail := string(s.must(t, admin.tok, "GET", "/api/sessions/sess-m?workspaceId="+ws, "", 200))
+	if !strings.Contains(detail, `"costUsd":"0.001500"`) {
+		t.Errorf("session detail money: %s", detail)
+	}
+	stats := string(s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/stats", "", 200))
+	if !strings.Contains(stats, `"spendUsd":"0.001500"`) {
+		t.Errorf("stats money: %s", stats)
 	}
 }

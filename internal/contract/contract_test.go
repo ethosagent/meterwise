@@ -128,19 +128,19 @@ func TestMoneyExtremes(t *testing.T) {
 	}
 }
 
-func TestMoneyJSONIsAnInteger(t *testing.T) {
+func TestMoneyJSONIsADecimalString(t *testing.T) {
 	type row struct {
 		Saved contract.MicroUSD `json:"saved"`
 	}
 	b, err := json.Marshal(row{Saved: 1500})
-	if err != nil || string(b) != `{"saved":1500}` {
+	if err != nil || string(b) != `{"saved":"0.001500"}` {
 		t.Fatalf("got %s, %v", b, err)
 	}
 	var back row
 	if err := json.Unmarshal(b, &back); err != nil || back.Saved != 1500 {
 		t.Fatalf("round trip: %+v, %v", back, err)
 	}
-	for _, bad := range []string{`{"saved":"0.001500"}`, `{"saved":1.5}`, `{"saved":"x"}`} {
+	for _, bad := range []string{`{"saved":1500}`, `{"saved":"x"}`} {
 		if err := json.Unmarshal([]byte(bad), &back); err == nil {
 			t.Errorf("accepted %s", bad)
 		}

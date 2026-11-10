@@ -182,9 +182,9 @@
           "costUsd": {
             "oneOf": [
               {
-                "description": "micro-USD (millionths of a US dollar)",
-                "format": "int64",
-                "type": "integer"
+                "description": "decimal USD, six places",
+                "pattern": "^-?\\d+\\.\\d{6}$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -745,9 +745,9 @@
           "costUsd": {
             "oneOf": [
               {
-                "description": "micro-USD (millionths of a US dollar)",
-                "format": "int64",
-                "type": "integer"
+                "description": "decimal USD, six places",
+                "pattern": "^-?\\d+\\.\\d{6}$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -764,9 +764,9 @@
             "type": "string"
           },
           "likelySavedUsd": {
-            "description": "micro-USD (millionths of a US dollar)",
-            "format": "int64",
-            "type": "integer"
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
           },
           "outcome": {
             "type": "string"
@@ -775,9 +775,9 @@
             "type": "integer"
           },
           "savedUsd": {
-            "description": "micro-USD (millionths of a US dollar)",
-            "format": "int64",
-            "type": "integer"
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
           },
           "source": {
             "type": "string"
@@ -947,9 +947,9 @@
             "type": "integer"
           },
           "spendUsd": {
-            "description": "micro-USD (millionths of a US dollar)",
-            "format": "int64",
-            "type": "integer"
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
           }
         },
         "required": [
@@ -973,9 +973,9 @@
             "type": "integer"
           },
           "spendUsd": {
-            "description": "micro-USD (millionths of a US dollar)",
-            "format": "int64",
-            "type": "integer"
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
           }
         },
         "required": [

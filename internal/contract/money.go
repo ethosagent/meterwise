@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -8,7 +9,7 @@ import (
 )
 
 // MicroUSD is money as an integer count of millionths of a US dollar.
-// Money is never a float in Go (ruling R12); the API sends the integer count.
+// Money is never a float in Go (ruling R12); the API sends decimal strings.
 type MicroUSD int64
 
 const microPerUSD = 1_000_000
@@ -65,18 +66,25 @@ func ParseMicroUSD(s string) (MicroUSD, error) {
 	return MicroUSD(v + f), nil
 }
 
-// MarshalJSON sends money as a JSON integer count of micro-USD (interface 05: "MicroUSD serialises as an
-// integer"). Browsers read integers exactly up to 2^53 micro-USD, about 9 billion dollars.
+// MarshalJSON sends money as a decimal string, never a JSON number (ruling R12).
 func (m MicroUSD) MarshalJSON() ([]byte, error) {
-	return strconv.AppendInt(nil, int64(m), 10), nil
+	b, err := json.Marshal(m.Decimal())
+	if err != nil {
+		return nil, fmt.Errorf("contract: marshal money: %w", err)
+	}
+	return b, nil
 }
 
-// UnmarshalJSON reads a JSON integer; a string, fraction or exponent is rejected.
+// UnmarshalJSON reads the decimal-string form; a bare number is rejected.
 func (m *MicroUSD) UnmarshalJSON(b []byte) error {
-	v, err := strconv.ParseInt(string(b), 10, 64)
-	if err != nil {
-		return fmt.Errorf("contract: money must be an integer count of micro-USD: %w", err)
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("contract: money must be a decimal string: %w", err)
 	}
-	*m = MicroUSD(v)
+	v, err := ParseMicroUSD(s)
+	if err != nil {
+		return err
+	}
+	*m = v
 	return nil
 }

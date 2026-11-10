@@ -278,7 +278,7 @@ func TestTypeMappings(t *testing.T) {
 		reflect.TypeFor[bool]():              "boolean",
 		reflect.TypeFor[int64]():             "number",
 		reflect.TypeFor[[]string]():          "string[]",
-		reflect.TypeFor[contract.MicroUSD](): "number",
+		reflect.TypeFor[contract.MicroUSD](): "string",
 		reflect.TypeFor[contract.Code]():     "ErrorCode",
 		reflect.TypeFor[contract.Health]():   "Health",
 	}

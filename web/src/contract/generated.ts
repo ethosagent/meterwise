@@ -283,9 +283,9 @@ export interface Session {
   calls: number;
   inputTokens: number;
   outputTokens: number;
-  costUsd: number | null;
-  savedUsd: number;
-  likelySavedUsd: number;
+  costUsd: string | null;
+  savedUsd: string;
+  likelySavedUsd: string;
   outcome: string;
   client: string | null;
 }
@@ -304,7 +304,7 @@ export interface Call {
   outputTokens: number;
   cachedTokens: number;
   reasoningTokens: number;
-  costUsd: number | null;
+  costUsd: string | null;
   ttfbMs: number;
   durationMs: number;
   toolCalls: string[];
@@ -324,13 +324,13 @@ export interface SessionDetail {
 
 export interface StatsDay {
   day: string;
-  spendUsd: number;
+  spendUsd: string;
   calls: number;
   sessions: number;
 }
 
 export interface Stats {
-  spendUsd: number;
+  spendUsd: string;
   calls: number;
   sessions: number;
   avgCallsPerSession: number;
