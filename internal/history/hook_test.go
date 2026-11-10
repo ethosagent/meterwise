@@ -365,3 +365,31 @@ func TestLateEmptyAfterKeepsTheCaughtUpTurn(t *testing.T) {
 		t.Fatalf("ring = %+v", got)
 	}
 }
+
+// M4: rings are bounded by a byte budget as well as a session count. Beyond it the least recently used
+// sessions go, counted on Status, and the bytes held stay within the budget.
+func TestRingsStayWithinTheByteBudget(t *testing.T) {
+	const budget = 64 << 10
+	h := history.New(history.Options{MaxBytes: budget, Shards: 1})
+	for s := 0; s < 200; s++ {
+		for i := 1; i <= 5; i++ {
+			run(t, h, newCall("ws", fmt.Sprint(s), i), 1, 1, text("some text here"), toolDelta(0, "read_file", fmt.Sprintf(`{"path":"/f%d.go"}`, i)))
+		}
+	}
+	st := h.Status()
+	if b := st["bytes"].(int64); b <= 0 || b > budget {
+		t.Errorf("bytes held = %d, want within (0, %d]", b, budget)
+	}
+	if st["evicted_bytes"].(int64) == 0 || st["sessions"].(int) >= 200 {
+		t.Errorf("the budget must evict: %v", st)
+	}
+	c := newCall("ws", "199", 6) // the most recent session is kept
+	h.Before(bg, c)
+	if got := ringOf(t, c); len(got) != 5 {
+		t.Errorf("the newest session's ring = %d entries, want 5", len(got))
+	}
+	h.OnSessionClosed(bg, tollgate.Session{ID: "199", TenantID: "ws"})
+	if after := h.Status()["bytes"].(int64); after >= st["bytes"].(int64) {
+		t.Errorf("closing a session must release its bytes: %d -> %d", st["bytes"], after)
+	}
+}

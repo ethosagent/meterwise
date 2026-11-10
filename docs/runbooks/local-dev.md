@@ -108,6 +108,7 @@ once per token.
 | `PROXY_PUBLIC_HOST` / `APP_NAME` | `localhost:8080` / `Meterwise` | returned by `GET /api/config` |
 | `PRIVACY_MODE` | `true` | accepted (`true`/`false`) but has no effect: tollgate v0.1.0 has no switch for it, so `false` only logs a boot warning (decision D12 stays unimplemented until tollgate adds one) |
 | `MAX_WORKSPACES` / `MAX_CONCURRENT_PER_WORKSPACE` | `20` / `8` | operational limits (D13) |
+| `HISTORY_MAX_BYTES` | `268435456` (256 MiB) | byte budget of the monitors' per-session history rings; beyond it the least recently used sessions are dropped (`evicted_bytes` and `bytes` under `history` on `/statusz`); the session count is capped separately by tollgate's `MaxSessions` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | base URL of an OTLP/HTTP collector; unset turns tracing off |
 | `CLERK_ISSUER` / `CLERK_JWKS_URL` | unset | exact token `iss` and the JWKS URL (https); both required with `APP_ENV=prod` |
 | `CLERK_SECRET_KEY` / `CLERK_WEBHOOK_SECRET` | unset | backend API key (invitations) and Svix signing secret (`whsec_...`); required with `APP_ENV=prod`, never printed |

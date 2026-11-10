@@ -283,3 +283,26 @@ func TestAuthorizedPartiesAreRequiredOutsideDevAndReportedWithTheOtherProblems(t
 		}
 	}
 }
+
+// HISTORY_MAX_BYTES bounds the monitors' history rings (M4): 256 MiB by default, a positive integer of
+// bytes otherwise, shown by Redacted.
+func TestHistoryMaxBytes(t *testing.T) {
+	c, err := config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB}))
+	if err != nil || c.HistoryMaxBytes != 256<<20 || config.DefaultHistoryMaxBytes != 256<<20 {
+		t.Fatalf("default = %d, %v", c.HistoryMaxBytes, err)
+	}
+	c, err = config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvHistoryMaxBytes: "1048576"}))
+	if err != nil || c.HistoryMaxBytes != 1<<20 || c.Redacted()[config.EnvHistoryMaxBytes] != "1048576" {
+		t.Fatalf("set = %d, %v", c.HistoryMaxBytes, err)
+	}
+	for _, bad := range []string{"0", "-1", "lots", "1.5"} {
+		_, err := config.Load(env(map[string]string{config.EnvDatabaseURL: goodDB, config.EnvHistoryMaxBytes: bad}))
+		if err == nil {
+			t.Errorf("%q: accepted", bad)
+			continue
+		}
+		if e := contract.AsError(err); e.Code != contract.CodeConfigInvalid || !hasDetail(e.Details, config.EnvHistoryMaxBytes) {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}

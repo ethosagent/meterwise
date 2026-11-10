@@ -34,6 +34,7 @@ const (
 	EnvPrivacyMode     = "PRIVACY_MODE"
 	EnvMaxWorkspaces   = "MAX_WORKSPACES"
 	EnvMaxConcurrent   = "MAX_CONCURRENT_PER_WORKSPACE"
+	EnvHistoryMaxBytes = "HISTORY_MAX_BYTES"
 	EnvWebDir          = "WEB_DIR"
 	EnvLogLevel        = "LOG_LEVEL"
 	EnvAppEnv          = "APP_ENV"
@@ -71,6 +72,7 @@ type Config struct {
 	PrivacyMode               bool   // default true (decision D12)
 	MaxWorkspaces             int
 	MaxConcurrentPerWorkspace int
+	HistoryMaxBytes           int64  // byte budget of the monitors' per-session history rings (LRU beyond it)
 	WebDir                    string // built web app, served on ListenAPI
 	LogLevel                  string
 	Env                       string
@@ -89,6 +91,7 @@ const (
 	DefaultEnv                       = "prod"
 	DefaultMaxWorkspaces             = 20
 	DefaultMaxConcurrentPerWorkspace = 8
+	DefaultHistoryMaxBytes           = 256 << 20
 	maxAppNameLen                    = 64
 )
 
@@ -131,6 +134,7 @@ func Load(get Lookup) (Config, error) {
 	c.PrivacyMode = boolean(get, EnvPrivacyMode, true, &p)
 	c.MaxWorkspaces = positive(get, EnvMaxWorkspaces, DefaultMaxWorkspaces, &p)
 	c.MaxConcurrentPerWorkspace = positive(get, EnvMaxConcurrent, DefaultMaxConcurrentPerWorkspace, &p)
+	c.HistoryMaxBytes = positive64(get, EnvHistoryMaxBytes, DefaultHistoryMaxBytes, &p)
 
 	c.validateListeners(&p)
 	c.validateIdentity(&p)
@@ -294,6 +298,7 @@ func (c Config) Redacted() map[string]string {
 		EnvPrivacyMode:     strconv.FormatBool(c.PrivacyMode),
 		EnvMaxWorkspaces:   strconv.Itoa(c.MaxWorkspaces),
 		EnvMaxConcurrent:   strconv.Itoa(c.MaxConcurrentPerWorkspace),
+		EnvHistoryMaxBytes: strconv.FormatInt(c.HistoryMaxBytes, 10),
 		EnvWebDir:          c.WebDir,
 		EnvLogLevel:        c.LogLevel,
 		EnvAppEnv:          c.Env,
@@ -369,6 +374,19 @@ func positive(get Lookup, key string, def int, p *problems) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n < 1 {
 		p.add(key, "must be an integer >= 1")
+		return def
+	}
+	return n
+}
+
+func positive64(get Lookup, key string, def int64, p *problems) int64 {
+	raw, ok := get(key)
+	if !ok || raw == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 1 {
+		p.add(key, "must be an integer >= 1 (bytes)")
 		return def
 	}
 	return n

@@ -17,6 +17,9 @@ type Options struct {
 	// MaxSessions bounds the live rings (cmd passes tollgate's Limits.MaxSessions); beyond it the
 	// least recently used session is dropped and counted. Default 100000.
 	MaxSessions int
+	// MaxBytes bounds the bytes the rings hold (an estimate per entry); beyond it the least recently used
+	// sessions are dropped and counted. cmd passes HISTORY_MAX_BYTES. Default 256 MiB.
+	MaxBytes int64
 	// Shards is the number of lock shards. Default 32.
 	Shards int
 }
@@ -26,6 +29,7 @@ type Hook struct {
 	tollgate.NoopHook
 	st       *store
 	evicted  atomic.Int64
+	evictedB atomic.Int64
 	caughtUp atomic.Int64
 	rebuilt  atomic.Int64
 	appended atomic.Int64
@@ -41,8 +45,17 @@ func New(o Options) *Hook {
 	if o.Shards <= 0 {
 		o.Shards = 32
 	}
+	if o.MaxBytes <= 0 {
+		o.MaxBytes = DefaultMaxBytes
+	}
 	h := &Hook{}
-	h.st = newStore(o.MaxSessions, o.Shards, func() { h.evicted.Add(1) })
+	h.st = newStore(o.MaxSessions, o.MaxBytes, o.Shards, func(byBytes bool) {
+		if byBytes {
+			h.evictedB.Add(1)
+			return
+		}
+		h.evicted.Add(1)
+	})
 	return h
 }
 
@@ -178,7 +191,7 @@ func (h *Hook) OnSessionClosed(_ context.Context, s tollgate.Session) {
 // Status is the hook's counters for /statusz.
 func (h *Hook) Status() map[string]any {
 	return map[string]any{
-		"sessions": h.st.size(), "evicted": h.evicted.Load(), "rebuilt": h.rebuilt.Load(),
+		"sessions": h.st.size(), "bytes": h.st.held(), "evicted": h.evicted.Load(), "evicted_bytes": h.evictedB.Load(), "rebuilt": h.rebuilt.Load(),
 		"appended": h.appended.Load(), "healed": h.healed.Load(), "caught_up": h.caughtUp.Load(), "turns_read": h.read.Load(),
 	}
 }

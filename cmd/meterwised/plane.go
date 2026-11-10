@@ -116,7 +116,7 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 	// Order is load-bearing (plan 06, R2). wsauth stamps the tenant; history stamps the ring and the verdict
 	// pointer; monitors may short-circuit and fill the verdicts; the injected hooks follow; the ledger comes
 	// last, seals the verdicts in After and records.
-	hist := history.New(history.Options{MaxSessions: tollgate.DefaultLimits().MaxSessions})
+	hist := history.New(history.Options{MaxSessions: tollgate.DefaultLimits().MaxSessions, MaxBytes: rt.cfg.HistoryMaxBytes})
 	mon := monitors.New(monitors.Options{PrivacyMode: rt.cfg.PrivacyMode, Editor: wire.Editor{}, MaxSessions: tollgate.DefaultLimits().MaxSessions})
 	d.Sources = append(d.Sources, hist, mon)
 	d.Hooks = append(append([]tollgate.Hook{wsauth.Hook{}, hist, mon}, d.Hooks...), led)

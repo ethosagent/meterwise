@@ -10,10 +10,12 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-// RingDepth is how many calls a session's ring keeps; ringShingles is how many of the newest keep their shingles.
+// RingDepth is how many calls a session's ring keeps; ringShingles is how many of the newest keep their
+// shingles; DefaultMaxBytes is the rings' byte budget when Options.MaxBytes is unset.
 const (
-	RingDepth    = 50
-	ringShingles = 3
+	RingDepth       = 50
+	ringShingles    = 3
+	DefaultMaxBytes = 256 << 20
 )
 
 // ring is one session's state: its entries keyed and ordered by call index (ascending, at most RingDepth,
@@ -33,30 +35,53 @@ func (r ring) newest() int {
 }
 
 type entry struct {
-	key string
-	r   ring
+	key   string
+	r     ring
+	bytes int64
 }
 
 type shard struct {
-	mu  sync.Mutex
-	m   map[string]*list.Element
-	lru *list.List // front = most recent
-	cap int
+	mu     sync.Mutex
+	m      map[string]*list.Element
+	lru    *list.List // front = most recent
+	cap    int
+	budget int64
+	bytes  int64
 }
 
-// store is a sharded, bounded LRU of session rings.
+// store is a sharded LRU of session rings, bounded by a session count and a byte budget, each split
+// evenly across the shards.
 type store struct {
 	shards  []*shard
-	evicted func()
+	evicted func(byBytes bool)
 }
 
-func newStore(maxSessions, shards int, evicted func()) *store {
+func newStore(maxSessions int, maxBytes int64, shards int, evicted func(byBytes bool)) *store {
 	s := &store{evicted: evicted}
 	per := max(1, (maxSessions+shards-1)/shards)
+	perBytes := max(1, maxBytes/int64(shards))
 	for i := 0; i < shards; i++ {
-		s.shards = append(s.shards, &shard{m: map[string]*list.Element{}, lru: list.New(), cap: per})
+		s.shards = append(s.shards, &shard{m: map[string]*list.Element{}, lru: list.New(), cap: per, budget: perBytes})
 	}
 	return s
+}
+
+// Sizes the byte budget charges: an estimate of what a ring holds on the heap (struct, slice backing
+// arrays, tool name strings, the key and the list element), not an exact count.
+const (
+	entryOverhead   = 160 // entry, list element, map slot
+	summaryOverhead = 216 // a CallSummary: ints and seven slice headers
+)
+
+func ringBytes(key string, r ring) int64 {
+	n := int64(entryOverhead + len(key) + cap(r.calls)*summaryOverhead)
+	for _, c := range r.calls {
+		n += int64(8 * (len(c.ArgsHashes) + len(c.ReadHashes) + len(c.WroteHashes) + len(c.Shingles)))
+		for _, t := range c.Tools {
+			n += int64(16 + len(t))
+		}
+	}
+	return n
 }
 
 func (s *store) shard(key string) *shard {
@@ -78,25 +103,33 @@ func (s *store) get(key string) (ring, bool) {
 	return el.Value.(*entry).r, true
 }
 
-// update replaces the session's ring with fn(current) and returns it, creating it (and evicting the least
-// recent session when the shard is full) as needed. fn must not mutate its argument's slice.
+// update replaces the session's ring with fn(current) and returns it, creating it as needed. Beyond the
+// shard's session cap or byte budget the least recent sessions are evicted (never the one just updated).
+// fn must not mutate its argument's slice.
 func (s *store) update(key string, fn func(cur ring) ring) ring {
 	sh := s.shard(key)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	if el, ok := sh.m[key]; ok {
-		e := el.Value.(*entry)
-		e.r = fn(e.r)
+	el, ok := sh.m[key]
+	if ok {
 		sh.lru.MoveToFront(el)
-		return e.r
+	} else {
+		el = sh.lru.PushFront(&entry{key: key})
+		sh.m[key] = el
 	}
-	e := &entry{key: key, r: fn(ring{})}
-	sh.m[key] = sh.lru.PushFront(e)
-	for sh.lru.Len() > sh.cap {
+	e := el.Value.(*entry)
+	e.r = fn(e.r)
+	b := ringBytes(key, e.r)
+	sh.bytes += b - e.bytes
+	e.bytes = b
+	for sh.lru.Len() > 1 && (sh.lru.Len() > sh.cap || sh.bytes > sh.budget) {
+		byBytes := sh.lru.Len() <= sh.cap
 		last := sh.lru.Back()
+		old := last.Value.(*entry)
 		sh.lru.Remove(last)
-		delete(sh.m, last.Value.(*entry).key)
-		s.evicted()
+		delete(sh.m, old.key)
+		sh.bytes -= old.bytes
+		s.evicted(byBytes)
 	}
 	return e.r
 }
@@ -108,7 +141,19 @@ func (s *store) remove(key string) {
 	if el, ok := sh.m[key]; ok {
 		sh.lru.Remove(el)
 		delete(sh.m, key)
+		sh.bytes -= el.Value.(*entry).bytes
 	}
+}
+
+// held is the bytes the rings are charged, across shards.
+func (s *store) held() int64 {
+	var n int64
+	for _, sh := range s.shards {
+		sh.mu.Lock()
+		n += sh.bytes
+		sh.mu.Unlock()
+	}
+	return n
 }
 
 func (s *store) size() int {
