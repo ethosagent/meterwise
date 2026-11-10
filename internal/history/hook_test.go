@@ -171,7 +171,9 @@ func TestEmptyNewestEntryHealsFromTheNextRequest(t *testing.T) {
 	h := history.New(history.Options{})
 	run(t, h, newCall("ws", "s", 1), 5, 5, toolDelta(0, "grep", `{"q":1}`))
 	run(t, h, newCall("ws", "s", 2), 0, 0) // answered without a stream (a block, or stream:false)
-	c := newCall("ws", "s", 3, asst("replayed", tc("c9", "read_file", `{"path":"/z"}`)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: "c9", Text: "r"})
+	c := newCall("ws", "s", 3,
+		asst("", tc("c1", "grep", `{"q":1}`)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: "c1", Text: "r"},
+		asst("replayed", tc("c9", "read_file", `{"path":"/z"}`)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: "c9", Text: "r"})
 	h.Before(bg, c)
 	got := ringOf(t, c)
 	if len(got) != 2 || got[1].Index != 2 || !reflect.DeepEqual(got[1].Tools, []string{"read_file"}) || got[1].TextHash != contract.NormalizedHash("replayed") {
@@ -179,6 +181,20 @@ func TestEmptyNewestEntryHealsFromTheNextRequest(t *testing.T) {
 	}
 	if got[0].Tools[0] != "grep" || h.Status()["healed"] != int64(1) {
 		t.Errorf("older entry must be untouched; status %v", h.Status())
+	}
+}
+
+// S1: a side request in the session leaves entry 2 empty; the main thread's next request carries as its
+// newest turn the one the ring holds at 1, so entry 2 is not healed with a copy of it.
+func TestSideRequestEntryIsNotHealedWithTheMainThreadsTurn(t *testing.T) {
+	h := history.New(history.Options{})
+	run(t, h, newCall("ws", "s", 1), 5, 5, toolDelta(0, "grep", `{"q":1}`))
+	run(t, h, newCall("ws", "s", 2), 0, 0) // the side request: no stream, no tools
+	c := newCall("ws", "s", 3, asst("", tc("c1", "grep", `{"q":1}`)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: "c1", Text: "r"})
+	h.Before(bg, c)
+	got := ringOf(t, c)
+	if len(got) != 2 || len(got[1].Tools) != 0 || h.Status()["healed"] != int64(0) || h.Status()["heal_misaligned"] != int64(1) {
+		t.Fatalf("ring %+v status %v", got, h.Status())
 	}
 }
 

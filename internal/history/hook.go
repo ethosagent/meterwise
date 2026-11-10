@@ -44,6 +44,7 @@ type Hook struct {
 	rebuilt  atomic.Int64
 	appended atomic.Int64
 	healed   atomic.Int64
+	unhealed atomic.Int64
 	read     atomic.Int64
 }
 
@@ -85,7 +86,7 @@ func key(tenant, session string) string { return tenant + "\x00" + session }
 // rebuilt from the call's messages (a restart, or an evicted ring). A ring behind the call (the previous
 // call's After has not run yet: a client faster than After) is caught up from the same messages, and only
 // the missing turns are parsed. An empty newest entry (a call answered without a stream, such as a
-// block) is healed from the request's newest turn.
+// block) is healed from the request's newest turn, when the request's older turns match the ring's.
 func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response, error) {
 	if c.Provider.Wire == tollgate.WirePassthrough || c.Session.ID == "" {
 		return nil, nil
@@ -123,6 +124,10 @@ func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call, late func() bool) []
 	}
 	lo := max(cur.newest()+1, n-RingDepth)
 	heal := emptyAt(cur.calls, n-1)
+	if heal && !aligned(cur.calls, msgs, n, late) {
+		heal = false
+		h.unhealed.Add(1)
+	}
 	if lo > n-1 && !heal {
 		return nil
 	}
@@ -163,6 +168,44 @@ func (h *Hook) late(ctx context.Context) func() bool {
 		}
 		return true
 	}
+}
+
+// aligned reports whether the request's turns line up with the ring before a heal of entry n-1: each of
+// the ring's entries n-2 .. n-1-alignDepth that has content must be the request's turn at that index. A
+// side request that shares the session id (title generation, another conversation) leaves an empty entry
+// n-1 while the main thread's next request carries, as its newest turn, the turn the ring already holds
+// at n-2; healing would copy it into n-1 and make a false duplicate (S1). Checking a few entries keeps a
+// true repeat (the same turn at n-3 and n-2) from passing by chance. With no content to check against,
+// the heal goes ahead.
+func aligned(calls []contract.CallSummary, msgs []tollgate.Message, n int, late func() bool) bool {
+	lo, hi := n-1-alignDepth, n-2
+	want := map[int]contract.CallSummary{}
+	for _, s := range calls {
+		if s.Index >= lo && s.Index <= hi && !emptyTurn(s) {
+			want[s.Index] = s
+		}
+	}
+	if len(want) == 0 {
+		return true
+	}
+	got := readBack(msgs, n, lo, hi, func(i int) bool { _, ok := want[i]; return ok }, late)
+	if len(got) != len(want) {
+		return false
+	}
+	for _, g := range got {
+		if !sameTurn(g, want[g.Index]) {
+			return false
+		}
+	}
+	return true
+}
+
+// alignDepth is how many ring entries below a heal are checked against the request.
+const alignDepth = 3
+
+// sameTurn compares the content of two ring entries (tools, their arguments and the text).
+func sameTurn(a, b contract.CallSummary) bool {
+	return a.TextHash == b.TextHash && slices.Equal(a.Tools, b.Tools) && slices.Equal(a.ArgsHashes, b.ArgsHashes)
 }
 
 // emptyAt reports whether the ring holds an entry for call index i with no content.
@@ -230,7 +273,7 @@ func (h *Hook) OnSessionClosed(_ context.Context, s tollgate.Session) {
 func (h *Hook) Status() map[string]any {
 	return map[string]any{
 		"sessions": h.st.size(), "bytes": h.st.held(), "evicted": h.evicted.Load(), "evicted_bytes": h.evictedB.Load(), "rebuilt": h.rebuilt.Load(),
-		"appended": h.appended.Load(), "healed": h.healed.Load(), "caught_up": h.caughtUp.Load(), "turns_read": h.read.Load(),
+		"appended": h.appended.Load(), "healed": h.healed.Load(), "heal_misaligned": h.unhealed.Load(), "caught_up": h.caughtUp.Load(), "turns_read": h.read.Load(),
 		"skipped_deadline": h.skipped.Load(), "cut_deadline": h.cut.Load(),
 	}
 }
