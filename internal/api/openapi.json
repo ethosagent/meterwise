@@ -882,9 +882,6 @@
           "blocked": {
             "type": "integer"
           },
-          "estSavedTokens": {
-            "type": "integer"
-          },
           "falsePositiveRate": {
             "oneOf": [
               {
@@ -904,6 +901,9 @@
           "fires": {
             "type": "integer"
           },
+          "likelySavedTokens": {
+            "type": "integer"
+          },
           "likelySavedUsd": {
             "description": "decimal USD, six places",
             "pattern": "^-?\\d+\\.\\d{6}$",
@@ -921,10 +921,16 @@
           "observed": {
             "type": "integer"
           },
+          "savedTokens": {
+            "type": "integer"
+          },
           "savedUsd": {
             "description": "decimal USD, six places",
             "pattern": "^-?\\d+\\.\\d{6}$",
             "type": "string"
+          },
+          "wouldSaveTokens": {
+            "type": "integer"
           },
           "wouldSaveUsd": {
             "description": "decimal USD, six places",
@@ -939,7 +945,9 @@
           "blocked",
           "noted",
           "observed",
-          "estSavedTokens",
+          "savedTokens",
+          "likelySavedTokens",
+          "wouldSaveTokens",
           "savedUsd",
           "likelySavedUsd",
           "wouldSaveUsd",

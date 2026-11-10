@@ -470,7 +470,9 @@ export interface MonitorStatsRow {
   blocked: number;
   noted: number;
   observed: number;
-  estSavedTokens: number;
+  savedTokens: number;
+  likelySavedTokens: number;
+  wouldSaveTokens: number;
   savedUsd: string;
   likelySavedUsd: string;
   wouldSaveUsd: string;

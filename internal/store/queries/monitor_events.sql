@@ -8,14 +8,16 @@ ORDER BY call_index, id
 LIMIT sqlc.arg(max_rows)::int;
 
 -- name: MonitorStats :many
--- Per monitor over [from_ts, to_ts): fires, actions, and the three money columns. An event that acted (note or block)
--- is saved (confidence certain) or likely (confidence likely); an observe event is would-save only. The columns are
--- never summed into one number. Feedback counts are over the same events.
+-- Per monitor over [from_ts, to_ts): fires, actions, and the three savings classes in tokens and in money. An event
+-- that acted (note or block) is saved (confidence certain) or likely (confidence likely); an observe event is
+-- would-save only. Each column holds one class: no column adds two of them. Feedback counts are over the same events.
 SELECT monitor, COUNT(*)::bigint AS fires,
        COUNT(*) FILTER (WHERE action = 'block')::bigint AS blocked,
        COUNT(*) FILTER (WHERE action = 'note')::bigint AS noted,
        COUNT(*) FILTER (WHERE action = 'observe')::bigint AS observed,
-       COALESCE(SUM(est_saved_tokens) FILTER (WHERE action <> 'observe'), 0)::bigint AS est_saved_tokens,
+       COALESCE(SUM(est_saved_tokens) FILTER (WHERE action <> 'observe' AND confidence = 'certain'), 0)::bigint AS saved_tokens,
+       COALESCE(SUM(est_saved_tokens) FILTER (WHERE action <> 'observe' AND confidence = 'likely'), 0)::bigint AS likely_saved_tokens,
+       COALESCE(SUM(est_saved_tokens) FILTER (WHERE action = 'observe'), 0)::bigint AS would_save_tokens,
        (COALESCE(SUM(est_saved_usd) FILTER (WHERE action <> 'observe' AND confidence = 'certain'), 0) * 1000000)::bigint AS saved_micro,
        (COALESCE(SUM(est_saved_usd) FILTER (WHERE action <> 'observe' AND confidence = 'likely'), 0) * 1000000)::bigint AS likely_micro,
        (COALESCE(SUM(est_saved_usd) FILTER (WHERE action = 'observe'), 0) * 1000000)::bigint AS would_save_micro,

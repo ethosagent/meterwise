@@ -146,7 +146,8 @@ func (s *Store) MonitorStats(ctx context.Context, workspaceID string, from, to t
 	for _, r := range rows {
 		m := contract.MonitorName(r.Monitor)
 		by[m] = contract.MonitorStatRow{
-			Monitor: m, Fires: r.Fires, Blocked: r.Blocked, Noted: r.Noted, Observed: r.Observed, EstSavedTokens: r.EstSavedTokens,
+			Monitor: m, Fires: r.Fires, Blocked: r.Blocked, Noted: r.Noted, Observed: r.Observed,
+			SavedTokens: r.SavedTokens, LikelySavedTokens: r.LikelySavedTokens, WouldSaveTokens: r.WouldSaveTokens,
 			Saved: contract.MicroUSD(r.SavedMicro), Likely: contract.MicroUSD(r.LikelyMicro), WouldSave: contract.MicroUSD(r.WouldSaveMicro),
 			FeedbackCorrect: r.FeedbackCorrect, FeedbackWrong: r.FeedbackWrong,
 		}

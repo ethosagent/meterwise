@@ -57,7 +57,8 @@ func monitorStatsView(rng string, cfg contract.MonitorConfig, rows []contract.Mo
 		out.WouldSaveUsd += r.WouldSave
 		out.Monitors = append(out.Monitors, contract.MonitorStatsRowView{
 			Monitor: r.Monitor, Mode: cfg.ModeOf(r.Monitor), Fires: r.Fires, Blocked: r.Blocked, Noted: r.Noted, Observed: r.Observed,
-			EstSavedTokens: r.EstSavedTokens, SavedUsd: r.Saved, LikelySavedUsd: r.Likely, WouldSaveUsd: r.WouldSave,
+			SavedTokens: r.SavedTokens, LikelySavedTokens: r.LikelySavedTokens, WouldSaveTokens: r.WouldSaveTokens,
+			SavedUsd: r.Saved, LikelySavedUsd: r.Likely, WouldSaveUsd: r.WouldSave,
 			FeedbackCorrect: r.FeedbackCorrect, FeedbackWrong: r.FeedbackWrong,
 			FalsePositiveRate: contract.FalsePositiveRate(r.FeedbackCorrect, r.FeedbackWrong),
 		})

@@ -181,7 +181,8 @@ func TestMonitorStatsPerMonitorZeroFilled(t *testing.T) {
 		}
 	}
 	dup, rr, np := rows[0], rows[1], rows[2]
-	if dup.Fires != 2 || dup.Blocked != 1 || dup.Observed != 1 || dup.Saved != 3000 || dup.WouldSave != 5000 || dup.Likely != 0 || dup.EstSavedTokens != 1000 {
+	if dup.Fires != 2 || dup.Blocked != 1 || dup.Observed != 1 || dup.Saved != 3000 || dup.WouldSave != 5000 || dup.Likely != 0 ||
+		dup.SavedTokens != 1000 || dup.LikelySavedTokens != 0 || dup.WouldSaveTokens != 500 {
 		t.Errorf("duplicate_tool_call = %+v", dup)
 	}
 	if rr.Fires != 2 || rr.Noted != 2 || rr.Likely != 1500 || rr.Saved != 0 || rr.FeedbackCorrect != 1 || rr.FeedbackWrong != 1 {
@@ -236,5 +237,33 @@ func TestWorkspaceSettingsAndMonitorsStayApart(t *testing.T) {
 	}
 	if _, err := s.UpdateWorkspaceMonitors(ctx, "00000000-0000-0000-0000-000000000000", ws, func(c contract.MonitorConfig) (contract.MonitorConfig, error) { return c, nil }); code(err) != contract.CodeNotFound {
 		t.Errorf("another org: %v", err)
+	}
+}
+
+// TestMonitorStatsTokenFieldsNeverSumCertainAndLikely: each token column counts exactly one class. A block
+// (certain), a note (likely) and an observe (would-save) of one monitor land in three separate fields, and no
+// field holds a total of two of them (non-negotiable 5).
+func TestMonitorStatsTokenFieldsNeverSumCertainAndLikely(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "P", "PPPPPPPPPPPPPPPPPPPPPP")
+	c1 := rec(ws, "p1", "s1", 1, base, "ok", true, nil)
+	c1.Verdicts = []contract.PricedVerdict{verdict(contract.MonitorDuplicateToolCall, contract.ModeBlock, contract.ConfidenceCertain, 1000, 3000)}
+	c2 := rec(ws, "p2", "s1", 2, base.Add(time.Second), "ok", true, nil)
+	c2.Verdicts = []contract.PricedVerdict{verdict(contract.MonitorDuplicateToolCall, contract.ModeNote, contract.ConfidenceLikely, 400, 1200)}
+	c3 := rec(ws, "p3", "s1", 3, base.Add(2*time.Second), "ok", true, nil)
+	c3.Verdicts = []contract.PricedVerdict{verdict(contract.MonitorDuplicateToolCall, contract.ModeObserve, contract.ConfidenceLikely, 70, 210)}
+	if _, err := s.WriteCalls(ctx, []contract.CallRecord{c1, c2, c3}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.MonitorStats(ctx, ws, base.Add(-time.Hour), base.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := rows[0]
+	if d.SavedTokens != 1000 || d.LikelySavedTokens != 400 || d.WouldSaveTokens != 70 {
+		t.Errorf("tokens saved/likely/would = %d/%d/%d, want 1000/400/70 (one class each)", d.SavedTokens, d.LikelySavedTokens, d.WouldSaveTokens)
+	}
+	if d.Saved != 3000 || d.Likely != 1200 || d.WouldSave != 210 {
+		t.Errorf("usd saved/likely/would = %v/%v/%v, want 3000/1200/210", d.Saved, d.Likely, d.WouldSave)
 	}
 }

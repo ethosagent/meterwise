@@ -30,19 +30,22 @@ type PricedVerdict struct {
 func (v PricedVerdict) CountsAsSaved() bool { return v.Action != ModeObserve }
 
 // MonitorStatRow is one monitor's counts over a window, as the store aggregates them. Saved and Likely are
-// the two savings numbers (never summed); WouldSave is what observe-mode events would have saved.
+// the two savings numbers (never summed); WouldSave is what observe-mode events would have saved. The token
+// fields follow the same three classes, one class per field.
 type MonitorStatRow struct {
-	Monitor         MonitorName
-	Fires           int64
-	Blocked         int64
-	Noted           int64
-	Observed        int64
-	EstSavedTokens  int64
-	Saved           MicroUSD
-	Likely          MicroUSD
-	WouldSave       MicroUSD
-	FeedbackCorrect int64
-	FeedbackWrong   int64
+	Monitor           MonitorName
+	Fires             int64
+	Blocked           int64
+	Noted             int64
+	Observed          int64
+	SavedTokens       int64
+	LikelySavedTokens int64
+	WouldSaveTokens   int64
+	Saved             MicroUSD
+	Likely            MicroUSD
+	WouldSave         MicroUSD
+	FeedbackCorrect   int64
+	FeedbackWrong     int64
 }
 
 // MonitorEventView is one monitor event as the API sends it. EstSavedUsd is money (a decimal string).
@@ -76,7 +79,9 @@ type MonitorStatsRowView struct {
 	Blocked           int64       `json:"blocked"`
 	Noted             int64       `json:"noted"`
 	Observed          int64       `json:"observed"`
-	EstSavedTokens    int64       `json:"estSavedTokens"`
+	SavedTokens       int64       `json:"savedTokens"`
+	LikelySavedTokens int64       `json:"likelySavedTokens"`
+	WouldSaveTokens   int64       `json:"wouldSaveTokens"`
 	SavedUsd          MicroUSD    `json:"savedUsd"`
 	LikelySavedUsd    MicroUSD    `json:"likelySavedUsd"`
 	WouldSaveUsd      MicroUSD    `json:"wouldSaveUsd"`
