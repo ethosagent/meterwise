@@ -41,3 +41,9 @@ Enforced by: `TestQueueNeverBlocksAndDropsAreCounted`, `TestWriteCallsIsIdempote
 Deviation: plan 05 section 3 said `make demo-traffic` replays tollgate testkit fixtures. `cmd/demo-traffic`
 cannot import the testkit (archtest H1/H4: it is test-only), so it serves hand-made request and response
 bodies shaped like the fixtures from its own loopback upstream. The scenarios therefore do not track fixture changes.
+
+Fix round 1: a call refused before the upstream (status under 500, finish `rejected`: admission 429, provider
+or CIDR 403, unknown or retired id 404/410) is not recorded; `/statusz` counts it in `refused_by_status`. A failed
+batch is retried with doubling backoff (200 ms to 5 s) for up to 30 s while the database is unreachable, bounded
+by the queue size. The cost model is the one tollgate reports on the Metric, else the request's; v0.1.0 reports the
+request's, which the client controls (fine for metering, not for billing).

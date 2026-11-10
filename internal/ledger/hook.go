@@ -70,7 +70,7 @@ func New(ctx context.Context, o Options) (*Hook, error) {
 func (*Hook) Name() string { return "ledger" }
 
 // Before stamps the call and, only when capture is on, remembers the first user message preview. It
-// does no I/O and no allocation beyond the state record.
+// does no I/O; it allocates the state record and, when the call has none yet, the Meta map.
 func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, error) {
 	if c.Meta == nil {
 		c.Meta = map[string]any{}
@@ -181,7 +181,13 @@ func (h *Hook) record(ctx context.Context, c *tollgate.Call, m tollgate.Metric) 
 	}
 	tools, sawText, preview := stateOf(c)
 	u := contract.Usage{Input: m.Usage.InputTokens, Output: m.Usage.OutputTokens, Cached: m.Usage.CachedInputTokens, Reasoning: m.Usage.ReasoningTokens}
-	provider, model := clean(m.Provider, maxFieldLen), clean(m.Model, maxFieldLen)
+	// The model tollgate reports on the Metric wins (the response model, once tollgate carries it; in
+	// v0.1.0 it is the request's); the request's model is the fallback. Both come from the neutral Call.
+	model := m.Model
+	if model == "" {
+		model = c.Model
+	}
+	provider, model := clean(m.Provider, maxFieldLen), clean(model, maxFieldLen)
 	var cost *contract.MicroUSD
 	if v, ok := h.pr.Cost(provider, model, u, start); ok {
 		cost = &v
