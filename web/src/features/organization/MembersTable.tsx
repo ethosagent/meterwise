@@ -2,9 +2,9 @@ import { PlusOutlined } from "@ant-design/icons";
 import { Button, Card, Flex, Popconfirm, Select, Table, Tag, Typography, theme } from "antd";
 import { useState } from "react";
 import { ROLE_OPTIONS } from "../../access/roles";
-import { useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
+import { ACCESS_ERROR_TEXT, useMembers, useRemoveMember, useSetMemberRole } from "../../api/access";
 import { useInvitations } from "../../api/identity";
-import { useAccessToast } from "../../api/useAccessToast";
+import { useErrorToast } from "../../api/useErrorToast";
 import type { Invitation, Member, Role } from "../../contract/generated";
 import { InvitationActions } from "./InvitationActions";
 import { InviteModal } from "./InviteModal";
@@ -28,7 +28,7 @@ export function MembersTable({ canManage, isAdmin }: Props) {
   const setRole = useSetMemberRole();
   const remove = useRemoveMember();
   const [inviting, setInviting] = useState(false);
-  const fail = useAccessToast();
+  const fail = useErrorToast(ACCESS_ERROR_TEXT);
 
   const rows: Row[] = [
     ...(members.data ?? []).map((m): Row => ({ key: m.userId, kind: "member", member: m })),

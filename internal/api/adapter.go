@@ -52,12 +52,18 @@ func register[Req, Resp any](s *server, method, pattern string, fn func(Call, Re
 	if row.Status != 0 {
 		status = row.Status
 	}
-	s.handle(method, pattern, adapt(s, status, fn))
+	s.handle(method, pattern, adaptAudited(s, status, row.Audit, fn))
 }
 
 // adapt turns fn into an http.HandlerFunc. A request that reaches it without a session (the
 // gateway did not run) is refused as unauthenticated rather than served as an empty user.
 func adapt[Req, Resp any](s *server, status int, fn func(Call, Req) (Resp, error)) http.HandlerFunc {
+	return adaptAudited(s, status, nil, fn)
+}
+
+// adaptAudited is adapt plus the route row's audit spec: after fn returns a nil error the one
+// emit below records the event. This is the only place an audit row is written for a route.
+func adaptAudited[Req, Resp any](s *server, status int, spec *contract.AuditSpec, fn func(Call, Req) (Resp, error)) http.HandlerFunc {
 	_, bodyless := any(*new(Req)).(none)
 	return func(w http.ResponseWriter, r *http.Request) {
 		sess, ok := SessionFrom(r.Context())
@@ -77,6 +83,9 @@ func adapt[Req, Resp any](s *server, status int, fn func(Call, Req) (Resp, error
 		if err != nil {
 			s.fail(w, r, err)
 			return
+		}
+		if spec != nil {
+			s.emitAudit(c, spec, in, out)
 		}
 		if status == http.StatusNoContent {
 			w.WriteHeader(status)

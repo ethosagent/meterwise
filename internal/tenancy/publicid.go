@@ -4,7 +4,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+
+	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/store"
 )
+
+// maxIDAttempts bounds the redraws after a public-id collision.
+const maxIDAttempts = 5
 
 // PublicIDLength is the length of a workspace public id: 22 base62 characters,
 // about 131 bits (decision D6).
@@ -34,4 +40,21 @@ func NewPublicID(r io.Reader) (string, error) {
 		}
 	}
 	return string(out), nil
+}
+
+// WithPublicID draws a public id from r (crypto/rand when nil) and calls try with it, drawing
+// again when try reports a collision (store.ErrPublicIDTaken). Any other result is returned at
+// once; running out of attempts is an internal error. Service.withPublicID goes through it; the
+// Directory.Reset call site is left for the data-plane work.
+func WithPublicID(r io.Reader, try func(publicID string) error) error {
+	for range maxIDAttempts {
+		pid, err := NewPublicID(r)
+		if err != nil {
+			return err
+		}
+		if err := try(pid); !errors.Is(err, store.ErrPublicIDTaken) {
+			return err
+		}
+	}
+	return contract.NewError(contract.CodeInternal, "could not allocate a workspace id")
 }

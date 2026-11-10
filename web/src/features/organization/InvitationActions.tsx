@@ -1,6 +1,7 @@
 import { App, Button, Popconfirm } from "antd";
+import { ACCESS_ERROR_TEXT } from "../../api/access";
 import { useResendInvitation, useRevokeInvitation } from "../../api/identity";
-import { useAccessToast } from "../../api/useAccessToast";
+import { useErrorToast } from "../../api/useErrorToast";
 import type { Invitation } from "../../contract/generated";
 
 /**
@@ -15,7 +16,7 @@ export function InvitationActions({
   isAdmin: boolean;
 }) {
   const { message } = App.useApp();
-  const fail = useAccessToast();
+  const fail = useErrorToast(ACCESS_ERROR_TEXT);
   const resend = useResendInvitation();
   const revoke = useRevokeInvitation();
   const locked = invitation.role === "admin" && !isAdmin;

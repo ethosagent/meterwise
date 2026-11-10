@@ -8,16 +8,13 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-// MaxAllowedCIDRs is how many source networks a workspace may list.
-const MaxAllowedCIDRs = 32
-
 // NormalizeCIDRs validates and canonicalises a source-network list: every entry must be an IPv4 or
 // IPv6 CIDR (a bare address becomes /32 or /128), is masked to its network, and duplicates are
 // dropped. Every bad entry is listed (422), never just the first.
 func NormalizeCIDRs(in []string) ([]string, error) {
-	if len(in) > MaxAllowedCIDRs {
+	if len(in) > contract.MaxAllowedCIDRs {
 		return nil, contract.NewError(contract.CodeValidationFailed, "request validation failed",
-			"cidrs: at most "+strconv.Itoa(MaxAllowedCIDRs)+" entries")
+			"cidrs: at most "+strconv.Itoa(contract.MaxAllowedCIDRs)+" entries")
 	}
 	out := make([]string, 0, len(in))
 	seen := map[string]bool{}

@@ -1,10 +1,15 @@
 import { Skeleton, Transfer } from "antd";
-import { useGroupMembers, useMembers, useSetGroupMembers } from "../../api/access";
-import { useAccessToast } from "../../api/useAccessToast";
+import {
+  ACCESS_ERROR_TEXT,
+  useGroupMembers,
+  useMembers,
+  useSetGroupMembers,
+} from "../../api/access";
+import { useErrorToast } from "../../api/useErrorToast";
 
 /** Two lists: organization members on the left, this group's members on the right. Moving touches group_users only. */
 export function MembersTransfer({ groupId, disabled }: { groupId: string; disabled: boolean }) {
-  const fail = useAccessToast();
+  const fail = useErrorToast(ACCESS_ERROR_TEXT);
   const all = useMembers(true);
   const inGroup = useGroupMembers(groupId);
   const move = useSetGroupMembers();

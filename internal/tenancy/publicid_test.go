@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/tenancy"
 )
 
@@ -48,3 +50,34 @@ func TestPublicIDFailsWhenRandomnessFails(t *testing.T) {
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
+
+func TestWithPublicIDRedrawsOnCollisionOnly(t *testing.T) {
+	var tried []string
+	err := tenancy.WithPublicID(nil, func(pid string) error {
+		tried = append(tried, pid)
+		if len(tried) < 3 {
+			return store.ErrPublicIDTaken
+		}
+		return nil
+	})
+	if err != nil || len(tried) != 3 || tried[0] == tried[1] || tried[1] == tried[2] {
+		t.Fatalf("err %v tried %v", err, tried)
+	}
+
+	boom := errors.New("boom")
+	calls := 0
+	if err := tenancy.WithPublicID(nil, func(string) error { calls++; return boom }); !errors.Is(err, boom) || calls != 1 {
+		t.Fatalf("a non-collision error is returned at once: %v after %d calls", err, calls)
+	}
+
+	calls = 0
+	err = tenancy.WithPublicID(nil, func(string) error { calls++; return store.ErrPublicIDTaken })
+	var ce *contract.Error
+	if !errors.As(err, &ce) || ce.Code != contract.CodeInternal || calls != 5 {
+		t.Fatalf("exhaustion: %v after %d calls", err, calls)
+	}
+
+	if err := tenancy.WithPublicID(bytes.NewReader([]byte{1}), func(string) error { t.Fatal("try ran"); return nil }); err == nil {
+		t.Fatal("a failing random source must fail")
+	}
+}

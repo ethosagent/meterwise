@@ -41,6 +41,11 @@ export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
+export const GRACE_MINUTES_DEFAULT = 10;
+export const GRACE_MINUTES_MAX = 1440;
+export const ALLOWED_CIDRS_MAX = 32;
+export const AUDIT_LIMIT_MAX = 200;
+
 export const ERROR_STATUS: Record<ErrorCode, number> = {
   already_member: 409,
   config_invalid: 500,

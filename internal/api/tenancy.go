@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/identity"
 	"github.com/ethosagent/meterwise/internal/tenancy"
@@ -66,8 +67,6 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	return true
 }
 
-func rfc3339(t time.Time) string { return t.UTC().Format(time.RFC3339) }
-
 func invitationView(i contract.Invitation, now time.Time) contract.InvitationView {
 	by := i.InvitedBy
 	if by == "" {
@@ -75,7 +74,7 @@ func invitationView(i contract.Invitation, now time.Time) contract.InvitationVie
 	}
 	return contract.InvitationView{
 		ID: i.ID, Email: i.Email, Role: i.Role, Status: i.StatusAt(now), InvitedBy: by,
-		ExpiresAt: rfc3339(i.ExpiresAt), CreatedAt: rfc3339(i.CreatedAt),
+		ExpiresAt: contract.RFC3339(i.ExpiresAt), CreatedAt: contract.RFC3339(i.CreatedAt),
 	}
 }
 
@@ -87,7 +86,7 @@ func (s *server) me(c Call) (contract.Me, error) {
 	if err != nil {
 		return contract.Me{}, err
 	}
-	list, err := s.readableWorkspaces(c)
+	list, err := s.readableWorkspaces(c, s.Authz.Scope(c.Ctx, c.Principal))
 	if err != nil {
 		return contract.Me{}, err
 	}
@@ -102,17 +101,13 @@ func (s *server) me(c Call) (contract.Me, error) {
 	}, nil
 }
 
-// readableWorkspaces lists the org's workspaces the caller holds workspace:read on, default first.
-func (s *server) readableWorkspaces(c Call) ([]contract.Workspace, error) {
+// readableWorkspaces lists the org's workspaces the view grants workspace:read on, default first.
+func (s *server) readableWorkspaces(c Call, v *access.GrantView) ([]contract.Workspace, error) {
 	all, err := s.Tenancy.ListWorkspaces(c.Ctx, c.Principal)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, len(all))
-	for i, w := range all {
-		ids[i] = w.ID
-	}
-	ok, err := s.Authz.Filter(c.Ctx, c.Principal, contract.PermWorkspaceRead, ids)
+	ok, err := allowedWorkspaceIDs(v, contract.PermWorkspaceRead, all)
 	if err != nil {
 		return nil, err
 	}
@@ -151,11 +146,12 @@ func (s *server) mePermissions(c Call, _ none) (contract.PermissionSnapshot, err
 }
 
 func (s *server) listWorkspaces(c Call, _ none) (contract.WorkspaceList, error) {
-	list, err := s.readableWorkspaces(c)
+	v := s.Authz.Scope(c.Ctx, c.Principal) // one grant read serves both permissions below
+	list, err := s.readableWorkspaces(c, v)
 	if err != nil {
 		return contract.WorkspaceList{}, err
 	}
-	views, err := s.workspaceViews(c, list)
+	views, err := s.workspaceViews(v, list)
 	return contract.WorkspaceList{Items: views}, err
 }
 
@@ -164,7 +160,6 @@ func (s *server) createWorkspace(c Call, req contract.CreateWorkspaceRequest) (c
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceCreate, "workspace", ws.ID, ws.ID, nil)
 	return s.workspaceViewOf(c, ws)
 }
 
@@ -173,14 +168,6 @@ func (s *server) updateWorkspace(c Call, req contract.UpdateWorkspaceRequest) (c
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}
-	fields := []string{}
-	if req.Name != nil {
-		fields = append(fields, "name")
-	}
-	if req.Settings != nil {
-		fields = append(fields, "settings")
-	}
-	s.audit(c, contract.AuditWorkspaceUpdate, "workspace", ws.ID, ws.ID, map[string]any{"fields": fields})
 	return s.workspaceViewOf(c, ws)
 }
 
@@ -189,7 +176,6 @@ func (s *server) deleteWorkspace(c Call, _ none) (none, error) {
 	if err := s.Tenancy.DeleteWorkspace(c.Ctx, c.Principal, id); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditWorkspaceDelete, "workspace", id, id, nil)
 	return none{}, nil
 }
 
@@ -205,9 +191,6 @@ func (s *server) listMembers(c Call, _ none) (contract.MemberList, error) {
 
 func (s *server) updateMember(c Call, req contract.UpdateMemberRequest) (contract.Member, error) {
 	m, err := s.Tenancy.SetMemberRole(c.Ctx, c.Principal, c.Path("userId"), req.Role)
-	if err == nil {
-		s.audit(c, contract.AuditMemberRoleChange, "member", c.Path("userId"), "", map[string]any{"role": string(req.Role)})
-	}
 	return m, err
 }
 
@@ -215,7 +198,6 @@ func (s *server) removeMember(c Call, _ none) (none, error) {
 	if err := s.Tenancy.RemoveMember(c.Ctx, c.Principal, c.Path("userId")); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditMemberRemove, "member", c.Path("userId"), "", nil)
 	return none{}, nil
 }
 
@@ -237,7 +219,6 @@ func (s *server) createInvitation(c Call, req contract.CreateInvitationRequest) 
 	if err != nil {
 		return contract.InvitationView{}, err
 	}
-	s.audit(c, contract.AuditInvitationCreate, "invitation", inv.ID, "", map[string]any{"role": string(req.Role)})
 	return invitationView(inv, time.Now()), nil
 }
 
@@ -246,7 +227,6 @@ func (s *server) resendInvitation(c Call, _ none) (contract.InvitationView, erro
 	if err != nil {
 		return contract.InvitationView{}, err
 	}
-	s.audit(c, contract.AuditInvitationResend, "invitation", inv.ID, "", nil)
 	return invitationView(inv, time.Now()), nil
 }
 
@@ -254,7 +234,6 @@ func (s *server) revokeInvitation(c Call, _ none) (none, error) {
 	if err := s.Tenancy.RevokeInvitation(c.Ctx, c.Principal, c.Path("id")); err != nil {
 		return none{}, err
 	}
-	s.audit(c, contract.AuditInvitationRevoke, "invitation", c.Path("id"), "", nil)
 	return none{}, nil
 }
 

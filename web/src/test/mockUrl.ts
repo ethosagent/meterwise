@@ -1,15 +1,16 @@
-import { ALLOWED_CIDRS_MAX, GRACE_MINUTES_MAX } from "../api/limits";
-import type {
-  AuditAction,
-  AuditActor,
-  AuditEntry,
-  ResetURLResponse,
-  Setup,
-  SetupStatus,
-  Workspace,
+import {
+  ALLOWED_CIDRS_MAX,
+  AUDIT_ACTIONS,
+  type AuditAction,
+  type AuditActor,
+  type AuditEntry,
+  GRACE_MINUTES_MAX,
+  type ResetURLResponse,
+  type Setup,
+  type SetupStatus,
+  type Workspace,
 } from "../contract/generated";
-import { AUDIT_ACTIONS } from "../contract/generated";
-import { type AccessMock, errorResponse, jsonResponse } from "./mockAccess";
+import { type AccessMock, errorResponse, forbidden, jsonResponse } from "./mockAccess";
 
 export interface UrlInit {
   /** Seeded audit rows, newest first. */
@@ -34,8 +35,6 @@ export interface UrlMock {
   route: (method: string, path: string, body: Record<string, unknown>) => Response | undefined;
 }
 
-const forbidden = () =>
-  errorResponse(403, "forbidden", "not allowed", { reason: "no matching grant" });
 const invalid = (problem: string) =>
   errorResponse(422, "validation_failed", "invalid request", { problems: [problem] });
 
@@ -91,17 +90,14 @@ function record(m: UrlMock, ctx: UrlContext, action: AuditAction, ws: Workspace)
   ];
 }
 
+/** Opaque fixture text per tab: the page must render what the server sent, so the mock does not rebuild the server's formats. */
 function snippets(url: string): Setup["snippets"] {
   return {
-    openaiEnv: `export OPENAI_BASE_URL=${url}/v1`,
-    anthropicEnv: `export ANTHROPIC_BASE_URL=${url}`,
-    opencodeJson: JSON.stringify(
-      { provider: { proxy: { npm: "@ai-sdk/openai-compatible", options: { baseURL: url } } } },
-      null,
-      2,
-    ),
-    claudeCodeEnv: `export ANTHROPIC_BASE_URL=${url}`,
-    curl: `curl ${url}/v1/chat/completions -H "authorization: Bearer $OPENAI_API_KEY"`,
+    openaiEnv: `fixture-openai ${url}`,
+    anthropicEnv: `fixture-anthropic ${url}`,
+    opencodeJson: `fixture-opencode ${url}`,
+    claudeCodeEnv: `fixture-claude-code ${url}`,
+    curl: `fixture-curl ${url}`,
   };
 }
 
@@ -121,7 +117,7 @@ function handle(
   const ws = ctx.workspaces().find((w) => w.id === r[1]);
   if (!ws) return errorResponse(404, "not_found", "no such workspace");
   const need = r[2] === "setup" ? "read" : "manage";
-  if (!ctx.access.can("workspace_url", need, ws.id)) return forbidden();
+  if (!ctx.access.can("workspace_url", need, ws.id)) return forbidden("no matching grant");
   if (r[2] === "setup" && method === "GET") {
     return jsonResponse({
       proxyUrl: ws.proxyUrl,
@@ -172,7 +168,7 @@ function cidrs(m: UrlMock, ctx: UrlContext, ws: Workspace, body: Record<string, 
 
 function auditLog(m: UrlMock, ctx: UrlContext, method: string, path: string) {
   if (method !== "GET") return undefined;
-  if (!ctx.access.can("audit_log", "read")) return forbidden();
+  if (!ctx.access.can("audit_log", "read")) return forbidden("no matching grant");
   const q = new URLSearchParams(path.split("?")[1] ?? "");
   const action = q.get("action");
   if (action && !(AUDIT_ACTIONS as readonly string[]).includes(action)) {

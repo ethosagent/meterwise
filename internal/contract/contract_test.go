@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethosagent/meterwise/internal/nonet"
 
@@ -201,5 +202,48 @@ func TestRoleValid(t *testing.T) {
 		if r.Valid() != want {
 			t.Errorf("%q.Valid() = %v", r, !want)
 		}
+	}
+}
+
+// Every mutating route says how it is audited: an Audit spec or an explicit NoAudit. A read says
+// neither. Each audit action is declared by exactly one row.
+func TestMutatingRoutesDeclareAudit(t *testing.T) {
+	seen := map[contract.AuditAction]string{}
+	for _, r := range contract.Routes() {
+		where := r.Method + " " + r.Pattern
+		switch {
+		case r.Method == http.MethodGet:
+			if r.Audit != nil || r.NoAudit {
+				t.Errorf("%s: a read declares no audit", where)
+			}
+		case r.Audit == nil && !r.NoAudit:
+			t.Errorf("%s: mutating route declares neither Audit nor NoAudit", where)
+		case r.Audit != nil && r.NoAudit:
+			t.Errorf("%s: both Audit and NoAudit", where)
+		}
+		if r.Audit == nil {
+			continue
+		}
+		a := r.Audit
+		if !a.Action.Valid() || a.ResourceType == "" || a.ResourceID == nil {
+			t.Errorf("%s: incomplete audit spec %+v", where, a)
+		}
+		if prev, dup := seen[a.Action]; dup {
+			t.Errorf("%s: action %s already declared by %s", where, a.Action, prev)
+		}
+		seen[a.Action] = where
+	}
+	for _, a := range contract.AuditActions() {
+		if _, ok := seen[a]; !ok {
+			t.Errorf("action %s is declared by no route", a)
+		}
+	}
+}
+
+func TestRFC3339IsUTCSecondPrecision(t *testing.T) {
+	zone := time.FixedZone("x", 5*3600+1800)
+	got := contract.RFC3339(time.Date(2026, 3, 4, 10, 30, 15, 999, zone))
+	if got != "2026-03-04T05:00:15Z" {
+		t.Fatalf("got %q", got)
 	}
 }

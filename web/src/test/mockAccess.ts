@@ -19,7 +19,8 @@ export function errorResponse(
   return jsonResponse(body, status);
 }
 
-const forbidden = (reason: "no matching grant" | "admin required") =>
+/** The 403 the server answers on a missing grant, with its reason. */
+export const forbidden = (reason: "no matching grant" | "admin required") =>
   errorResponse(403, "forbidden", "not allowed", { reason });
 
 /** Every workspace-scoped resource with a read action, from the generated taxonomy: what the seed grants a member. */

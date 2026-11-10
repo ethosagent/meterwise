@@ -1,6 +1,7 @@
 import { ConfigProvider, Layout, Typography, theme } from "antd";
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { useMe } from "../api/identity";
 import { CreateWorkspaceDialog } from "../features/workspace/CreateWorkspaceDialog";
 import { useUi } from "../state/ui";
 import { siderTheme } from "../theme/theme";
@@ -24,6 +25,7 @@ export function Shell() {
   const { token } = theme.useToken();
   const appName = useAppName();
   useDocumentTitle();
+  const activeWorkspaceId = useMe().data?.activeWorkspaceId ?? "none";
   const createOpen = useUi((s) => s.createWorkspaceOpen);
   const setCreateOpen = useUi((s) => s.setCreateWorkspaceOpen);
 
@@ -48,7 +50,8 @@ export function Shell() {
           <HeaderBar />
         </Layout.Header>
         <Layout.Content style={{ padding: token.paddingLG, flex: 1 }}>
-          <Outlet />
+          {/* Keyed once here: a workspace switch remounts the routed page, so no page keeps per-workspace state. */}
+          <Outlet key={activeWorkspaceId} />
         </Layout.Content>
         <Layout.Footer style={{ textAlign: "center" }}>
           <Typography.Text type="secondary">

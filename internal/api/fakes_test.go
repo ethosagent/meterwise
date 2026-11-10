@@ -91,8 +91,9 @@ func (allowAuthz) Authorize(context.Context, contract.Principal, contract.Permis
 	return access.Result{Allowed: true, Reason: "admin"}, nil
 }
 
-func (allowAuthz) Filter(_ context.Context, _ contract.Principal, _ contract.Permission, ids []string) ([]string, error) {
-	return ids, nil
+// Scope is the real Authorizer's view for an admin, which allows everything without a grant read.
+func (allowAuthz) Scope(ctx context.Context, _ contract.Principal) *access.GrantView {
+	return (&access.Authorizer{}).Scope(ctx, contract.Principal{Role: contract.RoleAdmin})
 }
 
 func (allowAuthz) Snapshot(context.Context, contract.Principal) (contract.PermissionSnapshot, error) {

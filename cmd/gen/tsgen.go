@@ -124,6 +124,10 @@ func genContractTS() ([]byte, error) {
 	tsConstTuple(&b, "ROLES", "Role", contract.Roles())
 	tsConstTuple(&b, "INVITATION_STATUSES", "InvitationStatus", contract.InvitationStatuses())
 	tsConstTuple(&b, "AUDIT_ACTIONS", "AuditAction", contract.AuditActions())
+	for _, l := range contract.Limits() {
+		fmt.Fprintf(&b, "export const %s = %d;\n", l.Name, l.Value)
+	}
+	b.WriteString("\n")
 	b.WriteString("export const ERROR_STATUS: Record<ErrorCode, number> = {\n")
 	for _, s := range specs {
 		fmt.Fprintf(&b, "  %s: %d,\n", s.Code, s.Status)

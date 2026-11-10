@@ -25,11 +25,11 @@ describe("SetupPage", () => {
     expect(await screen.findByLabelText("Proxy URL")).toHaveValue(URL_1);
     expect(screen.getByText(/Keep using your own provider key/)).toBeInTheDocument();
     for (const [tab, text] of [
-      ["OpenAI SDK", `OPENAI_BASE_URL=${URL_1}/v1`],
-      ["Anthropic SDK", `ANTHROPIC_BASE_URL=${URL_1}`],
-      ["OpenCode", `"baseURL": "${URL_1}"`],
-      ["Claude Code", `ANTHROPIC_BASE_URL=${URL_1}`],
-      ["curl", `curl ${URL_1}`],
+      ["OpenAI SDK", `fixture-openai ${URL_1}`],
+      ["Anthropic SDK", `fixture-anthropic ${URL_1}`],
+      ["OpenCode", `fixture-opencode ${URL_1}`],
+      ["Claude Code", `fixture-claude-code ${URL_1}`],
+      ["curl", `fixture-curl ${URL_1}`],
     ] as const) {
       await userEvent.click(await screen.findByRole("tab", { name: tab }));
       expect(await screen.findByLabelText(`${tab} snippet`)).toHaveTextContent(text, {
@@ -39,20 +39,12 @@ describe("SetupPage", () => {
     expect(api.callsTo("GET", "/api/workspaces/ws_1/setup").length).toBeGreaterThan(0);
   });
 
-  it("the OpenCode snippet is valid JSON", async () => {
-    mockApi();
-    renderAt(<SetupPage />, PATH);
-    await userEvent.click(await screen.findByRole("tab", { name: "OpenCode" }));
-    const text = (await screen.findByLabelText("OpenCode snippet")).textContent ?? "";
-    expect(() => JSON.parse(text)).not.toThrow();
-  });
-
   it("copies a snippet", async () => {
     mockApi();
     const user = userEvent.setup();
     renderAt(<SetupPage />, PATH);
     await user.click(await screen.findByRole("button", { name: "Copy OpenAI SDK snippet" }));
-    expect(await navigator.clipboard.readText()).toBe(`export OPENAI_BASE_URL=${URL_1}/v1`);
+    expect(await navigator.clipboard.readText()).toBe(`fixture-openai ${URL_1}`);
   });
 
   it("waits for the first call, then reads connected with a relative time and the day's count", async () => {
@@ -182,6 +174,23 @@ describe("SetupPage", () => {
       expect(
         await screen.findByText(/connected · last call 1 minute ago · 3 calls today/),
       ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops polling once a call has been seen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const last = new Date(Date.now() - 60_000).toISOString();
+      const api = mockApi({ setupStatus: { firstCallAt: last, lastCallAt: last, callsToday: 3 } });
+      renderAt(<SetupPage />, PATH);
+      expect(await screen.findByText(/connected · last call/)).toBeInTheDocument();
+      const seen = api.callsTo("GET", "/api/workspaces/ws_1/setup").length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3 * SETUP_POLL_MS);
+      });
+      expect(api.callsTo("GET", "/api/workspaces/ws_1/setup")).toHaveLength(seen);
     } finally {
       vi.useRealTimers();
     }
