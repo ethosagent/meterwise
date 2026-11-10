@@ -120,8 +120,9 @@ func redactAttr(a slog.Attr) slog.Attr {
 	case slog.KindAny:
 		// errors, Stringers, *url.URL, structs, maps: judge them by their printed form (fmt calls
 		// Error and String and recovers from a panicking method).
-		if txt := fmt.Sprint(v.Any()); MaskIDs(Redact(txt)) != txt {
-			return slog.String(a.Key, MaskIDs(Redact(txt)))
+		txt := fmt.Sprint(v.Any())
+		if red := MaskIDs(Redact(txt)); red != txt {
+			return slog.String(a.Key, red)
 		}
 	}
 	return slog.Attr{Key: a.Key, Value: v}
