@@ -22,6 +22,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/dataplane"
 	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/tenancy"
+	"github.com/ethosagent/meterwise/internal/wsauth"
 )
 
 const (
@@ -39,6 +40,7 @@ type instance struct {
 	db       *store.Store
 	svc      *tenancy.Service
 	proxy    *tollgate.Proxy
+	sources  []contract.StatusSource // reported on /statusz
 	servers  map[string]*http.Server // proxy, api, admin
 	lns      map[string]net.Listener
 	shutdown func(context.Context) error // telemetry flush
@@ -82,6 +84,7 @@ func cmdServe(ctx context.Context, e *env, args []string) int {
 // never binds a listener: the principal guard is the stub resolver's constructor
 // (it cannot be built outside dev) and the proxy guard is requireDevForNoAuth.
 func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps dataplane.Deps) (*instance, *contract.Error) {
+	log = redacting(log) // the public workspace id is the URL credential: no log line carries it
 	rt := &instance{cfg: cfg, log: log, servers: map[string]*http.Server{}, lns: map[string]net.Listener{}}
 	id, cerr := newIdentity(cfg, rt.devSession)
 	if cerr != nil {
@@ -101,6 +104,14 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 		log.Error("database", "class", string(store.ClassOf(err)), "err", err.Error())
 		return nil, contract.NewError(contract.CodeUnavailable, "cannot connect to the database named by "+config.EnvDatabaseURL)
 	}
+	if rc, err := rt.db.CheckRole(ctx); err != nil {
+		rt.close(ctx)
+		log.Error("database role", "err", err.Error())
+		return nil, contract.NewError(contract.CodeUnavailable, "cannot read the database role")
+	} else if cerr := requireLeastPrivilegeRole(cfg.Env, rc); cerr != nil {
+		rt.close(ctx)
+		return nil, cerr
+	}
 	rt.svc = tenancy.New(rt.db, id.provider, tenancy.Config{MaxWorkspaces: cfg.MaxWorkspaces, Log: log})
 	if err := rt.svc.EnsureDefaults(ctx); err != nil {
 		rt.close(ctx)
@@ -109,6 +120,11 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 	}
 	if deps.Logger == nil {
 		deps.Logger = log
+	}
+	if deps, err = rt.completeDeps(ctx, deps); err != nil {
+		rt.close(ctx)
+		log.Error("data plane deps", "err", err.Error())
+		return nil, contract.NewError(contract.CodeInternal, "cannot prepare the data plane")
 	}
 	if rt.proxy, err = dataplane.New(cfg, deps); err != nil {
 		rt.close(ctx)
@@ -142,23 +158,23 @@ func (rt *instance) apiHandler(id identitySetup, tp trace.TracerProvider) (http.
 
 // mount creates the three servers and binds their listeners.
 func (rt *instance) mount(ctx context.Context, apiHandler http.Handler) *contract.Error {
-	rt.servers["proxy"] = &http.Server{Handler: rt.proxy.Handler(), ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: idleTimeout}
+	rt.servers["proxy"] = &http.Server{Handler: wsauth.Front(rt.proxy.Handler()), ReadHeaderTimeout: readHeaderTimeout, IdleTimeout: idleTimeout}
 	rt.servers["api"] = &http.Server{Handler: apiHandler, ReadHeaderTimeout: readHeaderTimeout, ReadTimeout: apiReadTimeout, WriteTimeout: apiWriteTimeout, IdleTimeout: idleTimeout}
-	rt.servers["admin"] = &http.Server{Handler: rt.proxy.AdminHandler(), ReadHeaderTimeout: readHeaderTimeout, WriteTimeout: apiWriteTimeout}
+	rt.servers["admin"] = &http.Server{Handler: dataplane.AdminHandler(rt.proxy.AdminHandler(), rt.sources), ReadHeaderTimeout: readHeaderTimeout, WriteTimeout: apiWriteTimeout}
 	return rt.listen(ctx)
 }
 
-// requireDevForNoAuth refuses to run the proxy without a real authenticator outside dev: a nil
-// Deps.Auth falls back to tollgate.NoAuth, which admits every caller as one tenant. tollgate.NoAuth
-// is a third-party type, so the check is explicit: the nil interface, the value and the pointer
-// form all count as "no authenticator". It is independent of the principal guard, so a real
-// control-plane resolver does not open the data plane.
+// requireDevForNoAuth refuses to run the proxy with tollgate.NoAuth outside dev: it admits every
+// caller as one tenant. A nil Deps.Auth is not that case any more: serve then builds the /w/{id}
+// authenticator (completeDeps), which no caller can skip. tollgate.NoAuth is a third-party type, so
+// the check is explicit: the value, the pointer and a nil pointer all count. It is independent of
+// the principal guard, so a real control-plane resolver does not open the data plane.
 func requireDevForNoAuth(appEnv string, auth tollgate.Authenticator) *contract.Error {
 	if appEnv == "dev" {
 		return nil
 	}
 	switch auth.(type) {
-	case nil, tollgate.NoAuth, *tollgate.NoAuth:
+	case tollgate.NoAuth, *tollgate.NoAuth:
 		return contract.NewError(contract.CodeConfigInvalid,
 			"the proxy has no authenticator (tollgate.NoAuth admits every caller) and runs only with "+config.EnvAppEnv+"=dev",
 			config.EnvAppEnv+"="+appEnv+" needs a proxy authenticator other than tollgate.NoAuth")

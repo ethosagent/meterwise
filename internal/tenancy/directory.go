@@ -274,6 +274,9 @@ func (d *Directory) SweepRetired(now time.Time) int {
 // bust cannot store what it read.
 func (d *Directory) Bust(workspaceID string) { d.c.bust(workspaceID, d.now()) }
 
+// Name labels the directory on /statusz.
+func (*Directory) Name() string { return "directory" }
+
 // Status implements contract.StatusSource: cache occupancy and read counters for /statusz.
 func (d *Directory) Status() map[string]any {
 	entries, evicted := d.c.size()

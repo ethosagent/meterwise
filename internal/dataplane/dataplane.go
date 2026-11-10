@@ -8,6 +8,7 @@ import (
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/config"
+	"github.com/ethosagent/meterwise/internal/contract"
 )
 
 // Deps are the replaceable parts of the data plane. serve fills them: the /w/{id} authenticator
@@ -19,7 +20,10 @@ type Deps struct {
 	Resolver  tollgate.ProviderResolver
 	Admission tollgate.Admission
 	Hooks     []tollgate.Hook
-	Sink      tollgate.MetricSink
+	// Sources are reported on /statusz (the ledger's queue depth and drops, the directory cache,
+	// admission). The integration plugs the ledger here; New ignores it, serve reads it.
+	Sources []contract.StatusSource
+	Sink    tollgate.MetricSink
 	// Transport overrides the upstream round tripper (tests point it at a loopback fake).
 	Transport http.RoundTripper
 	Logger    *slog.Logger
