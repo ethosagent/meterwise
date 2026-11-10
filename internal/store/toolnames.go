@@ -3,6 +3,8 @@ package store
 import (
 	"encoding/json"
 	"log/slog"
+
+	"github.com/ethosagent/meterwise/internal/contract"
 )
 
 // UnreadableToolCalls is how many stored tool_calls values could not be read since Open.
@@ -40,3 +42,21 @@ func (s *Store) toolNames(callID string, raw []byte) []string {
 // UnexpectedStateErrors is how many 55000 errors with an unrecognised message the store has seen
 // (process-wide); the ledger reports it on /statusz.
 func (*Store) UnexpectedStateErrors() int64 { return UnexpectedStateErrors() }
+
+// UnreadableEvidence is how many stored monitor_events.evidence values could not be read since Open.
+func (s *Store) UnreadableEvidence() int64 { return s.badEvidence.Load() }
+
+// evidenceOf decodes a monitor_events.evidence value. One that does not decode reads as empty evidence (the
+// event stays visible), is counted every time and is logged the first time, like toolNames.
+func (s *Store) evidenceOf(eventID int64, raw []byte) contract.MonitorEvidence {
+	ev := contract.MonitorEvidence{}
+	if err := json.Unmarshal(raw, &ev); err != nil {
+		s.badEvidence.Add(1)
+		s.badEvidenceOnce.Do(func() {
+			s.logger().Warn("store: monitor_events.evidence does not decode; read as empty (counted, logged once)",
+				slog.Int64("event_id", eventID))
+		})
+		return contract.MonitorEvidence{}
+	}
+	return ev
+}

@@ -51,10 +51,11 @@ type fakeWriter struct {
 	failClose func() error
 	delay     time.Duration
 	// unreadable and unexpected are the data-problem counters the store reports through the Writer port.
-	unreadable, unexpected int64
+	unreadable, unexpected, badEvidence int64
 }
 
 func (w *fakeWriter) UnreadableToolCalls() int64   { return w.unreadable }
+func (w *fakeWriter) UnreadableEvidence() int64    { return w.badEvidence }
 func (w *fakeWriter) UnexpectedStateErrors() int64 { return w.unexpected }
 
 func (w *fakeWriter) WriteCalls(_ context.Context, recs []contract.CallRecord) (store.WriteResult, error) {

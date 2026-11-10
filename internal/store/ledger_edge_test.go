@@ -71,6 +71,44 @@ func TestUnreadableToolCallsAreCountedAndLoggedOnce(t *testing.T) {
 	}
 }
 
+// An evidence value that does not decode reads back as empty evidence (the event stays visible), but it is
+// counted on every read and logged once through the injected logger, never swallowed.
+func TestUnreadableEvidenceIsCountedAndLoggedOnce(t *testing.T) {
+	dsn := pgtest.NewDatabase(t)
+	if _, err := store.Migrate(context.Background(), dsn); err != nil {
+		t.Fatal(err)
+	}
+	s, ctx := mustOpen(t, dsn), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	c := rec(ws, "c1", "s1", 1, base, "ok", true, mu(10))
+	c.Verdicts = []contract.PricedVerdict{verdict(contract.MonitorRepeatedRead, contract.ModeNote, contract.ConfidenceLikely, 1, 1)}
+	if _, err := s.WriteCalls(ctx, []contract.CallRecord{c}); err != nil {
+		t.Fatal(err)
+	}
+	adminExec(t, dsn, `UPDATE monitor_events SET evidence = '[1,2]'::jsonb WHERE call_id = 'c1'`)
+	var logs bytes.Buffer
+	s.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	var global bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&global, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	for range 2 {
+		evs, err := s.SessionMonitorEvents(ctx, ws, "s1")
+		if err != nil || len(evs) != 1 || evs[0].Monitor != contract.MonitorRepeatedRead {
+			t.Fatalf("%+v %v", evs, err)
+		}
+	}
+	if n := s.UnreadableEvidence(); n != 2 {
+		t.Fatalf("counter = %d, want 2", n)
+	}
+	if n := strings.Count(logs.String(), "evidence"); n != 1 {
+		t.Fatalf("logged %d times, want once:\n%s", n, logs.String())
+	}
+	if global.Len() != 0 {
+		t.Fatalf("the store wrote to slog.Default: %s", global.String())
+	}
+}
+
 // A call with no tool calls reads back as an empty list, never nil (which would marshal as null).
 func TestSessionCallsNeverHaveNilToolCalls(t *testing.T) {
 	s, ctx := openMigrated(t), context.Background()

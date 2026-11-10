@@ -20,6 +20,7 @@ type Writer interface {
 	// UnreadableToolCalls counts stored tool_calls values the store could not read; UnexpectedStateErrors
 	// counts 55000 errors whose wording the retry policy does not recognise. Both go to /statusz.
 	UnreadableToolCalls() int64
+	UnreadableEvidence() int64 // monitor_events.evidence values that did not decode
 	UnexpectedStateErrors() int64
 }
 

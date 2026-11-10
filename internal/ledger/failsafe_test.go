@@ -99,10 +99,10 @@ func TestRecordFromAnotherOrgIsRefusedAndCounted(t *testing.T) {
 
 // The Writer port carries the store's data-problem counters, so /statusz shows them for any Writer.
 func TestStatusReportsWriterCounters(t *testing.T) {
-	w := &fakeWriter{unreadable: 3, unexpected: 2}
+	w := &fakeWriter{unreadable: 3, unexpected: 2, badEvidence: 4}
 	h := newHook(t, w, nil)
 	st := h.Status()
-	if st["unreadable_tool_calls"] != int64(3) || st["unexpected_55000"] != int64(2) {
+	if st["unreadable_tool_calls"] != int64(3) || st["unexpected_55000"] != int64(2) || st["unreadable_evidence"] != int64(4) {
 		t.Fatalf("status %v", st)
 	}
 }

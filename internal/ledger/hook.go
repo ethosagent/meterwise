@@ -155,6 +155,7 @@ func (h *Hook) Close(ctx context.Context) error { return h.q.close(ctx) }
 func (h *Hook) Status() map[string]any {
 	st := h.q.status()
 	st["unreadable_tool_calls"] = h.opt.Writer.UnreadableToolCalls()
+	st["unreadable_evidence"] = h.opt.Writer.UnreadableEvidence()
 	st["unexpected_55000"] = h.opt.Writer.UnexpectedStateErrors()
 	return st
 }

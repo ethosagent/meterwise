@@ -94,12 +94,11 @@ func (s *Store) SetFeedback(ctx context.Context, workspaceID string, eventID int
 	if err != nil {
 		return contract.MonitorEventRecord{}, queryErr(err)
 	}
-	return eventRecord(sqlc.ListSessionMonitorEventsRow(r)), nil
+	return s.eventRecord(sqlc.ListSessionMonitorEventsRow(r)), nil
 }
 
-func eventRecord(r sqlc.ListSessionMonitorEventsRow) contract.MonitorEventRecord {
-	ev := contract.MonitorEvidence{}
-	_ = json.Unmarshal(r.Evidence, &ev) // an unreadable evidence object reads as empty; the row stays visible
+func (s *Store) eventRecord(r sqlc.ListSessionMonitorEventsRow) contract.MonitorEventRecord {
+	ev := s.evidenceOf(r.ID, r.Evidence)
 	var fb *string
 	if r.Feedback.Valid {
 		fb = &r.Feedback.String
@@ -125,7 +124,7 @@ func (s *Store) SessionMonitorEvents(ctx context.Context, workspaceID, sessionID
 	}
 	out := make([]contract.MonitorEventRecord, len(rows))
 	for i, r := range rows {
-		out[i] = eventRecord(r)
+		out[i] = s.eventRecord(r)
 	}
 	return out, nil
 }
