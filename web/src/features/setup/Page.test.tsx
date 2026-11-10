@@ -195,6 +195,18 @@ describe("SetupPage", () => {
       vi.useRealTimers();
     }
   });
+
+  it("still refetches when the tab regains focus after the poll has stopped", async () => {
+    const last = new Date(Date.now() - 60_000).toISOString();
+    const api = mockApi({ setupStatus: { firstCallAt: last, lastCallAt: last, callsToday: 3 } });
+    renderAt(<SetupPage />, PATH);
+    expect(await screen.findByText(/connected · last call/)).toBeInTheDocument();
+    const seen = api.callsTo("GET", "/api/workspaces/ws_1/setup").length;
+    await act(async () => {
+      window.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => expect(api.callsTo("GET", "/api/workspaces/ws_1/setup").length).toBeGreaterThan(seen));
+  });
 });
 
 function AuditObserver() {
