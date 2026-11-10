@@ -1,0 +1,12 @@
+{
+  "description": "maxRepeats 3 needs the third identical call; evidence lists all three",
+  "ring": [
+    {"Index": 1, "Tools": ["get_weather"], "ArgsHashes": [11]},
+    {"Index": 2, "Tools": ["get_weather"], "ArgsHashes": [11]},
+    {"Index": 3, "Tools": ["grep"], "ArgsHashes": [12]},
+    {"Index": 4, "Tools": ["get_weather"], "ArgsHashes": [11]}
+  ],
+  "session_calls": 5,
+  "config": {"duplicate_tool_call": {"maxRepeats": 3}},
+  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 2, 4], "tool": "get_weather", "argsHash": "@11", "count": 3, "threshold": 3}}
+}

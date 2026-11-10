@@ -26,6 +26,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0019](0019-ledger-write-path-queue-batcher-idempotent.md) | The ledger write path: Hook.After, a bounded queue, a batcher, idempotent rows | Accepted |
 | [0020](0020-money-as-microusd-in-pricing-and-ledger.md) | Money is micro-USD in pricing and the ledger | Accepted |
 | [0021](0021-per-workspace-admission-override-without-restart.md) | Per-workspace admission override without a restart | Accepted |
+| [0022](0022-monitor-verdicts-cross-the-chain-through-a-meta-pointer.md) | Monitor verdicts cross the chain through a Meta pointer; config via a tenant attr | Accepted |
 | [0023](0023-two-savings-numbers-never-summed.md) | Two savings numbers, never summed | Accepted |
 
 Template: [`template.md`](template.md).

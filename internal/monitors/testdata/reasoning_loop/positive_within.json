@@ -1,0 +1,7 @@
+{
+  "description": "one response says the same 45-token passage twice",
+  "ring": [],
+  "session_calls": 3,
+  "stream": {"text": "The agent considered the failing build and traced the error back through every module until it found the stale cache entry that broke the linker step and then it decided to clear that cache and run the full build once more to be certain The agent considered the failing build and traced the error back through every module until it found the stale cache entry that broke the linker step and then it decided to clear that cache and run the full build once more to be certain"},
+  "expect": {"fires": true, "evidence": {"matchedCalls": [3], "hash": "@shingle:The agent considered the failing build and traced", "count": 44, "threshold": 40}}
+}

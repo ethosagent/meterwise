@@ -1,0 +1,11 @@
+{
+  "description": "maxRepeats 3 stays quiet at two identical calls",
+  "ring": [
+    {"Index": 1, "Tools": ["get_weather"], "ArgsHashes": [11]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [12]},
+    {"Index": 3, "Tools": ["get_weather"], "ArgsHashes": [11]}
+  ],
+  "session_calls": 4,
+  "config": {"duplicate_tool_call": {"maxRepeats": 3}},
+  "expect": {"fires": false}
+}

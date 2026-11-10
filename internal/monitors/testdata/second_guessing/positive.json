@@ -1,0 +1,10 @@
+{
+  "description": "four reconsideration phrases and a reversal to the tool used two calls ago",
+  "ring": [
+    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [1]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [2]}
+  ],
+  "session_calls": 3,
+  "stream": {"text": "Wait, that is not right. Actually, let me reconsider the whole approach. Hmm.", "tools": ["read_file"]},
+  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 2, 3], "tool": "read_file", "phrases": ["let me reconsider", "wait", "actually", "hmm"], "count": 4, "threshold": 2}}
+}

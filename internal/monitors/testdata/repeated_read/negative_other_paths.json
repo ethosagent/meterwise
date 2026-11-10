@@ -1,0 +1,10 @@
+{
+  "description": "three reads of three different files",
+  "ring": [
+    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [31], "ReadHashes": [5]},
+    {"Index": 2, "Tools": ["read_file"], "ArgsHashes": [32], "ReadHashes": [6]},
+    {"Index": 3, "Tools": ["read_file"], "ArgsHashes": [33], "ReadHashes": [7]}
+  ],
+  "session_calls": 4,
+  "expect": {"fires": false}
+}

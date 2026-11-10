@@ -1,0 +1,11 @@
+{
+  "description": "the same file is read a third time with no write since the first read",
+  "ring": [
+    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [31], "ReadHashes": [5]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [32]},
+    {"Index": 3, "Tools": ["read_file"], "ArgsHashes": [33], "ReadHashes": [5]},
+    {"Index": 4, "Tools": ["read_file"], "ArgsHashes": [34], "ReadHashes": [5]}
+  ],
+  "session_calls": 5,
+  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 3, 4], "tool": "read_file", "pathHash": "@5", "count": 3, "threshold": 3}}
+}

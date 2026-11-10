@@ -1,0 +1,7 @@
+{
+  "description": "maxSteps 10 fires on call 11",
+  "ring": [],
+  "session_calls": 11,
+  "config": {"step_budget": {"maxSteps": 10}},
+  "expect": {"fires": true, "evidence": {"count": 11, "threshold": 10}}
+}

@@ -1,0 +1,10 @@
+{
+  "description": "a reversal but only one phrase",
+  "ring": [
+    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [1]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [2]}
+  ],
+  "session_calls": 3,
+  "stream": {"text": "Wait, I will try the other tool now.", "tools": ["read_file"]},
+  "expect": {"fires": false}
+}

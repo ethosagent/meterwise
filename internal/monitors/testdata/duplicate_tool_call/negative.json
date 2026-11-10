@@ -1,0 +1,10 @@
+{
+  "description": "a write between the two identical calls resets the repeat",
+  "ring": [
+    {"Index": 1, "Tools": ["get_weather"], "ArgsHashes": [11]},
+    {"Index": 2, "Tools": ["edit_file"], "ArgsHashes": [12], "WroteHashes": [9]},
+    {"Index": 3, "Tools": ["get_weather"], "ArgsHashes": [11]}
+  ],
+  "session_calls": 4,
+  "expect": {"fires": false}
+}

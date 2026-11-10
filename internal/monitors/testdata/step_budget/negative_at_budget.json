@@ -1,0 +1,6 @@
+{
+  "description": "exactly at the budget is still within it",
+  "ring": [],
+  "session_calls": 40,
+  "expect": {"fires": false}
+}

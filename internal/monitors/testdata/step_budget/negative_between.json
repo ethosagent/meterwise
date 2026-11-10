@@ -1,0 +1,6 @@
+{
+  "description": "between the two thresholds the monitor is quiet (it fires once per threshold)",
+  "ring": [],
+  "session_calls": 50,
+  "expect": {"fires": false}
+}

@@ -1,0 +1,9 @@
+{
+  "description": "turns too short for shingles fall back to equal text hashes",
+  "ring": [
+    {"Index": 1, "Tools": ["grep"], "ArgsHashes": [41], "TextHash": 77},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [42], "TextHash": 77}
+  ],
+  "session_calls": 3,
+  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 2], "hash": "@77", "count": 100, "threshold": 95}}
+}
