@@ -3264,7 +3264,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "One session with its calls; workspaceId is required and authorizes the read; 404 when the session is not in that workspace",
+        "summary": "One session with its calls, monitor events and insight (repeated targets and a suggestion); workspaceId is required and authorizes the read; 404 when the session is not in that workspace",
         "x-permission": "session:read",
         "x-workspace-query": "workspaceId"
       }
@@ -3625,6 +3625,111 @@
         "x-workspace-param": "id"
       }
     },
+    "/api/workspaces/{id}/savings/causes": {
+      "get": {
+        "operationId": "getApiWorkspacesIdSavingsCauses",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsCauses"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Where the savings came from: per-monitor causes, a per-client table and fixed-template prompt suggestions for the same ranges as overview",
+        "x-permission": "savings:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/savings/overview": {
+      "get": {
+        "operationId": "getApiWorkspacesIdSavingsOverview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavingsOverview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The savings dashboard: hero, per-UTC-day series and per-monitor causes for range=7d|30d|custom (custom needs from and to, UTC days, at most 90); saved, likely and would-save are never summed",
+        "x-permission": "savings:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/savings/saves": {
+      "get": {
+        "operationId": "getApiWorkspacesIdSavingsSaves",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The biggest saves: acted events with a positive estimate, (estimate desc, id desc); same ranges as overview, page with the opaque cursor and limit (1-100, default 20)",
+        "x-permission": "savings:read",
+        "x-workspace-param": "id"
+      }
+    },
     "/api/workspaces/{id}/sessions": {
       "get": {
         "operationId": "getApiWorkspacesIdSessions",
@@ -3655,7 +3760,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200)",
+        "summary": "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200); filter by client (exact family) and outcome (completed|abandoned|open, else 422)",
         "x-permission": "session:read",
         "x-workspace-param": "id"
       }

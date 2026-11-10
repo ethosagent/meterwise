@@ -47,6 +47,7 @@ func newFixture(t *testing.T, mutate func(*api.Deps)) *fixture {
 		Access:     noAccess{},
 		Audit:      &memAudit{},
 		Ledger:     emptyLedger{},
+		Savings:    emptySavings{},
 		Web: fstest.MapFS{
 			"index.html":          {Data: []byte("<html>app</html>")},
 			"assets/app-1.js":     {Data: []byte("console.log(1)")},

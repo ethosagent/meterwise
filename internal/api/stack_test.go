@@ -66,7 +66,7 @@ func newStack(t *testing.T) *stack {
 	logs := &bytes.Buffer{}
 	h, err := api.New(api.Deps{
 		Log: slog.New(slog.NewJSONHandler(logs, nil)), DB: db,
-		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Authz: access.NewAuthorizer(db, svc.Directory()), Access: access.NewService(db, store.OrgID()), Audit: audit.New(db, nil), Ledger: db, MonitorFeedback: db, Webhooks: wh,
+		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Authz: access.NewAuthorizer(db, svc.Directory()), Access: access.NewService(db, store.OrgID()), Audit: audit.New(db, nil), Ledger: db, Savings: db, MonitorFeedback: db, Webhooks: wh,
 		AppName: "Acme", ProxyPublicHost: "proxy.test", Version: contract.Version{Version: "t"},
 	})
 	if err != nil {

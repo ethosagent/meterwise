@@ -156,3 +156,18 @@ func (emptyLedger) MonitorStats(context.Context, string, time.Time, time.Time) (
 func (emptyLedger) Stats(context.Context, string, time.Time, time.Time) (contract.Stats, error) {
 	return contract.Stats{}, nil
 }
+
+// emptySavings answers every savings read with nothing, for tests of everything but the savings routes.
+type emptySavings struct{}
+
+func (emptySavings) Overview(context.Context, string, contract.SavingsRange) (contract.SavingsOverview, error) {
+	return contract.SavingsOverview{}, nil
+}
+
+func (emptySavings) Causes(context.Context, string, contract.SavingsRange) (contract.SavingsCauses, []contract.RepeatTarget, error) {
+	return contract.SavingsCauses{}, nil, nil
+}
+
+func (emptySavings) Saves(context.Context, string, contract.SavingsRange, string, int) (contract.SaveList, error) {
+	return contract.SaveList{}, nil
+}

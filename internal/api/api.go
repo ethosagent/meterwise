@@ -38,6 +38,7 @@ type Deps struct {
 	Access          Access                   // groups, group members and org defaults (access.Service)
 	Audit           AuditLog                 // the audit log (audit.Sink)
 	Ledger          Ledger                   // session and stats reads (*store.Store); nil answers those routes with not_available
+	Savings         Savings                  // the savings dashboard reads (*store.Store); nil answers those routes with not_available
 	MonitorFeedback contract.MonitorFeedback // sets monitor event feedback (the ledger owns the write, H4); nil answers with not_available
 	Now             func() time.Time         // the clock of every handler (stats window, invitation expiry); nil is time.Now; read it through server.now
 	Webhooks        WebhookVerifier          // nil answers the Clerk webhook with not_available
@@ -76,6 +77,7 @@ func New(d Deps) (http.Handler, error) {
 	s.registerWorkspaceURL()
 	s.registerLedger()
 	s.registerMonitors()
+	s.registerSavings()
 	for _, r := range contract.Routes() {
 		if !s.registered[r.Method+" "+r.Pattern] {
 			s.problems = append(s.problems, fmt.Errorf("api: route %s %s is in the contract table but has no handler", r.Method, r.Pattern))

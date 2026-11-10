@@ -29,6 +29,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0022](0022-monitor-verdicts-cross-the-chain-through-a-meta-pointer.md) | Monitor verdicts cross the chain through a Meta pointer; config via a tenant attr | Accepted |
 | [0023](0023-two-savings-numbers-never-summed.md) | Two savings numbers, never summed | Accepted |
 | [0024](0024-history-ring-keyed-by-call-index-bounded-by-deadline-and-bytes.md) | The history ring is keyed by call index and bounded by deadline and bytes | Accepted |
+| [0025](0025-savings-read-model-event-time-utc-buckets-no-materialised-view-until-the-bench-says-so.md) | Savings read model: event-time UTC buckets, no materialised view until the bench says so | Accepted |
 
 Template: [`template.md`](template.md).
 

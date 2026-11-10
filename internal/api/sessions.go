@@ -17,6 +17,9 @@ type Ledger interface {
 	MonitorStats(ctx context.Context, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error)
 }
 
+// maxClientFilter bounds the ?client= filter (a family is at most 64 bytes).
+const maxClientFilter = 64
+
 // registerLedger wires the Plan 05 read routes. The gateway has already authorized the workspace
 // (from the path, or from the required workspaceId query for /api/sessions/{id}).
 func (s *server) registerLedger() {
@@ -58,6 +61,11 @@ func (s *server) listSessions(c Call, _ none) (contract.SessionList, error) {
 		return contract.SessionList{}, err
 	}
 	q.Limit = limit
+	if q.Client, q.Outcome = c.Query("client"), c.Query("outcome"); len(q.Client) > maxClientFilter {
+		return contract.SessionList{}, contract.Invalid("client", "is too long")
+	} else if !contract.ValidSessionOutcome(q.Outcome) {
+		return contract.SessionList{}, contract.Invalid("outcome", "must be completed, abandoned or open")
+	}
 	page, err := led.ListSessions(c.Ctx, q)
 	if err != nil {
 		return contract.SessionList{}, err
@@ -90,6 +98,7 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	for i, e := range events {
 		out.MonitorEvents[i] = e.View()
 	}
+	out.Insight = insightOf(events)
 	return out, nil
 }
 
@@ -147,20 +156,30 @@ func fillDays(from time.Time, days int, have []contract.StatsDay) []contract.Sta
 	return out
 }
 
-func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
-	led, err := s.ledger()
-	if err != nil {
-		return contract.StatsView{}, err
-	}
-	rng := c.Query("range")
+// statsRangeOf reads ?range= (7d or 30d, default 7d) into its name, length in days and [from, to) window. An
+// unknown value is a 422 naming the range field. Workspace stats and monitor stats share it.
+func (s *server) statsRangeOf(c Call) (rng string, days int, from, to time.Time, err error) {
+	rng = c.Query("range")
 	if rng == "" {
 		rng = "7d"
 	}
 	days, ok := statsRanges[rng]
 	if !ok {
-		return contract.StatsView{}, contract.Invalid("range", "must be 7d or 30d")
+		return "", 0, from, to, contract.Invalid("range", "must be 7d or 30d")
 	}
-	from, to := statsWindow(s.now(), days)
+	from, to = statsWindow(s.now(), days)
+	return rng, days, from, to, nil
+}
+
+func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
+	led, err := s.ledger()
+	if err != nil {
+		return contract.StatsView{}, err
+	}
+	_, days, from, to, err := s.statsRangeOf(c)
+	if err != nil {
+		return contract.StatsView{}, err
+	}
 	st, err := led.Stats(c.Ctx, c.Path("id"), from, to)
 	if err != nil {
 		return contract.StatsView{}, err

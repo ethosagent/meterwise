@@ -9,6 +9,8 @@ FROM sessions
 WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
   AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
   AND (started_at, id) < (COALESCE(sqlc.narg(cursor_at)::timestamptz, 'infinity'::timestamptz), COALESCE(sqlc.narg(cursor_id)::text, ''))
+  AND (sqlc.narg(client)::text IS NULL OR COALESCE(client, 'unknown') = sqlc.narg(client)::text)
+  AND (sqlc.narg(outcome)::text IS NULL OR outcome = sqlc.narg(outcome)::text)
 ORDER BY started_at DESC, id DESC
 LIMIT sqlc.arg(max_rows)::int;
 

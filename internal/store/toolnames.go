@@ -3,12 +3,14 @@ package store
 import (
 	"encoding/json"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
 // UnreadableToolCalls is how many stored tool_calls values could not be read since Open.
-func (s *Store) UnreadableToolCalls() int64 { return s.badTools.Load() }
+func (s *Store) UnreadableToolCalls() int64 { return s.badTools.n.Load() }
 
 // SetLogger sets the logger the store reports data problems to (the app logger). Until it is set they
 // are counted but not logged.
@@ -21,18 +23,27 @@ func (s *Store) logger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// toolNames decodes a calls.tool_calls value. One that is not a JSON array of names reads as no tool
-// calls, is counted every time and is logged the first time, so a corrupt row leaves a trace.
-func (s *Store) toolNames(callID string, raw []byte) []string {
-	tools := []string{}
-	if err := json.Unmarshal(raw, &tools); err != nil {
-		s.badTools.Add(1)
-		s.badToolsOnce.Do(func() {
-			s.logger().Warn("store: calls.tool_calls is not a JSON array of names; read as none (counted, logged once)",
-				slog.String("call_id", callID))
-		})
-		return []string{}
+// badData counts the stored JSON values that did not decode and logs only the first.
+type badData struct {
+	n    atomic.Int64
+	once sync.Once
+}
+
+// lenient decodes raw into a T. A value that does not decode reads as zero, is counted every time and is
+// logged the first time (msg with the row's id), so a corrupt row leaves a trace and never fails a read.
+func lenient[T any](s *Store, bad *badData, raw []byte, zero T, msg, idKey string, id any) T {
+	out := zero
+	if err := json.Unmarshal(raw, &out); err != nil {
+		bad.n.Add(1)
+		bad.once.Do(func() { s.logger().Warn(msg, slog.Any(idKey, id)) })
+		return zero
 	}
+	return out
+}
+
+// toolNames decodes a calls.tool_calls value. One that is not a JSON array of names reads as no tool calls.
+func (s *Store) toolNames(callID string, raw []byte) []string {
+	tools := lenient(s, &s.badTools, raw, []string{}, "store: calls.tool_calls is not a JSON array of names; read as none (counted, logged once)", "call_id", callID)
 	if tools == nil {
 		tools = []string{}
 	}
@@ -44,19 +55,10 @@ func (s *Store) toolNames(callID string, raw []byte) []string {
 func (*Store) UnexpectedStateErrors() int64 { return UnexpectedStateErrors() }
 
 // UnreadableEvidence is how many stored monitor_events.evidence values could not be read since Open.
-func (s *Store) UnreadableEvidence() int64 { return s.badEvidence.Load() }
+func (s *Store) UnreadableEvidence() int64 { return s.badEvidence.n.Load() }
 
 // evidenceOf decodes a monitor_events.evidence value. One that does not decode reads as empty evidence (the
-// event stays visible), is counted every time and is logged the first time, like toolNames.
+// event stays visible).
 func (s *Store) evidenceOf(eventID int64, raw []byte) contract.MonitorEvidence {
-	ev := contract.MonitorEvidence{}
-	if err := json.Unmarshal(raw, &ev); err != nil {
-		s.badEvidence.Add(1)
-		s.badEvidenceOnce.Do(func() {
-			s.logger().Warn("store: monitor_events.evidence does not decode; read as empty (counted, logged once)",
-				slog.Int64("event_id", eventID))
-		})
-		return contract.MonitorEvidence{}
-	}
-	return ev
+	return lenient(s, &s.badEvidence, raw, contract.MonitorEvidence{}, "store: monitor_events.evidence does not decode; read as empty (counted, logged once)", "event_id", eventID)
 }
