@@ -20,6 +20,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
+	"github.com/ethosagent/meterwise/internal/ledger"
 	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/tenancy"
 	"github.com/ethosagent/meterwise/internal/wsauth"
@@ -35,15 +36,18 @@ const (
 
 // instance is everything serve owns for the life of the process.
 type instance struct {
-	cfg      config.Config
-	log      *slog.Logger
-	db       *store.Store
-	svc      *tenancy.Service
-	proxy    *tollgate.Proxy
-	sources  []contract.StatusSource // reported on /statusz
-	servers  map[string]*http.Server // proxy, api, admin
-	lns      map[string]net.Listener
-	shutdown func(context.Context) error // telemetry flush
+	cfg    config.Config
+	log    *slog.Logger
+	db     *store.Store
+	svc    *tenancy.Service
+	proxy  *tollgate.Proxy
+	ledger *ledger.Hook // flushed after the proxy closes
+	// stopPricing ends the price refresh loop.
+	stopPricing context.CancelFunc
+	sources     []contract.StatusSource // reported on /statusz
+	servers     map[string]*http.Server // proxy, api, admin
+	lns         map[string]net.Listener
+	shutdown    func(context.Context) error // telemetry flush
 }
 
 func cmdServe(ctx context.Context, e *env, args []string) int {
@@ -138,7 +142,7 @@ func (rt *instance) apiHandler(id identitySetup, tp trace.TracerProvider) (http.
 		principals = api.ClerkPrincipalResolver{Provider: id.provider, Sessions: rt.svc}
 	}
 	return api.New(api.Deps{
-		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Authz: access.NewAuthorizer(rt.db, rt.svc.Directory()), Access: access.NewService(rt.db, store.OrgID()), Audit: audit.New(rt.db, nil), Webhooks: id.webhooks,
+		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Authz: access.NewAuthorizer(rt.db, rt.svc.Directory()), Access: access.NewService(rt.db, store.OrgID()), Audit: audit.New(rt.db, nil), Ledger: rt.db, Now: time.Now, Webhooks: id.webhooks,
 		Web: webFS(rt.cfg.WebDir, rt.log), Tracer: tp,
 		AppName: rt.cfg.AppName, ProxyPublicHost: rt.cfg.ProxyPublicHost, Version: contract.Version{Version: version, Commit: commit},
 	})
@@ -233,6 +237,14 @@ func (rt *instance) close(ctx context.Context) {
 	if rt.proxy != nil {
 		if err := rt.proxy.Close(cctx); err != nil {
 			rt.log.Warn("proxy close", "err", err)
+		}
+	}
+	if rt.stopPricing != nil {
+		rt.stopPricing()
+	}
+	if rt.ledger != nil {
+		if err := rt.ledger.Close(cctx); err != nil {
+			rt.log.Warn("ledger close", "err", err)
 		}
 	}
 	if rt.db != nil {

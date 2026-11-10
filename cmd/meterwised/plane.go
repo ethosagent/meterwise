@@ -10,6 +10,8 @@ import (
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
+	"github.com/ethosagent/meterwise/internal/ledger"
+	"github.com/ethosagent/meterwise/internal/savings"
 	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/wsauth"
 )
@@ -103,9 +105,36 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 		d.Sources = append(d.Sources, adm)
 	}
 	d.Sources = append(d.Sources, dir)
-	d.Hooks = append([]tollgate.Hook{wsauth.Hook{}}, d.Hooks...)
+	led, err := rt.startLedger(ctx)
+	if err != nil {
+		return d, err
+	}
+	d.Sources = append(d.Sources, led)
+	// wsauth first (it stamps the tenant), the injected hooks, then the ledger, which only records.
+	d.Hooks = append(append([]tollgate.Hook{wsauth.Hook{}}, d.Hooks...), led)
 	rt.sources = d.Sources
 	return d, nil
+}
+
+// startLedger builds the price snapshot (loaded once now, then refreshed every five minutes) and the
+// ledger hook that turns every finished call into rows. The hook's batcher stops in close, after the
+// proxy, so every queued call is flushed. A missing or empty pricing table is logged, not fatal: calls
+// are then recorded with a null cost until the next refresh finds prices.
+func (rt *instance) startLedger(ctx context.Context) (*ledger.Hook, error) {
+	pricer := savings.NewTablePricer(nil)
+	loader := &ledger.PriceLoader{Source: rt.db, Pricer: pricer, Log: rt.log}
+	if err := loader.Load(ctx); err != nil {
+		rt.log.Warn("pricing table not loaded; calls are recorded unpriced until it is", "err", err.Error())
+	}
+	pctx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	rt.stopPricing = stop
+	go loader.Run(pctx)
+	hook, err := ledger.New(ctx, ledger.Options{Writer: rt.db, Pricer: pricer, PrivacyMode: &rt.cfg.PrivacyMode, Log: rt.log})
+	if err != nil {
+		return nil, fmt.Errorf("ledger: %w", err)
+	}
+	rt.ledger = hook
+	return hook, nil
 }
 
 // devTenant is the tenant a bare /{provider}/ path serves in dev: the org's default workspace as
