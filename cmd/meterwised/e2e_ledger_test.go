@@ -185,7 +185,7 @@ func TestProxiedCallsAppearInSessionsStatsSetupAndStatusz(t *testing.T) {
 		}
 	}
 	// a session from another workspace is a 404, never a read
-	if code, _ := get(t, p.api+"/api/sessions/"+list.Items[0].ID+"?workspaceId=00000000-0000-0000-0000-000000000000"); code != 404 && code != 403 {
+	if code, _ := get(t, p.api+"/api/sessions/"+list.Items[0].ID+"?workspaceId=00000000-0000-0000-0000-000000000000"); code != 404 {
 		t.Fatalf("cross-workspace read: %d", code)
 	}
 
