@@ -150,6 +150,9 @@ func Resolve(ws contract.Workspace) any {
 	if ws.Retired {
 		attrs[MetaURLRetired] = "true"
 	}
+	if canonicalUUID(ws.ID) && canonicalUUID(ws.OrgID) {
+		attrs[AttrTenantOK] = "true"
+	}
 	if n := MaxConcurrentOf(ws.Settings); n > 0 {
 		attrs[AttrMaxConcurrent] = strconv.Itoa(n)
 	}
