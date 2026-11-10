@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"slices"
-	"strconv"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/savings"
@@ -18,10 +17,8 @@ type Savings interface {
 	Saves(ctx context.Context, workspaceID string, r contract.SavingsRange, cursor string, limit int) (contract.SaveList, error)
 }
 
-const (
-	defaultSaves = 20
-	maxSaves     = 100
-)
+// defaultSaves is the first page of the biggest-saves table; the bounds are the shared page limit.
+const defaultSaves = 20
 
 // registerSavings wires the Plan 07 read routes. The gateway has authorized savings:read on the workspace.
 func (s *server) registerSavings() {
@@ -96,11 +93,12 @@ func (s *server) savingsSaves(c Call, _ none) (contract.SaveList, error) {
 	if err != nil {
 		return contract.SaveList{}, err
 	}
-	limit := defaultSaves
-	if raw := c.Query("limit"); raw != "" {
-		if limit, err = strconv.Atoi(raw); err != nil || limit < 1 || limit > maxSaves {
-			return contract.SaveList{}, contract.Invalid("limit", "must be a number from 1 to 100")
-		}
+	limit, err := contract.ParsePageLimit(c.Query("limit"))
+	if err != nil {
+		return contract.SaveList{}, err
+	}
+	if limit == 0 {
+		limit = defaultSaves
 	}
 	return sv.Saves(c.Ctx, c.Path("id"), r, c.Query("cursor"), limit)
 }

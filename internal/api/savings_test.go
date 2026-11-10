@@ -242,13 +242,16 @@ func TestSavingsRouteTable(t *testing.T) {
 			})
 		}
 	}
-	for _, q := range []string{"?limit=0", "?limit=101", "?limit=abc", "?limit=-1"} {
+	for _, q := range []string{"?limit=0", "?limit=201", "?limit=abc", "?limit=-1"} {
 		code, b := s.call(t, "GET", "/api/workspaces/"+ws+"/savings/saves"+q, admin.tok, "")
 		wantErr(t, code, b, 422, contract.CodeValidationFailed)
+		if !strings.Contains(string(b), contract.LimitMessage) { // the one message every paged list uses
+			t.Errorf("limit %s: message is not contract.LimitMessage: %s", q, b)
+		}
 	}
 	code, b := s.call(t, "GET", "/api/workspaces/"+ws+"/savings/saves?cursor=garbage", admin.tok, "")
 	wantErr(t, code, b, 422, contract.CodeValidationFailed)
-	s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/savings/saves?limit=100", "", 200)
+	s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/savings/saves?limit=200", "", 200) // the shared maximum
 	for _, view := range []string{"overview", "causes", "saves"} {
 		for _, p := range []string{"00000000-0000-0000-0000-00000000dead", "not-a-uuid"} {
 			code, b := s.call(t, "GET", "/api/workspaces/"+p+"/savings/"+view, admin.tok, "")

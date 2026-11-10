@@ -105,18 +105,21 @@ func clientRows(cur []sqlc.SavingsClientsRow, prev []sqlc.SavingsClientsForRow, 
 }
 
 // Saves reads one page of the biggest saves of a range: acted events with a positive estimate, both
-// confidences, (estimate DESC, id DESC) behind an opaque keyset cursor. limit is 1-100 (the caller defaults it).
+// confidences, (estimate DESC, id DESC) behind an opaque keyset cursor. limit follows the shared page bounds (contract.ResolvePageLimit).
 func (s *Store) Saves(ctx context.Context, workspaceID string, r contract.SavingsRange, cursor string, limit int) (contract.SaveList, error) {
 	if !validID(workspaceID) {
 		return contract.SaveList{}, contract.Invalid("workspaceId", "must be a workspace id")
 	}
-	limit = min(max(limit, 1), 100)
+	limit, err := contract.ResolvePageLimit(limit)
+	if err != nil {
+		return contract.SaveList{}, err
+	}
 	micro, id, err := decodeSaveCursor(cursor)
 	if err != nil {
 		return contract.SaveList{}, err
 	}
 	from, to := window(r)
-	p := sqlc.ListSavesParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: int32(limit + 1)}
+	p := sqlc.ListSavesParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: clampInt32(int64(limit + 1))}
 	if cursor != "" {
 		p.CursorMicro, p.CursorID = pgtype.Int8{Int64: micro, Valid: true}, pgtype.Int8{Int64: id, Valid: true}
 	}
