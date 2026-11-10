@@ -146,7 +146,10 @@ type CallSummary struct {
 	UsageKnown bool
 }
 
-// RingView is an immutable snapshot of a session's recent calls, newest last, at most 50.
+// RingDepth is how many calls a session's history ring keeps.
+const RingDepth = 50
+
+// RingView is an immutable snapshot of a session's recent calls, newest last, at most RingDepth.
 type RingView interface{ Calls() []CallSummary }
 
 // MonitorEventRecord is one monitor_events row. Feedback is nil, "correct" or "wrong".

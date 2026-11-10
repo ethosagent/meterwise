@@ -71,3 +71,5 @@ alignment check costs up to three parsed turns on a catch-up (`BenchmarkWarmSess
 `TestRingsStayWithinTheByteBudget`, `TestHistoryMaxBytes`, `TestBeforeStopsReadingAtItsDeadline`,
 `TestLateBeforeLeavesQueuedNotesForTheNextCall` and
 `TestSideRequestWhileTheRingLagsIsNotCaughtUpFromItsOwnTurns`.
+
+The certain block estimate stays a lower bound of the exact one (`basisOf`): an entry counts as known only when its After reported usage (zero input is unknown), the input and body-delta parts come only from a known entry at index n-1 (a gap there makes them 0), and every index of the window `[max(1, n-RingDepth), n-1]` with no entry counts as unknown in the output floor. Enforced by `TestBlockEstimateIsALowerBoundOverGapsZeroUsageAndShuffledAfters`, `TestAbsentPreviousEntryGivesNoInputPartAndNoOutputPart`, `TestDeadlineSkippedCatchUpEstimateIsALowerBound` and `TestUnreportedUsageLeavesTheEntryUnknown`.

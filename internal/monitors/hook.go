@@ -182,35 +182,46 @@ func (h *Hook) detect(c *tollgate.Call, ring contract.RingView, cfg contract.Mon
 
 // basisOf is what the estimator needs to price a verdict: the previous call's input tokens, how much
 // the body grew since, and the session's median output. It is a lower bound of the basis the real numbers
-// would give (ADR 0024): an entry whose usage is unknown (caught up or rebuilt from a request) counts as 0
-// for the first two, and the output part is the largest value the median provably reaches.
+// would give (ADR 0024). The first two come only from an entry that is the call just before this one (index
+// Session.Calls-1) and whose usage is known; when it is unknown or absent (a catch-up the deadline skipped, a
+// request that was not aligned) both are 0. The output part is the largest value the median provably reaches.
 func basisOf(c *tollgate.Call, calls []contract.CallSummary) contract.EstBasis {
 	var b contract.EstBasis
-	if n := len(calls); n > 0 && calls[n-1].UsageKnown {
+	n := len(calls)
+	if n > 0 && calls[n-1].Index == c.Session.Calls-1 && known(calls[n-1]) {
 		last := calls[n-1]
 		b.PriorInputTokens = last.Input
 		b.BodyDeltaBytes = max(0, int64(len(c.Body)-last.BodyBytes))
 	}
-	b.MedianOutputTokens = outputFloor(calls)
+	b.MedianOutputTokens = outputFloor(calls, c.Session.Calls)
 	return b
 }
 
+// known reports whether an entry holds a call's real numbers. A real call never has zero input, so a zero
+// is unknown whatever the flag says (history leaves it false; this keeps the bound if one slips through).
+func known(s contract.CallSummary) bool { return s.UsageKnown && s.Input > 0 }
+
 // outputFloor is a lower bound of the median over the calls with output, whatever the unknown entries held.
+// The ring's window is the call indexes [max(1, n-RingDepth), n-1] for the current call n; an index with no
+// entry (never added, skipped, or a call that failed) counts as unknown like an entry with unknown usage.
 // With kp known positive outputs (sorted K) and u unknown entries, the exact median sits at position
 // (kp+k)/2 of kp+k values for some k <= u of them positive. At least one known value at or below it is
 // K[(kp+k)/2-k], so K[(kp+u)/2-u] bounds it for every k; below index 0 nothing is known and the floor is 0.
 // With no unknown entry this is the plain median.
-func outputFloor(calls []contract.CallSummary) int64 {
+func outputFloor(calls []contract.CallSummary, n int) int64 {
+	lo := max(1, n-contract.RingDepth)
 	var outs []int64
-	unknown := 0
+	knownCalls := 0
 	for _, s := range calls {
-		switch {
-		case !s.UsageKnown:
-			unknown++
-		case s.Output > 0:
+		if s.Index < lo || s.Index >= n || !known(s) {
+			continue
+		}
+		knownCalls++
+		if s.Output > 0 {
 			outs = append(outs, s.Output)
 		}
 	}
+	unknown := max(0, n-lo) - knownCalls
 	i := (len(outs)+unknown)/2 - unknown
 	if i < 0 || i >= len(outs) {
 		return 0

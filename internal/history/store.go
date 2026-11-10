@@ -12,7 +12,7 @@ import (
 // RingDepth is how many calls a session's ring keeps; ringShingles is how many of the newest keep their
 // shingles; DefaultMaxBytes is the rings' byte budget when Options.MaxBytes is unset.
 const (
-	RingDepth       = 50
+	RingDepth       = contract.RingDepth
 	ringShingles    = 3
 	DefaultMaxBytes = 256 << 20
 )

@@ -15,7 +15,7 @@ import (
 // lower bound, never above the exact estimate from the ledger's real numbers (I7; before the fix the whole body
 // counted as growth: "blocked estimate 157, want 104").
 func TestCaughtUpBlockEstimateIsNeverAboveTheExactOne(t *testing.T) {
-	call := &tollgate.Call{Body: make([]byte, 4000)}
+	call := &tollgate.Call{Body: make([]byte, 4000), Session: tollgate.Session{Calls: 3}}
 	exact := []contract.CallSummary{
 		{Index: 1, Input: 100, Output: 20, BodyBytes: 1000, UsageKnown: true},
 		{Index: 2, Input: 160, Output: 30, BodyBytes: 2000, UsageKnown: true},
@@ -67,7 +67,7 @@ func TestBlockEstimateIsALowerBoundForAnyMixOfKnownAndUnknownEntries(t *testing.
 				filled[i] = contract.CallSummary{Index: i + 1} // caught up: nothing known
 			}
 		}
-		call := &tollgate.Call{Body: make([]byte, rng.IntN(40000))}
+		call := &tollgate.Call{Body: make([]byte, rng.IntN(40000)), Session: tollgate.Session{Calls: n + 1}}
 		if got, want := estimate(call, filled), estimate(call, exact); got > want {
 			t.Fatalf("trial %d: estimate %d from %+v exceeds the exact %d from %+v", trial, got, filled, want, exact)
 		}
@@ -75,7 +75,7 @@ func TestBlockEstimateIsALowerBoundForAnyMixOfKnownAndUnknownEntries(t *testing.
 }
 
 func TestNoKnownEntryMeansNoOutputPart(t *testing.T) {
-	call := &tollgate.Call{Body: make([]byte, 100)}
+	call := &tollgate.Call{Body: make([]byte, 100), Session: tollgate.Session{Calls: 3}}
 	b := basisOf(call, []contract.CallSummary{{Index: 1}, {Index: 2}})
 	if b != (contract.EstBasis{}) {
 		t.Fatalf("basis = %+v, want the zero basis", b)
