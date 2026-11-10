@@ -221,6 +221,7 @@ Owner: `calls` (created in `0013_calls.sql`)
 | `notes_injected` | `integer NOT NULL DEFAULT 0` | 0013_calls.sql |
 | `client` | `text` | 0013_calls.sql |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0013_calls.sql |
+| `trim_action` | `text CHECK (trim_action IN ('acted'` | 0018_calls.sql |
 
 ## sessions
 
@@ -246,6 +247,7 @@ Owner: `sessions` (created in `0014_sessions.sql`)
 | `first_user_message_preview` | `text CHECK (length(first_user_message_preview) <= 200)` | 0014_sessions.sql |
 | `last_finish` | `text NOT NULL DEFAULT ''` | 0014_sessions.sql |
 | `last_had_text` | `boolean NOT NULL DEFAULT false` | 0014_sessions.sql |
+| `trim_tokens` | `bigint NOT NULL DEFAULT 0` | 0019_sessions.sql |
 
 ## monitor_events
 
@@ -269,3 +271,62 @@ Owner: `monitor_events` (created in `0015_monitor_events.sql`)
 | `confidence` | `text NOT NULL CHECK (confidence IN ('certain', 'likely', 'none'))` | 0015_monitor_events.sql |
 | `feedback` | `text CHECK (feedback IN ('correct', 'wrong'))` | 0015_monitor_events.sql |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0015_monitor_events.sql |
+
+## trim_events
+
+Owner: `trim` (created in `0020_trim.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0020_trim.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0020_trim.sql |
+| `workspace_id` | `uuid NOT NULL` | 0020_trim.sql |
+| `session_id` | `text NOT NULL` | 0020_trim.sql |
+| `call_id` | `text NOT NULL` | 0020_trim.sql |
+| `ts` | `timestamptz NOT NULL` | 0020_trim.sql |
+| `stage` | `text NOT NULL CHECK (stage IN ('repeat_collapse', 'log_window', 'dup_lines', 'json_table', 'schema_trim'))` | 0020_trim.sql |
+| `tool_name` | `text` | 0020_trim.sql |
+| `regions` | `integer NOT NULL` | 0020_trim.sql |
+| `bytes_before` | `integer NOT NULL` | 0020_trim.sql |
+| `bytes_after` | `integer NOT NULL` | 0020_trim.sql |
+| `est_tokens` | `bigint NOT NULL DEFAULT 0` | 0020_trim.sql |
+| `reverted` | `boolean NOT NULL` | 0020_trim.sql |
+| `action` | `text NOT NULL CHECK (action IN ('acted', 'observe'))` | 0020_trim.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0020_trim.sql |
+
+## router_feedback
+
+Owner: `router` (created in `0021_router.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `workspace_id` | `uuid NOT NULL` | 0021_router.sql |
+| `call_id` | `text NOT NULL` | 0021_router.sql |
+| `verdict` | `text NOT NULL CHECK (verdict IN ('worse', 'fine'))` | 0021_router.sql |
+| `user_id` | `uuid` | 0021_router.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0021_router.sql |
+| `updated_at` | `timestamptz NOT NULL DEFAULT now()` | 0021_router.sql |
+
+## router_model_capabilities
+
+Owner: `router` (created in `0021_router.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `provider` | `text NOT NULL CHECK (provider <> '')` | 0021_router.sql |
+| `model` | `text NOT NULL CHECK (model <> '')` | 0021_router.sql |
+| `max_tools` | `integer NOT NULL CHECK (max_tools >= 0)` | 0021_router.sql |
+| `supports_json_schema` | `boolean NOT NULL` | 0021_router.sql |
+| `supports_vision` | `boolean NOT NULL` | 0021_router.sql |
+| `supports_reasoning` | `boolean NOT NULL` | 0021_router.sql |
+| `effective_from` | `timestamptz NOT NULL` | 0021_router.sql |
+
+## router_model_routes
+
+Owner: `router` (created in `0021_router.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `provider` | `text NOT NULL CHECK (provider <> '')` | 0021_router.sql |
+| `from_model` | `text NOT NULL CHECK (from_model <> '')` | 0021_router.sql |
+| `to_model` | `text NOT NULL CHECK (to_model <> '')` | 0021_router.sql |

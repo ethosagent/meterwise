@@ -48,6 +48,16 @@ type Call struct {
 	NotesInjected   int32
 	Client          pgtype.Text
 	CreatedAt       pgtype.Timestamptz
+	TrimAction      pgtype.Text
+	TrimConfidence  pgtype.Text
+	TrimTokens      int64
+	SavedUsdTrim    pgtype.Numeric
+	RouterAction    pgtype.Text
+	RoutedFrom      pgtype.Text
+	RoutedTo        pgtype.Text
+	RouterScoreBp   pgtype.Int4
+	SavedUsdRouter  pgtype.Numeric
+	HintInjected    bool
 }
 
 type Group struct {
@@ -155,6 +165,31 @@ type ResourcePermission struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type RouterFeedback struct {
+	WorkspaceID pgtype.UUID
+	CallID      string
+	Verdict     string
+	UserID      pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type RouterModelCapability struct {
+	Provider           string
+	Model              string
+	MaxTools           int32
+	SupportsJsonSchema bool
+	SupportsVision     bool
+	SupportsReasoning  bool
+	EffectiveFrom      pgtype.Timestamptz
+}
+
+type RouterModelRoute struct {
+	Provider  string
+	FromModel string
+	ToModel   string
+}
+
 type Session struct {
 	ID                      string
 	OrgID                   pgtype.UUID
@@ -174,6 +209,27 @@ type Session struct {
 	FirstUserMessagePreview pgtype.Text
 	LastFinish              string
 	LastHadText             bool
+	TrimTokens              int64
+	RoutedCalls             int32
+	Hints                   int32
+}
+
+type TrimEvent struct {
+	ID          int64
+	OrgID       pgtype.UUID
+	WorkspaceID pgtype.UUID
+	SessionID   string
+	CallID      string
+	Ts          pgtype.Timestamptz
+	Stage       string
+	ToolName    pgtype.Text
+	Regions     int32
+	BytesBefore int32
+	BytesAfter  int32
+	EstTokens   int64
+	Reverted    bool
+	Action      string
+	CreatedAt   pgtype.Timestamptz
 }
 
 type User struct {
