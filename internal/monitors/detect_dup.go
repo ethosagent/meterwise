@@ -18,50 +18,32 @@ func DetectDuplicateToolCall(c *tollgate.Call, r contract.RingView, cfg contract
 	if len(calls) == 0 || len(calls[len(calls)-1].ArgsHashes) == 0 {
 		return contract.MonitorVerdict{}, false
 	}
-	if ev, ok := exactDuplicate(c, calls, k); ok {
-		return newVerdict(contract.MonitorDuplicateToolCall, k.Mode, ev), true
+	ev, ok := exactDuplicate(c, calls, k)
+	if !ok && k.ABAB {
+		ev, ok = alternation(c, calls)
 	}
-	if k.ABAB {
-		if ev, ok := alternation(c, calls, k); ok {
-			return newVerdict(contract.MonitorDuplicateToolCall, k.Mode, ev), true
-		}
+	if !ok && k.FuzzyPct > 0 {
+		ev, ok = fuzzyDuplicate(c, calls, k)
 	}
-	if k.FuzzyPct > 0 {
-		if ev, ok := fuzzyDuplicate(c, calls, k); ok {
-			return newVerdict(contract.MonitorDuplicateToolCall, k.Mode, ev), true
-		}
+	if !ok {
+		return contract.MonitorVerdict{}, false
 	}
-	return contract.MonitorVerdict{}, false
+	return newVerdict(contract.MonitorDuplicateToolCall, k.Mode, ev), true
 }
 
 func exactDuplicate(c *tollgate.Call, calls []contract.CallSummary, k contract.DuplicateToolCallConfig) (contract.MonitorEvidence, bool) {
-	n := len(calls)
-	cur := calls[n-1]
-	start := max(0, n-1-k.LookBack)
-	for ti, h := range cur.ArgsHashes {
-		if writesBefore(cur, ti) {
-			break // this turn wrote first: this call and every later one sees a new state
-		}
-		var matched []int
-		for i := n - 2; i >= start; i-- {
-			if hasWrite(calls[i]) { // its write runs after its results: it lies between that turn and the pending call
-				break
-			}
-			if slices.Contains(calls[i].ArgsHashes, h) {
-				matched = append(matched, calls[i].Index)
-			}
-		}
-		if 1+len(matched) < k.MaxRepeats {
-			continue
-		}
-		slices.Reverse(matched)
-		return contract.MonitorEvidence{
-			MatchedCalls: append(matched, cur.Index), Tool: toolAt(cur, ti), ArgsHash: hashID(c, h),
-			Count: 1 + len(matched), Threshold: k.MaxRepeats,
-		}, true
+	cur := calls[len(calls)-1]
+	ti, matched, ok := repeatScan(calls, k.LookBack, k.MaxRepeats, argsOf, func(_ contract.CallSummary, i int) int { return i })
+	if !ok {
+		return contract.MonitorEvidence{}, false
 	}
-	return contract.MonitorEvidence{}, false
+	return contract.MonitorEvidence{
+		MatchedCalls: append(matched, cur.Index), Tool: toolAt(cur, ti), ArgsHash: hashID(c, cur.ArgsHashes[ti]),
+		Count: 1 + len(matched), Threshold: k.MaxRepeats,
+	}, true
 }
+
+func argsOf(s contract.CallSummary) []uint64 { return s.ArgsHashes }
 
 func toolAt(s contract.CallSummary, i int) string {
 	if i < len(s.Tools) {
@@ -71,7 +53,7 @@ func toolAt(s contract.CallSummary, i int) string {
 }
 
 // alternation finds A-B-A-B: the last four calls repeat in pairs, A differs from B, no write inside.
-func alternation(c *tollgate.Call, calls []contract.CallSummary, _ contract.DuplicateToolCallConfig) (contract.MonitorEvidence, bool) {
+func alternation(c *tollgate.Call, calls []contract.CallSummary) (contract.MonitorEvidence, bool) {
 	n := len(calls)
 	if n < 4 {
 		return contract.MonitorEvidence{}, false

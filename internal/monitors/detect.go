@@ -1,6 +1,8 @@
 package monitors
 
 import (
+	"slices"
+
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -55,6 +57,37 @@ func readAt(s contract.CallSummary, r int) int {
 		}
 	}
 	return -1
+}
+
+// repeatScan finds the first hash of the pending turn (the newest call) that its earlier calls repeat enough
+// to fire: need occurrences in all, counting the pending one, among the lookBack calls before it and with no
+// write in between. own picks the hashes a call holds (arguments or file reads) and pos the tool position of
+// the i-th of them in that call. It returns that hash's index in the pending turn and the matching earlier
+// call indexes, oldest first. The write rule lives here, once (M2): the pending turn's own write breaks a
+// repeat as an earlier turn's does, and an earlier turn's write lies between it and the pending call.
+func repeatScan(calls []contract.CallSummary, lookBack, need int, own func(contract.CallSummary) []uint64, pos func(contract.CallSummary, int) int) (int, []int, bool) {
+	n := len(calls)
+	cur := calls[n-1]
+	start := max(0, n-1-lookBack)
+	for i, h := range own(cur) {
+		if writesBefore(cur, pos(cur, i)) {
+			break // this turn wrote first: this hash and every later one sees a new state
+		}
+		var matched []int
+		for j := n - 2; j >= start; j-- {
+			if hasWrite(calls[j]) {
+				break
+			}
+			if slices.Contains(own(calls[j]), h) {
+				matched = append(matched, calls[j].Index)
+			}
+		}
+		if 1+len(matched) >= need {
+			slices.Reverse(matched)
+			return i, matched, true
+		}
+	}
+	return 0, nil, false
 }
 
 func newVerdict(name contract.MonitorName, mode contract.MonitorMode, ev contract.MonitorEvidence) contract.MonitorVerdict {
