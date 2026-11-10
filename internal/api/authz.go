@@ -41,8 +41,16 @@ func (s *server) gateway(row contract.Route, next http.Handler) http.Handler {
 				return
 			}
 			workspaceID := ""
-			if row.WorkspaceParam != "" {
+			switch {
+			case row.WorkspaceParam != "":
 				workspaceID = r.PathValue(row.WorkspaceParam)
+			case row.WorkspaceQuery != "":
+				// The path names another resource: the caller says which workspace to authorize
+				// against, before any read of that resource.
+				if workspaceID = r.URL.Query().Get(row.WorkspaceQuery); workspaceID == "" {
+					writeError(w, contract.Invalid(row.WorkspaceQuery, "is required"))
+					return
+				}
 			}
 			res, err := s.Authz.Authorize(r.Context(), sess.Principal, row.Permission, workspaceID)
 			if err != nil {

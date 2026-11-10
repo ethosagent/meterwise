@@ -35,13 +35,11 @@ func (s *server) emitAudit(c Call, spec *contract.AuditSpec, req, resp any) {
 
 func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 	q := contract.AuditQuery{Action: contract.AuditAction(c.Query("action")), WorkspaceID: c.Query("workspaceId"), Cursor: c.Query("cursor")}
-	if raw := c.Query("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 {
-			return contract.AuditList{}, contract.Invalid("limit", "must be a whole number from 1 to "+strconv.Itoa(contract.MaxAuditLimit))
-		}
-		q.Limit = n
+	limit, err := contract.ParsePageLimit(c.Query("limit"))
+	if err != nil {
+		return contract.AuditList{}, err
 	}
+	q.Limit = limit
 	page, err := s.Audit.List(c.Ctx, q)
 	if err != nil {
 		return contract.AuditList{}, err
@@ -51,9 +49,6 @@ func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 		e := contract.AuditEntry{
 			ID: strconv.FormatInt(r.ID, 10), At: contract.RFC3339(r.At), Action: r.Action, ResourceType: r.ResourceType,
 			ResourceID: strOrNil(r.ResourceID), WorkspaceID: strOrNil(r.WorkspaceID), IP: strOrNil(r.IP), Metadata: r.Metadata,
-		}
-		if e.Metadata == nil {
-			e.Metadata = map[string]any{}
 		}
 		if r.ActorID != "" {
 			e.Actor = &contract.AuditActor{UserID: r.ActorID, Email: r.ActorEmail, Name: r.ActorName}

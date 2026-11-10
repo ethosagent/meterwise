@@ -172,6 +172,9 @@ func TestRoutesAreDocumentedAndAuthorised(t *testing.T) {
 		if r.WorkspaceParam != "" && !strings.Contains(r.Pattern, "{"+r.WorkspaceParam+"}") {
 			t.Errorf("%s %s: WorkspaceParam %q is not a path parameter of the pattern", r.Method, r.Pattern, r.WorkspaceParam)
 		}
+		if r.WorkspaceQuery != "" && (r.WorkspaceParam != "" || strings.Contains(r.Pattern, "{"+r.WorkspaceQuery+"}")) {
+			t.Errorf("%s %s: WorkspaceQuery %q must be the only workspace source of the row", r.Method, r.Pattern, r.WorkspaceQuery)
+		}
 	}
 	if _, ok := contract.PermissionFor("GET", "/healthz"); !ok {
 		t.Fatal("healthz route missing")

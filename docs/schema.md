@@ -175,3 +175,97 @@ Owner: `audit_log` (created in `0010_audit_log.sql`)
 | `ip` | `inet` | 0010_audit_log.sql |
 | `metadata` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0010_audit_log.sql |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0010_audit_log.sql |
+
+## pricing
+
+Owner: `pricing` (created in `0012_pricing.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `provider` | `text NOT NULL CHECK (provider <> '')` | 0012_pricing.sql |
+| `model` | `text NOT NULL CHECK (model <> '')` | 0012_pricing.sql |
+| `input_per_m` | `bigint NOT NULL CHECK (input_per_m >= 0)` | 0012_pricing.sql |
+| `output_per_m` | `bigint NOT NULL CHECK (output_per_m >= 0)` | 0012_pricing.sql |
+| `cached_per_m` | `bigint CHECK (cached_per_m >= 0)` | 0012_pricing.sql |
+| `reasoning_per_m` | `bigint CHECK (reasoning_per_m >= 0)` | 0012_pricing.sql |
+| `effective_from` | `timestamptz NOT NULL` | 0012_pricing.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0012_pricing.sql |
+
+## calls
+
+Owner: `calls` (created in `0013_calls.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `text PRIMARY KEY CHECK (id <> '')` | 0013_calls.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0013_calls.sql |
+| `workspace_id` | `uuid NOT NULL` | 0013_calls.sql |
+| `session_id` | `text NOT NULL` | 0013_calls.sql |
+| `call_index` | `integer NOT NULL CHECK (call_index >= 0)` | 0013_calls.sql |
+| `started_at` | `timestamptz NOT NULL` | 0013_calls.sql |
+| `provider` | `text NOT NULL` | 0013_calls.sql |
+| `model` | `text NOT NULL` | 0013_calls.sql |
+| `wire` | `text NOT NULL` | 0013_calls.sql |
+| `stream` | `boolean NOT NULL` | 0013_calls.sql |
+| `status` | `integer NOT NULL` | 0013_calls.sql |
+| `finish` | `text NOT NULL` | 0013_calls.sql |
+| `input_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0)` | 0013_calls.sql |
+| `output_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0)` | 0013_calls.sql |
+| `cached_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (cached_tokens >= 0)` | 0013_calls.sql |
+| `reasoning_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (reasoning_tokens >= 0)` | 0013_calls.sql |
+| `cost_usd` | `numeric(14,6)` | 0013_calls.sql |
+| `ttfb_ms` | `integer NOT NULL DEFAULT 0` | 0013_calls.sql |
+| `duration_ms` | `integer NOT NULL DEFAULT 0` | 0013_calls.sql |
+| `tool_calls` | `jsonb NOT NULL DEFAULT '[]'::jsonb` | 0013_calls.sql |
+| `blocked` | `boolean NOT NULL DEFAULT false` | 0013_calls.sql |
+| `notes_injected` | `integer NOT NULL DEFAULT 0` | 0013_calls.sql |
+| `client` | `text` | 0013_calls.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0013_calls.sql |
+
+## sessions
+
+Owner: `sessions` (created in `0014_sessions.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `text NOT NULL CHECK (id <> '' )` | 0014_sessions.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0014_sessions.sql |
+| `workspace_id` | `uuid NOT NULL` | 0014_sessions.sql |
+| `source` | `text NOT NULL CHECK (source IN ('header', 'predicted'))` | 0014_sessions.sql |
+| `started_at` | `timestamptz NOT NULL` | 0014_sessions.sql |
+| `last_seen_at` | `timestamptz NOT NULL` | 0014_sessions.sql |
+| `closed_at` | `timestamptz` | 0014_sessions.sql |
+| `calls` | `integer NOT NULL DEFAULT 0` | 0014_sessions.sql |
+| `input_tokens` | `bigint NOT NULL DEFAULT 0` | 0014_sessions.sql |
+| `output_tokens` | `bigint NOT NULL DEFAULT 0` | 0014_sessions.sql |
+| `cost_usd` | `numeric(14,6)` | 0014_sessions.sql |
+| `saved_usd` | `numeric(14,6) NOT NULL DEFAULT 0` | 0014_sessions.sql |
+| `likely_saved_usd` | `numeric(14,6) NOT NULL DEFAULT 0` | 0014_sessions.sql |
+| `outcome` | `text NOT NULL DEFAULT 'open' CHECK (outcome IN ('completed', 'abandoned', 'open'))` | 0014_sessions.sql |
+| `client` | `text` | 0014_sessions.sql |
+| `first_user_message_preview` | `text CHECK (length(first_user_message_preview) <= 200)` | 0014_sessions.sql |
+| `last_finish` | `text NOT NULL DEFAULT ''` | 0014_sessions.sql |
+| `last_had_text` | `boolean NOT NULL DEFAULT false` | 0014_sessions.sql |
+
+## monitor_events
+
+Owner: `monitor_events` (created in `0015_monitor_events.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0015_monitor_events.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0015_monitor_events.sql |
+| `workspace_id` | `uuid NOT NULL` | 0015_monitor_events.sql |
+| `session_id` | `text NOT NULL` | 0015_monitor_events.sql |
+| `call_id` | `text NOT NULL` | 0015_monitor_events.sql |
+| `call_index` | `integer NOT NULL CHECK (call_index >= 0)` | 0015_monitor_events.sql |
+| `ts` | `timestamptz NOT NULL` | 0015_monitor_events.sql |
+| `monitor` | `text NOT NULL CHECK (monitor <> '')` | 0015_monitor_events.sql |
+| `mode` | `text NOT NULL CHECK (mode IN ('observe', 'note', 'block'))` | 0015_monitor_events.sql |
+| `action` | `text NOT NULL CHECK (action IN ('observe', 'note', 'block'))` | 0015_monitor_events.sql |
+| `evidence` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0015_monitor_events.sql |
+| `est_saved_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (est_saved_tokens >= 0)` | 0015_monitor_events.sql |
+| `est_saved_usd` | `numeric(14,6) NOT NULL DEFAULT 0` | 0015_monitor_events.sql |
+| `confidence` | `text NOT NULL CHECK (confidence IN ('certain', 'likely', 'none'))` | 0015_monitor_events.sql |
+| `feedback` | `text CHECK (feedback IN ('correct', 'wrong'))` | 0015_monitor_events.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0015_monitor_events.sql |

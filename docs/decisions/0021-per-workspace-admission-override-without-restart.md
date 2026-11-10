@@ -1,4 +1,4 @@
-# 0030. Per-workspace admission override without a restart
+# 0021. Per-workspace admission override without a restart
 
 - **Status:** Accepted
 - **Date:** 2026-11-10

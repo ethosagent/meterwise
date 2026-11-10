@@ -63,8 +63,8 @@ func TestEveryRoutePermissionIsInTheTaxonomy(t *testing.T) {
 			continue
 		}
 		scope, _ := access.ScopeOf(rt)
-		if (scope == access.ScopeWorkspace) != (r.WorkspaceParam != "") {
-			t.Errorf("%s %s: %s is %s-scoped but WorkspaceParam=%q", r.Method, r.Pattern, r.Permission, scope, r.WorkspaceParam)
+		if (scope == access.ScopeWorkspace) != (r.WorkspaceParam != "" || r.WorkspaceQuery != "") {
+			t.Errorf("%s %s: %s is %s-scoped but WorkspaceParam=%q WorkspaceQuery=%q", r.Method, r.Pattern, r.Permission, scope, r.WorkspaceParam, r.WorkspaceQuery)
 		}
 	}
 }

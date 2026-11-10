@@ -71,10 +71,7 @@ func settingsOf(raw []byte) map[string]any {
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &out)
 	}
-	if out == nil {
-		out = map[string]any{}
-	}
-	return out
+	return nonNilMap(out)
 }
 
 // isNotFound reports whether err, after scrubbing, is the not-found error.

@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/access"
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/tenancy"
 )
 
 func (s *server) proxyURL(publicID string) string { return s.proxyPrefix() + publicID }
@@ -55,8 +56,16 @@ func (s *server) workspaceView(ws contract.Workspace, withURL bool) contract.Wor
 	return v
 }
 
+// workspaceSetup renders the setup page. Its row demands workspace_url:read, the same rule that
+// gates the URL in workspaceView, so the URL built here is only ever sent to a caller who may see it;
+// every URL the API sends goes through proxyURL.
 func (s *server) workspaceSetup(c Call, _ none) (contract.Setup, error) {
-	return s.Tenancy.Setup(c.Ctx, c.Principal, c.Path("id"), s.proxyPrefix())
+	st, err := s.Tenancy.Setup(c.Ctx, c.Principal, c.Path("id"))
+	if err != nil {
+		return contract.Setup{}, err
+	}
+	url := s.proxyURL(st.PublicID)
+	return contract.Setup{ProxyURL: url, Snippets: tenancy.RenderSnippets(url), Status: st.Status}, nil
 }
 
 func (s *server) resetWorkspaceURL(c Call, req contract.ResetURLRequest) (contract.ResetURLResponse, error) {

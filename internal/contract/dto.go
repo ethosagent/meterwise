@@ -343,5 +343,11 @@ func DTOs() []DTO {
 		{"AuditActor", reflect.TypeFor[AuditActor]()},
 		{"AuditEntry", reflect.TypeFor[AuditEntry]()},
 		{"AuditList", reflect.TypeFor[AuditList]()},
+		{"Session", reflect.TypeFor[SessionView]()},
+		{"Call", reflect.TypeFor[CallView]()},
+		{"SessionList", reflect.TypeFor[SessionList]()},
+		{"SessionDetail", reflect.TypeFor[SessionDetail]()},
+		{"StatsDay", reflect.TypeFor[StatsDayView]()},
+		{"Stats", reflect.TypeFor[StatsView]()},
 	}
 }

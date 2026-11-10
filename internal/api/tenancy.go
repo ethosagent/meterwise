@@ -26,7 +26,7 @@ type Tenancy interface {
 	UpdateWorkspace(ctx context.Context, p contract.Principal, id string, req contract.UpdateWorkspaceRequest) (contract.Workspace, error)
 	DeleteWorkspace(ctx context.Context, p contract.Principal, id string) error
 	SwitchWorkspace(ctx context.Context, p contract.Principal, id string) (string, error)
-	Setup(ctx context.Context, p contract.Principal, workspaceID, proxyPrefix string) (contract.Setup, error)
+	Setup(ctx context.Context, p contract.Principal, workspaceID string) (contract.SetupState, error)
 	ResetURL(ctx context.Context, p contract.Principal, workspaceID string, grace time.Duration) (contract.URLReset, error)
 	RetirePreviousURL(ctx context.Context, p contract.Principal, workspaceID string) error
 	SetAllowedCIDRs(ctx context.Context, p contract.Principal, workspaceID string, cidrs []string) ([]string, error)

@@ -23,7 +23,9 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0016](0016-workspace-url-reset-and-grace.md) | The workspace URL is the credential: reset with grace, optional CIDR guard, no proxy key | Accepted |
 | [0017](0017-authenticator-inlinesafe-bounded-lookup.md) | The workspace authenticator is InlineSafe, with a bounded miss | Accepted |
 | [0018](0018-audit-log-append-only-by-trigger.md) | The audit log is append-only by trigger and emitted after commit | Accepted |
-| [0030](0030-per-workspace-admission-override-without-restart.md) | Per-workspace admission override without a restart | Accepted |
+| [0019](0019-ledger-write-path-queue-batcher-idempotent.md) | The ledger write path: Hook.After, a bounded queue, a batcher, idempotent rows | Accepted |
+| [0020](0020-money-as-microusd-in-pricing-and-ledger.md) | Money is micro-USD in pricing and the ledger | Accepted |
+| [0021](0021-per-workspace-admission-override-without-restart.md) | Per-workspace admission override without a restart | Accepted |
 
 Template: [`template.md`](template.md).
 

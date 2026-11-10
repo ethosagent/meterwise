@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/tenancy"
 )
 
 func TestSnippetsFillTheURLAndOpencodeIsValidJSON(t *testing.T) {
 	const u = "https://proxy.example.test/w/AAAAAAAAAAAAAAAAAAAAAA"
-	sn := tenancy.SnippetRenderer{}.Render(u)
+	sn := tenancy.RenderSnippets(u)
 	for name, s := range map[string]string{"openai": sn.OpenaiEnv, "anthropic": sn.AnthropicEnv, "opencode": sn.OpencodeJSON, "claude": sn.ClaudeCodeEnv, "curl": sn.Curl} {
 		if !strings.Contains(s, u) {
 			t.Errorf("%s snippet lacks the URL:\n%s", name, s)
@@ -44,7 +45,7 @@ func TestSnippetsFillTheURLAndOpencodeIsValidJSON(t *testing.T) {
 	if p.NPM == "" || p.Options.BaseURL != u+"/v1" || len(p.Models) == 0 || strings.Contains(p.Options.APIKey, "sk-") {
 		t.Fatalf("provider block: %+v", p)
 	}
-	if sn != (tenancy.SnippetRenderer{}).Render(u) {
+	if sn != tenancy.RenderSnippets(u) {
 		t.Fatal("render is not deterministic")
 	}
 }
@@ -76,18 +77,18 @@ func TestSetupStatusAndAllowedCIDRsThroughTheService(t *testing.T) {
 	_, svc, db, _ := newDir(t)
 	ctx := context.Background()
 	ws, _ := svc.CreateWorkspace(ctx, principal(), "Alpha")
-	su, err := svc.Setup(ctx, principal(), ws.ID, "https://h/w/")
-	if err != nil || su.Status.LastCallAt != nil || su.Status.FirstCallAt != nil || su.Status.CallsToday != 0 || su.Snippets.Curl == "" || su.ProxyURL != "https://h/w/"+ws.PublicID || !strings.Contains(su.Snippets.OpenaiEnv, su.ProxyURL) {
+	su, err := svc.Setup(ctx, principal(), ws.ID)
+	if err != nil || su.Status.LastCallAt != nil || su.Status.FirstCallAt != nil || su.Status.CallsToday != 0 || su.PublicID != ws.PublicID {
 		t.Fatalf("fresh: %+v %v", su, err)
 	}
 	at := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	if _, err := db.Pool().Exec(ctx, `UPDATE workspaces SET last_call_at = $1 WHERE id = $2`, at, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	if su, _ = svc.Setup(ctx, principal(), ws.ID, "x/"); su.Status.LastCallAt == nil || *su.Status.LastCallAt != "2026-05-01T12:00:00Z" {
+	if su, _ = svc.Setup(ctx, principal(), ws.ID); su.Status.LastCallAt == nil || *su.Status.LastCallAt != "2026-05-01T12:00:00Z" {
 		t.Fatalf("last call: %+v", su.Status)
 	}
-	if _, err := svc.Setup(ctx, principal(), "00000000-0000-0000-0000-000000000fff", "x/"); contract.AsError(err).Code != contract.CodeNotFound {
+	if _, err := svc.Setup(ctx, principal(), "00000000-0000-0000-0000-000000000fff"); contract.AsError(err).Code != contract.CodeNotFound {
 		t.Fatalf("unknown: %v", err)
 	}
 	got, err := svc.SetAllowedCIDRs(ctx, principal(), ws.ID, []string{"198.51.100.4"})
@@ -100,5 +101,40 @@ func TestSetupStatusAndAllowedCIDRsThroughTheService(t *testing.T) {
 	}
 	if _, err := svc.SetAllowedCIDRs(ctx, principal(), ws.ID, []string{"bad"}); contract.AsError(err).Code != contract.CodeValidationFailed {
 		t.Fatalf("bad: %v", err)
+	}
+}
+
+func TestSetupStatusComesFromTheLedger(t *testing.T) {
+	_, svc, db, _ := newDir(t)
+	ctx := context.Background()
+	ws, _ := svc.CreateWorkspace(ctx, principal(), "Alpha")
+	other, _ := svc.CreateWorkspace(ctx, principal(), "Beta")
+	now := time.Now().UTC()
+	rec := func(id, wsID string, at time.Time) contract.CallRecord {
+		return contract.CallRecord{ID: id, OrgID: store.OrgID(), WorkspaceID: wsID, SessionID: "s", CallIndex: 1, StartedAt: at, Provider: "openai", Model: "m",
+			Wire: "openai.chat", Finish: "ok", SessionSource: contract.SessionSourceHeader, SessionStart: at}
+	}
+	first := now.AddDate(0, 0, -3)
+	if _, err := db.WriteCalls(ctx, []contract.CallRecord{rec("c1", ws.ID, first), rec("c2", ws.ID, now.Add(-time.Second)), rec("c3", ws.ID, now), rec("c4", other.ID, now)}); err != nil {
+		t.Fatal(err)
+	}
+	su, err := svc.Setup(ctx, principal(), ws.ID)
+	if err != nil || su.Status.FirstCallAt == nil || su.Status.LastCallAt == nil {
+		t.Fatalf("status = %+v %v", su.Status, err)
+	}
+	if got, _ := time.Parse(time.RFC3339, *su.Status.FirstCallAt); !got.Equal(first.Truncate(time.Second)) {
+		t.Errorf("firstCallAt = %s, want %s", *su.Status.FirstCallAt, first.Truncate(time.Second).Format(time.RFC3339))
+	}
+	wantToday := 0
+	for _, at := range []time.Time{first, now.Add(-time.Second), now} {
+		if at.Format(time.DateOnly) == time.Now().UTC().Format(time.DateOnly) {
+			wantToday++
+		}
+	}
+	if su.Status.CallsToday != wantToday {
+		t.Errorf("callsToday = %d, want %d (this workspace's calls on the UTC day)", su.Status.CallsToday, wantToday)
+	}
+	if other, _ := svc.Setup(ctx, principal(), other.ID); other.Status.CallsToday != 1 {
+		t.Errorf("another workspace's calls leaked: %+v", other.Status)
 	}
 }

@@ -213,7 +213,12 @@ type AuditSink interface {
 	Append(ctx context.Context, e AuditEvent) error
 }
 
-// Pricer prices token usage from an in-memory snapshot (ruling R11): pure, no I/O.
+// Usage is the token accounting of one call, in the neutral model. Input includes cached tokens on
+// the OpenAI wire and excludes them on the Anthropic wire; the Pricer knows which.
+type Usage struct{ Input, Output, Cached, Reasoning int64 }
+
+// Pricer prices token usage from an in-memory snapshot (ruling R11): pure, no I/O. It returns false
+// for a model it has no price for at that time, and the call's cost is then NULL (flagged), never 0.
 type Pricer interface {
-	Cost(model string, inputTokens, outputTokens int64) (MicroUSD, bool)
+	Cost(provider, model string, u Usage, at time.Time) (MicroUSD, bool)
 }

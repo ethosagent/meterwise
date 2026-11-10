@@ -140,12 +140,15 @@ func genContractTS() ([]byte, error) {
 		}
 		b.WriteString(s + "\n")
 	}
-	b.WriteString("export interface RouteSpec {\n  method: string;\n  pattern: string;\n  permission: string;\n  workspaceParam?: string;\n  public: boolean;\n}\n\n")
+	b.WriteString("export interface RouteSpec {\n  method: string;\n  pattern: string;\n  permission: string;\n  workspaceParam?: string;\n  workspaceQuery?: string;\n  public: boolean;\n}\n\n")
 	b.WriteString("export const ROUTES: readonly RouteSpec[] = [\n")
 	for _, r := range contract.Routes() {
 		ws := ""
 		if r.WorkspaceParam != "" {
 			ws = fmt.Sprintf(" workspaceParam: %q,", r.WorkspaceParam)
+		}
+		if r.WorkspaceQuery != "" {
+			ws += fmt.Sprintf(" workspaceQuery: %q,", r.WorkspaceQuery)
 		}
 		fmt.Fprintf(&b, "  { method: %q, pattern: %q, permission: %q,%s public: %t },\n", r.Method, r.Pattern, string(r.Permission), ws, r.Public)
 	}

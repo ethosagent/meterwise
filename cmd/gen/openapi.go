@@ -113,6 +113,9 @@ func operation(r contract.Route) map[string]any {
 		if r.WorkspaceParam != "" {
 			op["x-workspace-param"] = r.WorkspaceParam
 		}
+		if r.WorkspaceQuery != "" {
+			op["x-workspace-query"] = r.WorkspaceQuery
+		}
 	}
 	return op
 }

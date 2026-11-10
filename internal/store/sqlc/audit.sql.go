@@ -46,7 +46,7 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) error 
 	return err
 }
 
-const listAudit = `-- name: ListAudit :many
+const listAuditAfter = `-- name: ListAuditAfter :many
 SELECT a.id, a.created_at, a.action, a.resource_type, COALESCE(a.resource_id, '')::text AS resource_id,
        COALESCE(a.workspace_id::text, '')::text AS workspace_id, COALESCE(a.actor_user_id::text, '')::text AS actor_user_id,
        COALESCE(u.email, '')::text AS actor_email, COALESCE(u.name, '')::text AS actor_name,
@@ -55,21 +55,21 @@ FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id AND u.org_id = a.or
 WHERE a.org_id = $1::text::uuid
   AND ($2::text = '' OR a.action = $2::text)
   AND ($3::text = '' OR a.workspace_id = NULLIF($3::text, '')::uuid)
-  AND ($4::bigint = 0 OR (a.created_at, a.id) < ($5::timestamptz, $4::bigint))
+  AND (a.created_at, a.id) < ($4::timestamptz, $5::bigint)
 ORDER BY a.created_at DESC, a.id DESC
 LIMIT $6::int
 `
 
-type ListAuditParams struct {
+type ListAuditAfterParams struct {
 	OrgID       string
 	Action      string
 	WorkspaceID string
-	CursorID    int64
 	CursorAt    pgtype.Timestamptz
+	CursorID    int64
 	MaxRows     int32
 }
 
-type ListAuditRow struct {
+type ListAuditAfterRow struct {
 	ID           int64
 	CreatedAt    pgtype.Timestamptz
 	Action       string
@@ -83,24 +83,95 @@ type ListAuditRow struct {
 	Metadata     []byte
 }
 
-// Newest first by (created_at, id). cursor_id 0 starts at the top; otherwise rows strictly older than
-// (cursor_at, cursor_id). action and workspace_id are filters when not empty.
-func (q *Queries) ListAudit(ctx context.Context, arg ListAuditParams) ([]ListAuditRow, error) {
-	rows, err := q.db.Query(ctx, listAudit,
+// The page after the keyset (cursor_at, cursor_id): rows strictly older in (created_at, id) order.
+func (q *Queries) ListAuditAfter(ctx context.Context, arg ListAuditAfterParams) ([]ListAuditAfterRow, error) {
+	rows, err := q.db.Query(ctx, listAuditAfter,
 		arg.OrgID,
 		arg.Action,
 		arg.WorkspaceID,
-		arg.CursorID,
 		arg.CursorAt,
+		arg.CursorID,
 		arg.MaxRows,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAuditRow
+	var items []ListAuditAfterRow
 	for rows.Next() {
-		var i ListAuditRow
+		var i ListAuditAfterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.Action,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.WorkspaceID,
+			&i.ActorUserID,
+			&i.ActorEmail,
+			&i.ActorName,
+			&i.Ip,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditFirst = `-- name: ListAuditFirst :many
+SELECT a.id, a.created_at, a.action, a.resource_type, COALESCE(a.resource_id, '')::text AS resource_id,
+       COALESCE(a.workspace_id::text, '')::text AS workspace_id, COALESCE(a.actor_user_id::text, '')::text AS actor_user_id,
+       COALESCE(u.email, '')::text AS actor_email, COALESCE(u.name, '')::text AS actor_name,
+       COALESCE(host(a.ip), '')::text AS ip, a.metadata
+FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id AND u.org_id = a.org_id
+WHERE a.org_id = $1::text::uuid
+  AND ($2::text = '' OR a.action = $2::text)
+  AND ($3::text = '' OR a.workspace_id = NULLIF($3::text, '')::uuid)
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT $4::int
+`
+
+type ListAuditFirstParams struct {
+	OrgID       string
+	Action      string
+	WorkspaceID string
+	MaxRows     int32
+}
+
+type ListAuditFirstRow struct {
+	ID           int64
+	CreatedAt    pgtype.Timestamptz
+	Action       string
+	ResourceType string
+	ResourceID   string
+	WorkspaceID  string
+	ActorUserID  string
+	ActorEmail   string
+	ActorName    string
+	Ip           string
+	Metadata     []byte
+}
+
+// The first page, newest first by (created_at, id). action and workspace_id are filters when not empty.
+func (q *Queries) ListAuditFirst(ctx context.Context, arg ListAuditFirstParams) ([]ListAuditFirstRow, error) {
+	rows, err := q.db.Query(ctx, listAuditFirst,
+		arg.OrgID,
+		arg.Action,
+		arg.WorkspaceID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuditFirstRow
+	for rows.Next() {
+		var i ListAuditFirstRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.CreatedAt,
