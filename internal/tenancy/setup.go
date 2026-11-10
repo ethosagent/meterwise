@@ -19,7 +19,7 @@ func (s *Service) Setup(ctx context.Context, p contract.Principal, workspaceID s
 	}
 	st := contract.SetupStatus{}
 	if ws.LastCallAt != nil {
-		last := ws.LastCallAt.UTC().Format(time.RFC3339)
+		last := contract.RFC3339(*ws.LastCallAt)
 		st.LastCallAt = &last
 	}
 	cs, err := s.st.CallStatus(ctx, ws.ID, s.cfg.Now().UTC().Truncate(24*time.Hour))
@@ -27,7 +27,7 @@ func (s *Service) Setup(ctx context.Context, p contract.Principal, workspaceID s
 		return contract.SetupState{}, err
 	}
 	if cs.FirstCallAt != nil {
-		first := cs.FirstCallAt.UTC().Format(time.RFC3339)
+		first := contract.RFC3339(*cs.FirstCallAt)
 		st.FirstCallAt = &first
 	}
 	st.CallsToday = cs.CallsToday

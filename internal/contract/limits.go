@@ -10,8 +10,8 @@ const (
 	MaxGraceMinutes = 24 * 60
 	// MaxAllowedCIDRs is how many source networks a workspace may list.
 	MaxAllowedCIDRs = 32
-	// MaxAuditLimit is the largest page the audit log serves.
-	MaxAuditLimit = 200
+	// MaxAuditLimit is the largest page the audit log serves: the one page bound of every paged list.
+	MaxAuditLimit = MaxPageLimit
 )
 
 // Limit is one named number of the contract; Name is its TypeScript constant.

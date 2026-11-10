@@ -2,7 +2,6 @@ package tenancy
 
 import (
 	"context"
-	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -234,23 +233,18 @@ func (d *Directory) List(ctx context.Context, p contract.Principal) ([]contract.
 // the old one answering for grace. The cache entries of the workspace and of both ids are dropped.
 func (d *Directory) Reset(ctx context.Context, p contract.Principal, workspaceID string, grace time.Duration) (contract.URLReset, error) {
 	var out contract.URLReset
-	for range maxIDAttempts {
-		pid, err := NewPublicID(d.rand)
-		if err != nil {
-			return contract.URLReset{}, err
-		}
+	err := WithPublicID(d.rand, func(pid string) error {
 		ws, until, err := d.st.ResetWorkspaceURL(ctx, p.OrgID, workspaceID, pid, grace, d.now())
-		if errors.Is(err, store.ErrPublicIDTaken) {
-			continue
+		if err == nil {
+			out = contract.URLReset{Workspace: ws, PreviousGraceUntil: until}
 		}
-		if err != nil {
-			return contract.URLReset{}, err
-		}
-		out = contract.URLReset{Workspace: ws, PreviousGraceUntil: until}
-		d.Bust(workspaceID)
-		return out, nil
+		return err
+	})
+	if err != nil {
+		return contract.URLReset{}, err
 	}
-	return contract.URLReset{}, contract.NewError(contract.CodeInternal, "could not allocate a workspace id")
+	d.Bust(workspaceID)
+	return out, nil
 }
 
 // RetirePrevious ends the grace of every retired id of the workspace at once and busts the cache.

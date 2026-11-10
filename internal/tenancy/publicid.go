@@ -43,8 +43,8 @@ func NewPublicID(r io.Reader) (string, error) {
 
 // WithPublicID draws a public id from r (crypto/rand when nil) and calls try with it, drawing
 // again when try reports a collision (store.ErrPublicIDTaken). Any other result is returned at
-// once; running out of attempts is an internal error. Service.withPublicID goes through it; the
-// Directory.Reset call site is left for the data-plane work.
+// once; running out of attempts is an internal error. Service.withPublicID and Directory.Reset go
+// through it.
 func WithPublicID(r io.Reader, try func(publicID string) error) error {
 	for range maxIDAttempts {
 		pid, err := NewPublicID(r)

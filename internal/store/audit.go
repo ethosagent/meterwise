@@ -14,11 +14,8 @@ import (
 )
 
 // Audit page sizes: a page holds DefaultAuditLimit rows unless the caller asks for fewer or more,
-// never more than MaxAuditLimit.
-const (
-	DefaultAuditLimit = 50
-	MaxAuditLimit     = contract.MaxPageLimit
-)
+// never more than contract.MaxAuditLimit.
+const DefaultAuditLimit = 50
 
 // AppendAudit inserts one audit row. It is the only INSERT into audit_log (internal/audit calls it);
 // the table refuses updates and deletes, so nothing here can change a row once written.
@@ -53,7 +50,7 @@ func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQue
 	switch {
 	case limit == 0:
 		limit = DefaultAuditLimit
-	case limit < contract.MinPageLimit || limit > MaxAuditLimit:
+	case limit < contract.MinPageLimit || limit > contract.MaxAuditLimit:
 		return contract.AuditPage{}, contract.Invalid("limit", contract.LimitMessage)
 	}
 	if q.WorkspaceID != "" && !validID(q.WorkspaceID) {
