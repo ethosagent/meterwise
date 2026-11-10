@@ -28,9 +28,10 @@ sessions.
      from another turn.
    - A trailing assistant message is a prefill, not a turn: it is skipped by history and by the block.
    - A call answered without a stream (a block, or `stream:false`) leaves an empty entry; the next
-     `Before` heals it from the request's newest turn, only when the request's turns at the three indexes
-     below match the ring's entries there (`heal_misaligned` otherwise): a side request that shares the
-     session id must not get the main thread's newest turn copied in. A fill never overwrites content,
+     `Before` heals it from the request's newest turn. A catch-up and a heal both run only when the
+     request's turns at the three indexes below match the ring's entries there (`heal_misaligned`
+     otherwise, K3): a side request that shares the session id must not get the main thread's newest turn
+     copied into an empty entry, nor its own turns into the index of a call still in flight. A fill never overwrites content,
      and an `After` with no content keeps what a catch-up found.
    - A session with no ring (a restart, an eviction) is rebuilt from the last 200 messages, newest 50
      turns. After a full process restart tollgate's call counter starts again, so the rebuilt turns get
@@ -55,9 +56,12 @@ sessions.
 Easier: the ring cannot hold two entries for one call, catch-up costs one parsed turn in the common
 case, and memory has a hard budget. Harder: the turn-to-index mapping assumes the request carries one
 assistant turn per successful earlier call; a client that rewrites old history can mislabel a caught-up
-turn until its own `After` replaces it. Enforced by `TestCatchUpWorksPastTheRingDepth`,
+turn until its own `After` replaces it, and one that echoes an assistant turn with other text or
+arguments than it streamed is never caught up (`heal_misaligned`; the next `After` fills the entry). The
+alignment check costs up to three parsed turns on a catch-up (`BenchmarkWarmSession/catchup`). Enforced by `TestCatchUpWorksPastTheRingDepth`,
 `TestOutOfOrderAfterKeepsOneEntryPerIndex`, `TestAssistantPrefillIsNotATurn`,
 `TestAssistantPrefillOnBothWiresAndStreamModes`, `TestCatchUpPastRingDepthReadsOnlyTheMissingTurn`,
 `TestFailedCallIndexIsNotFilledFromAnotherTurn`, `TestLateEmptyAfterKeepsTheCaughtUpTurn`,
-`TestRingsStayWithinTheByteBudget`, `TestHistoryMaxBytes`, `TestBeforeStopsReadingAtItsDeadline` and
-`TestLateBeforeLeavesQueuedNotesForTheNextCall`.
+`TestRingsStayWithinTheByteBudget`, `TestHistoryMaxBytes`, `TestBeforeStopsReadingAtItsDeadline`,
+`TestLateBeforeLeavesQueuedNotesForTheNextCall` and
+`TestSideRequestWhileTheRingLagsIsNotCaughtUpFromItsOwnTurns`.

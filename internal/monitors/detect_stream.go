@@ -1,6 +1,9 @@
 package monitors
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -16,14 +19,17 @@ func DetectReasoningLoop(c *tollgate.Call, r contract.RingView, cfg contract.Mon
 	if st == nil {
 		return contract.MonitorVerdict{}, false
 	}
-	_, reasoning, _ := st.snapshot()
-	win := contract.ShinglesOf(contract.Tokens(reasoning, maxStreamTokens), maxWindows)
+	reasoning := st.snapshot().reasoning
 	need := max(1, k.ShingleTokens-contract.ShingleSize+1)
+	if len(reasoning) < minBytes(need+contract.ShingleSize-1) {
+		return contract.MonitorVerdict{}, false // too short to hold a run of `need` windows
+	}
+	win := contract.ShinglesOf(contract.Tokens(reasoning, maxStreamTokens), maxWindows)
 	run, at := selfRun(win)
 	var matched []int
 	calls := r.Calls()
 	for _, prev := range calls[max(0, len(calls)-3):] {
-		if rr, a := setRun(win, hashSet(prev.Shingles)); rr > run {
+		if rr, a := setRun(win, sortedSet(prev.Shingles)); rr > run {
 			run, at, matched = rr, a, []int{prev.Index}
 		}
 	}
@@ -35,6 +41,9 @@ func DetectReasoningLoop(c *tollgate.Call, r contract.RingView, cfg contract.Mon
 		Count: run + contract.ShingleSize - 1, Threshold: k.ShingleTokens,
 	}), true
 }
+
+// minBytes is the fewest bytes n tokens can take: one character each, and a separator between them.
+func minBytes(n int) int { return max(0, 2*n-1) }
 
 // selfRun is the longest run of consecutive windows that each repeat the window one step after the
 // previous match, and where that run starts.
@@ -60,11 +69,12 @@ func selfRun(win []uint64) (best, at int) {
 	return best, at
 }
 
-// setRun is the longest run of consecutive windows that all appear in set, and where it starts.
-func setRun(win []uint64, set map[uint64]struct{}) (best, at int) {
+// setRun is the longest run of consecutive windows that all appear in set (sorted, without repeats), and
+// where it starts.
+func setRun(win []uint64, set []uint64) (best, at int) {
 	run := 0
 	for i, w := range win {
-		if _, ok := set[w]; !ok {
+		if _, ok := slices.BinarySearch(set, w); !ok {
 			run = 0
 			continue
 		}
@@ -100,7 +110,7 @@ func countPhrases(tokens []string) (total int, distinct []string) {
 	}
 	for j, h := range hit {
 		if h {
-			distinct = append(distinct, joinWords(reconsider[j]))
+			distinct = append(distinct, strings.Join(reconsider[j], " "))
 		}
 	}
 	return total, distinct
@@ -108,29 +118,11 @@ func countPhrases(tokens []string) (total int, distinct []string) {
 
 func matchAt(tokens []string, i int) int {
 	for j, p := range reconsider {
-		if i+len(p) > len(tokens) {
-			continue
-		}
-		ok := true
-		for k, w := range p {
-			if tokens[i+k] != w {
-				ok = false
-				break
-			}
-		}
-		if ok {
+		if i+len(p) <= len(tokens) && slices.Equal(tokens[i:i+len(p)], p) {
 			return j
 		}
 	}
 	return -1
-}
-
-func joinWords(w []string) string {
-	out := w[0]
-	for _, s := range w[1:] {
-		out += " " + s
-	}
-	return out
 }
 
 // DetectSecondGuessing fires when the response (answer text and reasoning) holds at least MinPhrases
@@ -143,10 +135,14 @@ func DetectSecondGuessing(c *tollgate.Call, r contract.RingView, cfg contract.Mo
 	if st == nil {
 		return contract.MonitorVerdict{}, false
 	}
-	text, reasoning, tools := st.snapshot()
+	snap := st.snapshot()
+	text, reasoning, tools := snap.text, snap.reasoning, snap.tools
 	calls := r.Calls()
 	n := len(calls)
 	if len(tools) == 0 || n < 2 || !reversal(contract.ToolArgsHash(tools[0].name, tools[0].args), calls[n-2], calls[n-1]) {
+		return contract.MonitorVerdict{}, false
+	}
+	if k.MinPhrases > 0 && len(text)+1+len(reasoning) < minBytes(2*k.MinPhrases) { // a phrase is at least two tokens
 		return contract.MonitorVerdict{}, false
 	}
 	total, phrases := countPhrases(contract.Tokens(text+" "+reasoning, maxStreamTokens))

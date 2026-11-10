@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/ethosagent/tollgate"
 
@@ -137,19 +136,16 @@ func clean(s string, n int) string {
 	if strings.ContainsRune(s, 0) {
 		s = strings.ReplaceAll(s, "\x00", "")
 	}
-	if len(s) > n {
-		s = s[:n]
-		for !utf8.ValidString(s) {
-			s = s[:len(s)-1]
-		}
-	}
-	return s
+	return contract.TruncateUTF8(s, n)
 }
 
+// truncRunes cuts s to at most n characters.
 func truncRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
+	for i := range s {
+		if n == 0 {
+			return s[:i]
+		}
+		n--
 	}
-	r := []rune(s)
-	return string(r[:n])
+	return s
 }

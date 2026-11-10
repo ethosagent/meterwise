@@ -37,8 +37,8 @@ writer per table, H4); return the verdict in the `Response` (only works for bloc
    other, so `contract/monitors_hash.go` owns it: `HashString`, `ToolArgsHash` (top-level
    order-insensitive, whitespace-free, allocation-free), `ToolSubject`, `ClassifyTool`, `TextHasher`,
    `TurnShingles` and `HashID` (sha256 of workspace id and value, 16 hex). Evidence carries `HashID`s.
-4. **Provider JSON is edited in one place**, `monitors/wire` (R4). `AppendNote` splices bytes by
-   offset (the bytes outside the splice are identical); OpenAI gets a trailing system message,
+4. **Provider JSON is edited in one place**, `monitors/wire` (R4). `AppendNotes` splices the call's notes
+   by offset in one scan and copy (the bytes outside the splice are identical); OpenAI gets a trailing system message,
    Anthropic an extra text block at the end of the last user message, never `system` (editing it
    would invalidate the prompt-cache prefix on every noted call). `BlockResponse` builds the whole
    JSON or SSE answer: one terminal assistant turn that holds only text (`finish_reason: stop`,
@@ -50,7 +50,11 @@ writer per table, H4); return the verdict in the `Response` (only works for bloc
    result in the request, else it degrades to a note (`blocks_degraded`). At most one block per session
    and subject (argument or path hash): a later repeat of that subject is noted and goes upstream
    (`blocks_capped`). No tool call id is ever reused. A subject's block or note is used up only when it
-   is delivered: `Before` marks it after its last context check, and a failed splice marks nothing.
+   is delivered (S2, K1, K2): the session store reserves its key before the edit, so two concurrent
+   `Before`s of a session deliver it once, and `Before` commits the reservation after its last context
+   check. A failed edit or a chain that stopped waiting releases it. Queued stream notes follow the same
+   rule: a note leaves the queue and uses its subject up only when spliced in; a failed splice puts it
+   back (`notes_dropped`), and a stream subject is reserved from the moment its note is queued.
 6. **Detection rules the plan left open.**
    - `duplicate_tool_call` counts the pending call itself: it fires at `maxRepeats` total occurrences
      within `lookBack` earlier calls, with no write since the earliest. A write that the pending turn

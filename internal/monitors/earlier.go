@@ -80,7 +80,7 @@ func resultOf(msgs []tollgate.Message, i int, id string) (string, bool) {
 // arguments for duplicate_tool_call, the same path for repeated_read. Evidence holds only hashes, so
 // the match is by the same workspace-salted hash.
 func matcher(ws string, v contract.MonitorVerdict) func(tollgate.ToolCall) bool {
-	id := func(h uint64) string { return contract.HashID(ws, contract.HashValue(h)) }
+	id := func(h uint64) string { return contract.HashOf(ws, h) }
 	switch v.Monitor {
 	case contract.MonitorDuplicateToolCall:
 		return func(tc tollgate.ToolCall) bool {

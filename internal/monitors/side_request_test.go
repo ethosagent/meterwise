@@ -51,24 +51,23 @@ func TestSideRequestInTheSessionIsNotADuplicate(t *testing.T) {
 }
 
 // The same with the rig (real wire bodies) and a non-stream main thread, whose entries the heal fills.
-// (The rig's streamed fixture answers the same tool call every time: a real duplicate.)
+// The stream variant is the driver test above: the rig's streamed fixture answers the same tool call every
+// time, a real duplicate, so it cannot tell a false one from it (K5).
 func TestSideRequestInTheSessionIsNotADuplicateOnTheRig(t *testing.T) {
-	for _, stream := range []bool{false} {
-		r := newRig(t, dupMode(contract.ModeNote), monitors.Options{})
-		main := []tollgate.Message{user("weather tour")}
-		k := 0
-		for i, city := range []string{"Rome", "Oslo", "Lima", "Paris", "Kyiv"} {
+	r := newRig(t, dupMode(contract.ModeNote), monitors.Options{})
+	main := []tollgate.Message{user("weather tour")}
+	k := 0
+	for i, city := range []string{"Rome", "Oslo", "Lima", "Paris", "Kyiv"} {
+		k++
+		noDup(t, k, r.call(tollgate.WireOpenAIChat, false, main).seen.verdicts)
+		if i == 3 {
 			k++
-			noDup(t, k, r.call(tollgate.WireOpenAIChat, stream, main).seen.verdicts)
-			if i == 3 {
-				k++
-				noDup(t, k, r.call(tollgate.WireOpenAIChat, false, []tollgate.Message{user("Give this chat a title")}).seen.verdicts)
-			}
-			turn := cityTurn(k, city)
-			main = append(main, turn, toolResult(turn.ToolCalls[0].ID, "w "+city))
+			noDup(t, k, r.call(tollgate.WireOpenAIChat, false, []tollgate.Message{user("Give this chat a title")}).seen.verdicts)
 		}
-		noDup(t, k+1, r.call(tollgate.WireOpenAIChat, false, main).seen.verdicts)
+		turn := cityTurn(k, city)
+		main = append(main, turn, toolResult(turn.ToolCalls[0].ID, "w "+city))
 	}
+	noDup(t, k+1, r.call(tollgate.WireOpenAIChat, false, main).seen.verdicts)
 }
 
 func noDup(t *testing.T, call int, vs []contract.MonitorVerdict) {

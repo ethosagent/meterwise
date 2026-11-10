@@ -15,8 +15,25 @@ import (
 type turn struct {
 	tools  []toolCall
 	text   contract.TextHasher
-	reason string // first ShingleTextCap bytes
-	prefix string // first ShingleTextCap bytes of text
+	reason capped // first ShingleTextCap bytes of the reasoning
+	prefix capped // first ShingleTextCap bytes of the text
+}
+
+// capped holds the first ShingleTextCap bytes of a text that arrives in pieces, cut on a character
+// boundary; once it is full, later pieces are ignored.
+type capped struct {
+	b    []byte
+	full bool
+}
+
+func (c *capped) add(s string) {
+	if c.full {
+		return
+	}
+	if room := contract.ShingleTextCap - len(c.b); len(s) > room {
+		s, c.full = contract.TruncateUTF8(s, room), true
+	}
+	c.b = append(c.b, s...)
 }
 
 type toolCall struct {
@@ -26,23 +43,14 @@ type toolCall struct {
 
 func (t *turn) addText(s string) {
 	t.text.Write(s)
-	t.prefix = capAppend(t.prefix, s)
+	t.prefix.add(s)
 }
 
-func (t *turn) addReasoning(s string) { t.reason = capAppend(t.reason, s) }
+func (t *turn) addReasoning(s string) { t.reason.add(s) }
 
-func capAppend(dst, s string) string {
-	if room := contract.ShingleTextCap - len(dst); room > 0 {
-		if len(s) > room {
-			s = s[:room]
-		}
-		return dst + s
-	}
-	return dst
-}
-
-// summary reduces the turn to a CallSummary (Index, token counts and BodyBytes are the caller's).
-func (t *turn) summary() contract.CallSummary {
+// summary reduces the turn to a CallSummary (Index, token counts and BodyBytes are the caller's). Its
+// shingles are cut only when shingles is set: a turn the ring will not keep them for does not pay for them.
+func (t *turn) summary(shingles bool) contract.CallSummary {
 	s := contract.CallSummary{TextHash: t.text.Sum()}
 	for _, tc := range t.tools {
 		s.Tools = append(s.Tools, tc.name)
@@ -55,7 +63,9 @@ func (t *turn) summary() contract.CallSummary {
 			s.WroteHashes = append(s.WroteHashes, contract.ToolSubject(tc.name, tc.args))
 		}
 	}
-	s.Shingles = contract.TurnShingles(t.reason, t.prefix)
+	if shingles {
+		s.Shingles = contract.SortedSet(contract.TurnShingles(string(t.reason.b), string(t.prefix.b)))
+	}
 	return s
 }
 
@@ -88,8 +98,9 @@ func window(msgs []tollgate.Message) []tollgate.Message {
 // index calls-k (the request carries every earlier call's turn, the newest last). Only indexes in
 // [lo, hi] that want accepts are parsed, and the walk stops below lo, so a catch-up parses only the
 // turns it misses. stop is asked before each parse; true ends the walk (the deadline). Token counts of
-// the entries are unknown (0).
-func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, stop func() bool) []contract.CallSummary {
+// the entries are unknown (0). Only the newest `shingles` entries it returns carry shingles, the ones the
+// ring keeps them for (ringShingles); 0 for a read that only compares turns.
+func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, stop func() bool, shingles int) []contract.CallSummary {
 	var out []contract.CallSummary
 	k := 0
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -107,7 +118,7 @@ func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, s
 		if stop() {
 			break
 		}
-		s := fromMessage(msgs[i]).summary()
+		s := fromMessage(msgs[i]).summary(len(out) < shingles)
 		s.Index = idx
 		out = append(out, s)
 	}

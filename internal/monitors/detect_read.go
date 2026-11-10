@@ -1,8 +1,6 @@
 package monitors
 
 import (
-	"slices"
-
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -19,29 +17,14 @@ func DetectRepeatedRead(c *tollgate.Call, r contract.RingView, cfg contract.Moni
 		return contract.MonitorVerdict{}, false
 	}
 	cur := calls[n-1]
-	for ri, p := range cur.ReadHashes {
-		if writesBefore(cur, readAt(cur, ri)) {
-			break // this turn wrote first: this read and every later one sees a new state
-		}
-		var matched []int
-		for i := n - 2; i >= 0; i-- {
-			if hasWrite(calls[i]) { // its write runs after its results: it lies between that turn and the pending call
-				break
-			}
-			if slices.Contains(calls[i].ReadHashes, p) {
-				matched = append(matched, calls[i].Index)
-			}
-		}
-		if 1+len(matched) < k.MinReads {
-			continue
-		}
-		slices.Reverse(matched)
-		return newVerdict(contract.MonitorRepeatedRead, k.Mode, contract.MonitorEvidence{
-			MatchedCalls: append(matched, cur.Index), Tool: firstReadTool(cur), PathHash: hashID(c, p),
-			Count: 1 + len(matched), Threshold: k.MinReads,
-		}), true
+	ri, matched, ok := repeatScan(calls, n, k.MinReads, func(s contract.CallSummary) []uint64 { return s.ReadHashes }, readAt)
+	if !ok {
+		return contract.MonitorVerdict{}, false
 	}
-	return contract.MonitorVerdict{}, false
+	return newVerdict(contract.MonitorRepeatedRead, k.Mode, contract.MonitorEvidence{
+		MatchedCalls: append(matched, cur.Index), Tool: firstReadTool(cur), PathHash: hashID(c, cur.ReadHashes[ri]),
+		Count: 1 + len(matched), Threshold: k.MinReads,
+	}), true
 }
 
 func firstReadTool(s contract.CallSummary) string {
