@@ -109,6 +109,11 @@ func TestIsolatedRecordsAreRetriedLikeABatch(t *testing.T) {
 	})
 	complete(t, h, directCall("ok-1", "hi", nil, 1))
 	complete(t, h, directCall("flaky", "hi", nil, 2))
+	// Close must not race the batcher for the two items: once the queue is empty both are in the
+	// batcher's hands and the full batch is flushed on the normal (retrying) path, not the final drain.
+	for deadline := time.Now().Add(5 * time.Second); h.Status()["queue_depth"] != 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	if err := h.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
