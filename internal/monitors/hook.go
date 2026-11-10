@@ -116,14 +116,17 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 	if vs == nil || ring == nil {
 		return nil, nil
 	}
-	if d, ok := ctx.Deadline(); ok && d.Sub(h.opt.Now()) < h.opt.MinDeadline {
-		h.skipped.Add(1)
+	if h.late(ctx) {
 		return nil, nil
 	}
 	cfg := h.cfgs.get(c.Tenant.Attrs[AttrMonitors])
 	st := &callState{cfg: cfg}
 	c.Meta[metaState] = st
-	p := h.decide(c, h.detect(c, ring, cfg), cfg)
+	fired := h.detect(c, ring, cfg)
+	if h.late(ctx) { // checked again before anything is taken from the session: queued notes stay queued (m2)
+		return nil, nil
+	}
+	p := h.decide(c, fired, cfg)
 	if ctx.Err() != nil {
 		return nil, nil
 	}
@@ -138,6 +141,16 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 	}
 	vs.AddNotes(p.notes)
 	return p.resp, nil
+}
+
+// late reports, and counts, a chain that no longer waits for this hook: its context is done, or its
+// deadline is nearer than MinDeadline.
+func (h *Hook) late(ctx context.Context) bool {
+	if d, ok := ctx.Deadline(); ctx.Err() != nil || (ok && d.Sub(h.opt.Now()) < h.opt.MinDeadline) {
+		h.skipped.Add(1)
+		return true
+	}
+	return false
 }
 
 func (h *Hook) countFire(m contract.MonitorName) {

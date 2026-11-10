@@ -1,9 +1,11 @@
 package monitors_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethosagent/tollgate"
 
@@ -159,4 +161,30 @@ func TestSessionStateIsBoundedAndDroppedOnClose(t *testing.T) {
 	}
 	h.OnSessionClosed(bg, tollgate.Session{ID: "199", TenantID: "ws"})
 	h.OnSessionClosed(bg, tollgate.Session{ID: "nope", TenantID: "ws"})
+}
+
+// m2: a Before the chain gave up on must not take the session's queued notes: they wait for the next call
+// that runs in time, once each.
+func TestLateBeforeLeavesQueuedNotesForTheNextCall(t *testing.T) {
+	h := newMon(monitors.Options{})
+	streamed(t, h, "s1", 3, doubtful) // queues a second_guessing note for s1
+
+	ctx, cancel := context.WithDeadline(bg, time.Now().Add(time.Hour))
+	cancel() // the chain stopped waiting: the deadline is far, but the context is done
+	late := before(t, tollgate.WireOpenAIChat, fakeRing{}, sgAttrs(), 4, weatherTranscript(1))
+	late.Session.ID = "s1"
+	orig := string(late.Body)
+	if resp, _ := h.Before(ctx, late); resp != nil || string(late.Body) != orig {
+		t.Fatal("a cancelled Before must leave the call alone")
+	}
+	if _, n := verdictsOf(late); n != 0 {
+		t.Fatalf("a cancelled Before recorded %d notes", n)
+	}
+
+	next := before(t, tollgate.WireOpenAIChat, fakeRing{}, sgAttrs(), 5, weatherTranscript(1))
+	next.Session.ID = "s1"
+	h.Before(bg, next)
+	if _, n := verdictsOf(next); n != 1 || !strings.Contains(string(next.Body), "reversed itself") {
+		t.Errorf("the queued note must reach the next call in time: notes %d body %s", n, next.Body)
+	}
 }
