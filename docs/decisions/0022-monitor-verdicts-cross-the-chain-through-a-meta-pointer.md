@@ -49,7 +49,8 @@ writer per table, H4); return the verdict in the `Response` (only works for bloc
    tool call that received it, a value the client already holds). A block needs that earlier identical
    result in the request, else it degrades to a note (`blocks_degraded`). At most one block per session
    and subject (argument or path hash): a later repeat of that subject is noted and goes upstream
-   (`blocks_capped`). No tool call id is ever reused.
+   (`blocks_capped`). No tool call id is ever reused. A subject's block or note is used up only when it
+   is delivered: `Before` marks it after its last context check, and a failed splice marks nothing.
 6. **Detection rules the plan left open.**
    - `duplicate_tool_call` counts the pending call itself: it fires at `maxRepeats` total occurrences
      within `lookBack` earlier calls, with no write since the earliest. A write that the pending turn

@@ -28,7 +28,9 @@ sessions.
      from another turn.
    - A trailing assistant message is a prefill, not a turn: it is skipped by history and by the block.
    - A call answered without a stream (a block, or `stream:false`) leaves an empty entry; the next
-     `Before` heals it from the request's newest turn. A fill never overwrites an entry with content,
+     `Before` heals it from the request's newest turn, only when the request's turns at the three indexes
+     below match the ring's entries there (`heal_misaligned` otherwise): a side request that shares the
+     session id must not get the main thread's newest turn copied in. A fill never overwrites content,
      and an `After` with no content keeps what a catch-up found.
    - A session with no ring (a restart, an eviction) is rebuilt from the last 200 messages, newest 50
      turns. After a full process restart tollgate's call counter starts again, so the rebuilt turns get
