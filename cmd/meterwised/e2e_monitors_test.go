@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -244,9 +245,10 @@ func TestMonitorsBlockAnswersWithoutTheUpstreamOnBothWiresAndFeedbackAndReconcil
 		for _, stream := range []bool{false, true} {
 			session := fmt.Sprintf("blk-%s-%v", w.name, stream)
 			sessions[session] = true
+			var prev sent
 			for n := 0; n < 2; n++ {
-				if s := a.call(w, session, n, stream); s.status != 200 {
-					t.Fatalf("%s call %d: %d %s", session, n+1, s.status, s.body)
+				if prev = a.call(w, session, n, stream); prev.status != 200 {
+					t.Fatalf("%s call %d: %d %s", session, n+1, prev.status, prev.body)
 				}
 			}
 			before := len(a.up.Requests())
@@ -273,6 +275,9 @@ func TestMonitorsBlockAnswersWithoutTheUpstreamOnBothWiresAndFeedbackAndReconcil
 			}
 			if d.Session.SavedUsd <= 0 {
 				t.Fatalf("%s: session saved_usd did not move: %+v", session, d.Session)
+			}
+			if want := blockedEstimate(d.Calls[:2], len(s.request)-len(prev.request)); certain.EstSavedTokens != want {
+				t.Fatalf("%s: blocked estimate %d tokens, want %d (prior input + ceil(body delta / 4) + median output)", session, certain.EstSavedTokens, want)
 			}
 			blockedEvents = append(blockedEvents, *certain)
 		}
@@ -385,4 +390,22 @@ func mustMoney(t *testing.T, s string) contract.MicroUSD {
 		t.Fatal(err)
 	}
 	return m
+}
+
+// blockedEstimate is the certain estimate of a blocked call, from the ledger's rows of the calls before
+// it: the previous call's input (cached included) + ceil(body growth since / 4) + the median output.
+func blockedEstimate(prior []contract.CallView, delta int) int64 {
+	last := prior[len(prior)-1]
+	outs := make([]int64, 0, len(prior))
+	for _, c := range prior {
+		if c.OutputTokens > 0 {
+			outs = append(outs, c.OutputTokens)
+		}
+	}
+	slices.Sort(outs)
+	var median int64
+	if len(outs) > 0 {
+		median = outs[len(outs)/2]
+	}
+	return last.InputTokens + last.CachedTokens + (int64(max(0, delta))+3)/4 + median
 }
