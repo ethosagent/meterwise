@@ -83,6 +83,9 @@ func run(ctx context.Context, cfg config, out io.Writer) error {
 	if cfg.rounds < 1 || cfg.rounds > 1000 {
 		return errors.New("-rounds must be between 1 and 1000")
 	}
+	if err := validateScript(script); err != nil {
+		return err
+	}
 	st, err := store.Open(ctx, cfg.dsn)
 	if err != nil {
 		return fmt.Errorf("open the database: %w", err)
@@ -160,12 +163,26 @@ func startProxy(ctx context.Context, upstreamURL, ws string, hook *ledger.Hook) 
 	return p, httptest.NewServer(p.Handler()), nil
 }
 
+// validateScript refuses a script that names a scenario the fake upstream does not know, before any
+// database or proxy work starts.
+func validateScript(names []string) error {
+	for _, name := range names {
+		if _, ok := scenarioByName(name); !ok {
+			return fmt.Errorf("demo-traffic: unknown scenario %q in the script", name)
+		}
+	}
+	return nil
+}
+
 // replay sends the script rounds times, one session per round, and returns how many calls it made.
 func replay(ctx context.Context, srv *httptest.Server, rounds int, stamp string) (int, error) {
 	sent := 0
 	for r := range rounds {
 		for _, name := range script {
-			sc, _ := scenarioByName(name)
+			sc, ok := scenarioByName(name)
+			if !ok {
+				return sent, fmt.Errorf("demo-traffic: unknown scenario %q", name)
+			}
 			if err := send(ctx, srv, sc, sessionID(stamp, r), sent); err != nil {
 				return sent, err
 			}

@@ -63,3 +63,13 @@ func TestDemoTrafficFillsTheDefaultWorkspaceAndStatsAreSensible(t *testing.T) {
 }
 
 func contractQuery(ws string) contract.SessionQuery { return contract.SessionQuery{WorkspaceID: ws} }
+
+func TestAnUnknownScenarioFailsFastAndTheShippedScriptIsValid(t *testing.T) {
+	if err := validateScript(script); err != nil {
+		t.Fatalf("the shipped script: %v", err)
+	}
+	err := validateScript([]string{"openai-text", "no-such-scenario"})
+	if err == nil || !strings.Contains(err.Error(), "no-such-scenario") {
+		t.Fatalf("an unknown scenario must be refused by name, got %v", err)
+	}
+}
