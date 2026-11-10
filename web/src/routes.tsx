@@ -7,6 +7,7 @@ import { MonitorsPage } from "./features/monitors/Page";
 import { OrganizationPage } from "./features/organization/Page";
 import { OverviewPage } from "./features/overview/Page";
 import { ProfilePage } from "./features/profile/Page";
+import { SessionDetailPage } from "./features/sessions/SessionDetailPage";
 import { SessionsPage } from "./features/sessions/Page";
 import { SetupPage } from "./features/setup/Page";
 import { WorkspacePage } from "./features/workspace/Page";
@@ -63,6 +64,14 @@ export function AppRoutes() {
               }
             />
           ))}
+          <Route
+            path="/sessions/:sessionId"
+            element={
+              <WorkspaceGate>
+                <SessionDetailPage />
+              </WorkspaceGate>
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Route>
