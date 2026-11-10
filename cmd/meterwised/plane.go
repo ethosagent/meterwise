@@ -10,7 +10,10 @@ import (
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
+	"github.com/ethosagent/meterwise/internal/history"
 	"github.com/ethosagent/meterwise/internal/ledger"
+	"github.com/ethosagent/meterwise/internal/monitors"
+	"github.com/ethosagent/meterwise/internal/monitors/wire"
 	"github.com/ethosagent/meterwise/internal/savings"
 	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/wsauth"
@@ -110,8 +113,13 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 		return d, err
 	}
 	d.Sources = append(d.Sources, led)
-	// wsauth first (it stamps the tenant), the injected hooks, then the ledger, which only records.
-	d.Hooks = append(append([]tollgate.Hook{wsauth.Hook{}}, d.Hooks...), led)
+	// Order is load-bearing (plan 06, R2). wsauth stamps the tenant; history stamps the ring and the verdict
+	// pointer; monitors may short-circuit and fill the verdicts; the injected hooks follow; the ledger comes
+	// last, seals the verdicts in After and records.
+	hist := history.New(history.Options{MaxSessions: tollgate.DefaultLimits().MaxSessions})
+	mon := monitors.New(monitors.Options{PrivacyMode: rt.cfg.PrivacyMode, Editor: wire.Editor{}, MaxSessions: tollgate.DefaultLimits().MaxSessions})
+	d.Sources = append(d.Sources, hist, mon)
+	d.Hooks = append(append([]tollgate.Hook{wsauth.Hook{}, hist, mon}, d.Hooks...), led)
 	rt.sources = d.Sources
 	return d, nil
 }
@@ -130,7 +138,7 @@ func (rt *instance) startLedger(ctx context.Context) (*ledger.Hook, error) {
 	rt.stopPricing = stop
 	go loader.Run(pctx)
 	rt.db.SetLogger(rt.log)
-	hook, err := ledger.New(ctx, ledger.Options{Writer: rt.db, Pricer: pricer, PrivacyMode: &rt.cfg.PrivacyMode, Log: rt.log})
+	hook, err := ledger.New(ctx, ledger.Options{Writer: rt.db, Pricer: pricer, Estimator: savings.Estimate, PrivacyMode: &rt.cfg.PrivacyMode, Log: rt.log})
 	if err != nil {
 		return nil, fmt.Errorf("ledger: %w", err)
 	}

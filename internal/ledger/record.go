@@ -26,7 +26,7 @@ const PreviewMax = 200
 // cannot be attributed to a workspace (no tenant uuid or org: the dev NoAuth tenant).
 func (h *Hook) record(ctx context.Context, c *tollgate.Call, m tollgate.Metric) (contract.CallRecord, bool) {
 	ws, org := c.Tenant.ID, c.Tenant.Attrs["org_id"]
-	if !uuidRe.MatchString(ws) || !uuidRe.MatchString(org) || m.CallID == "" {
+	if !tenantOK(c.Tenant) || m.CallID == "" {
 		return contract.CallRecord{}, false
 	}
 	st, _ := c.Meta[metaState].(*callState)

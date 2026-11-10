@@ -11,12 +11,23 @@ import (
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/store"
+	"github.com/ethosagent/meterwise/internal/wsauth"
 )
 
 // metaState is the one Meta key the hook stamps on a call (scratch space shared by extensions for that call).
 const metaState = "ledger.state"
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// tenantOK reports whether the call's workspace and org ids are canonical uuids. wsauth checks them once per
+// cache fill and says so in Attrs[AttrTenantOK]; a tenant without the mark (the dev tenant, tests, any other
+// authenticator) falls back to the pattern match.
+func tenantOK(t tollgate.Tenant) bool {
+	if t.Attrs[wsauth.AttrTenantOK] == "true" {
+		return true
+	}
+	return uuidRe.MatchString(t.ID) && uuidRe.MatchString(t.Attrs["org_id"])
+}
 
 // Hook is the ledger's tollgate Hook (Name "ledger"). Create it with New; it owns a batcher
 // goroutine that Close stops after a final flush.
@@ -107,7 +118,7 @@ func (h *Hook) OnEvent(_ context.Context, c *tollgate.Call, e tollgate.Event) {
 func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
 	// Single org: a row filed under any other org could never be read back, and its workspace's
 	// last_call_at would silently not move. Refuse and count it instead.
-	if org := c.Tenant.Attrs["org_id"]; uuidRe.MatchString(org) && org != store.OrgID() {
+	if org := c.Tenant.Attrs["org_id"]; org != store.OrgID() && (c.Tenant.Attrs[wsauth.AttrTenantOK] == "true" || uuidRe.MatchString(org)) {
 		h.q.wrongOrg.Add(1)
 		return
 	}
