@@ -36,18 +36,8 @@ func HashString(s string) uint64 {
 	return h
 }
 
-// HashID is the privacy-safe public id of a value inside one workspace: 16 hex characters of
-// sha256(workspaceID + ":" + value) (ruling R7).
-func HashID(workspaceID, value string) string {
-	sum := sha256.Sum256([]byte(workspaceID + ":" + value))
-	return hex.EncodeToString(sum[:8])
-}
-
-// HashValue renders a ring hash as the value HashID takes.
-func HashValue(h uint64) string { return strconv.FormatUint(h, 10) }
-
-// HashOf is HashID(workspaceID, HashValue(h)) without the intermediate strings: the public id of a ring
-// hash inside one workspace.
+// HashOf is the privacy-safe public id of a ring hash inside one workspace: 16 hex characters of
+// sha256(workspaceID + ":" + the hash in decimal) (ruling R7).
 func HashOf(workspaceID string, h uint64) string {
 	var buf [96]byte
 	b := append(buf[:0], workspaceID...)

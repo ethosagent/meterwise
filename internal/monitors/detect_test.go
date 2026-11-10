@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -95,9 +96,13 @@ func resolve(ev contract.MonitorEvidence) contract.MonitorEvidence {
 		switch {
 		case strings.HasPrefix(s, "@shingle:"):
 			sh := contract.ShinglesOf(contract.Tokens(strings.TrimPrefix(s, "@shingle:"), 0), 1)
-			return contract.HashID(fixtureWS, contract.HashValue(sh[0]))
+			return contract.HashOf(fixtureWS, sh[0])
 		case strings.HasPrefix(s, "@"):
-			return contract.HashID(fixtureWS, strings.TrimPrefix(s, "@"))
+			n, err := strconv.ParseUint(strings.TrimPrefix(s, "@"), 10, 64)
+			if err != nil {
+				panic("fixture placeholder " + s + ": " + err.Error())
+			}
+			return contract.HashOf(fixtureWS, n)
 		}
 		return s
 	}

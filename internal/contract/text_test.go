@@ -2,6 +2,9 @@ package contract_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strconv"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -36,9 +39,11 @@ func TestTruncateUTF8(t *testing.T) {
 	}
 }
 
-func TestHashOfIsHashIDOfTheRenderedHash(t *testing.T) {
+// The public id of a ring hash is 16 hex characters of sha256(workspaceID + ":" + decimal hash) (ruling R7).
+func TestHashOfIsTheSpecifiedDigest(t *testing.T) {
 	for _, h := range []uint64{0, 1, 12345, 1<<64 - 1, contract.HashString("get_weather")} {
-		if got, want := contract.HashOf("ws-1", h), contract.HashID("ws-1", contract.HashValue(h)); got != want {
+		sum := sha256.Sum256([]byte("ws-1:" + strconv.FormatUint(h, 10)))
+		if got, want := contract.HashOf("ws-1", h), hex.EncodeToString(sum[:8]); got != want {
 			t.Errorf("HashOf(%d) = %s, want %s", h, got, want)
 		}
 	}

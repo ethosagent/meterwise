@@ -214,7 +214,7 @@ func TestPathEvidenceOnlyWhenCaptureIsAllowed(t *testing.T) {
 					got = v.Evidence
 				}
 			}
-			if got.Path != tc.want || got.PathHash != contract.HashID("ws", contract.HashValue(sub)) {
+			if got.Path != tc.want || got.PathHash != contract.HashOf("ws", sub) {
 				t.Errorf("path %q hash %q", got.Path, got.PathHash)
 			}
 		})

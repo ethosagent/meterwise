@@ -79,12 +79,9 @@ func TestToolPathAndHashID(t *testing.T) {
 	if ToolPath([]byte(`{"q":"a"}`)) != "" || ToolPath([]byte(`[1]`)) != "" {
 		t.Error("no path key is empty")
 	}
-	id := HashID("ws1", "v")
-	if len(id) != 16 || id == HashID("ws2", "v") || id != HashID("ws1", "v") {
-		t.Errorf("HashID %q must be 16 hex, per workspace, stable", id)
-	}
-	if HashValue(42) != "42" {
-		t.Error("HashValue")
+	id := HashOf("ws1", 42)
+	if len(id) != 16 || id == HashOf("ws2", 42) || id != HashOf("ws1", 42) {
+		t.Errorf("HashOf %q must be 16 hex, per workspace, stable", id)
 	}
 }
 
