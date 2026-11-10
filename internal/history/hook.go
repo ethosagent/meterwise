@@ -114,7 +114,7 @@ func (h *Hook) missing(ctx context.Context, cur ring, ok bool, c *tollgate.Call)
 	n, msgs := c.Session.Calls, window(c.Messages)
 	all := func(int) bool { return true }
 	if !ok {
-		fills := readBack(msgs, n, n-RingDepth, n-1, all, h.late(ctx), ringShingles)
+		fills := readBack(msgs, n, n-RingDepth, n-1, all, h.late(ctx))
 		h.read.Add(int64(len(fills)))
 		if len(fills) > 0 {
 			h.rebuilt.Add(1)
@@ -136,7 +136,7 @@ func (h *Hook) missing(ctx context.Context, cur ring, ok bool, c *tollgate.Call)
 	if heal {
 		from = min(lo, n-1)
 	}
-	fills := readBack(msgs, n, from, n-1, func(i int) bool { return i >= lo || (heal && i == n-1) }, late, ringShingles)
+	fills := readBack(msgs, n, from, n-1, func(i int) bool { return i >= lo || (heal && i == n-1) }, late)
 	h.read.Add(int64(len(fills)))
 	switch {
 	case len(fills) == 0:

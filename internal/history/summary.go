@@ -98,9 +98,9 @@ func window(msgs []tollgate.Message) []tollgate.Message {
 // index calls-k (the request carries every earlier call's turn, the newest last). Only indexes in
 // [lo, hi] that want accepts are parsed, and the walk stops below lo, so a catch-up parses only the
 // turns it misses. stop is asked before each parse; true ends the walk (the deadline). Token counts of
-// the entries are unknown (0). Only the newest `shingles` entries it returns carry shingles, the ones the
-// ring keeps them for (ringShingles); 0 for a read that only compares turns.
-func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, stop func() bool, shingles int) []contract.CallSummary {
+// the entries are unknown (0). Only the newest ringShingles entries it returns carry shingles, the ones
+// the ring keeps them for.
+func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, stop func() bool) []contract.CallSummary {
 	var out []contract.CallSummary
 	k := 0
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -118,7 +118,7 @@ func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, s
 		if stop() {
 			break
 		}
-		s := fromMessage(msgs[i]).summary(len(out) < shingles)
+		s := fromMessage(msgs[i]).summary(len(out) < ringShingles)
 		s.Index = idx
 		out = append(out, s)
 	}
