@@ -59,12 +59,23 @@ In the web app: Settings > Workspaces > create one, then open its Setup page and
 
 ```sh
 make demo-traffic           # native DB          make docker-demo-traffic   # the Docker stack's DB
+make demo-traffic MONITORS=block ROUNDS=8    # same, with every monitor in block mode (default note)
 export ANTHROPIC_BASE_URL="<proxy URL from Setup>"      # real agent, your own key; OpenAI: OPENAI_BASE_URL
 ```
 
 In the Docker stack the proxy reaches the real provider hosts (api.openai.com, api.anthropic.com). Traffic you send
 through it with your own key is real and billed by the provider, and even a call without a key goes out (and gets a
 401). Only `make demo-traffic` / `make docker-demo-traffic` stay offline: they use a loopback fake upstream.
+
+`demo-traffic` runs the same hook chain as `serve` (history, monitors, ledger). Each round is one plain session plus
+three looping agents: one repeats a tool call, one re-reads a file, one makes no progress (both wires, streamed or
+not; every session ends in a text answer, and a client that gets a block answer stops). `-monitors observe|note|block`
+(default `note`; `MONITORS=` in make) first sets all six monitors of the workspace, through the same tenancy call as
+`PATCH /api/workspaces/{id}/monitors`, and prints what it set. With `block`, repeats are answered by the proxy: the
+fake upstream sees fewer calls and the certain `saved` number moves; `note` fills the likely number; `observe` only
+records would-save. The run ends with a summary: calls, sessions, monitor events by action and confidence, and
+`saved` and `likely saved` side by side (never summed). Reload the Savings and Monitors pages afterwards: they fill from
+those rows. Re-running adds sessions; the mode stays set on the workspace until you change it in Settings.
 
 Dev without a workspace URL: the proxy accepts one tenant at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`).
 

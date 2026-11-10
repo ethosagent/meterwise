@@ -93,8 +93,8 @@ docker-psql: ## psql into the stack database
 	$(STACK) exec appdb psql -U meterwise -d meterwise
 docker-shell: ## Shell in the meterwised container
 	$(STACK) exec meterwised sh
-docker-demo-traffic: ## demo-traffic against the stack database (ROUNDS=n WORKSPACE=<uuid>)
-	DATABASE_URL='$(STACK_DB_URL)' go run ./cmd/demo-traffic -rounds $(or $(ROUNDS),5) $(if $(WORKSPACE),-workspace $(WORKSPACE))
+docker-demo-traffic: ## demo-traffic against the stack database (ROUNDS=n WORKSPACE=<uuid> MONITORS=observe|note|block)
+	DATABASE_URL='$(STACK_DB_URL)' go run ./cmd/demo-traffic -rounds $(or $(ROUNDS),5) $(if $(WORKSPACE),-workspace $(WORKSPACE)) $(if $(MONITORS),-monitors $(MONITORS))
 docker-reset: ## DESTROY the stack's database volume and certificate; run make up after
 	$(STACK) stop $(STACK_SERVICES)
 	$(STACK) rm -f $(STACK_SERVICES)
@@ -147,7 +147,7 @@ worktree: ## New worktree for a plan: PLAN=05
 
 # Replays synthetic agent sessions through an in-process proxy with the ledger into DATABASE_URL
 # (loopback fake upstream, no provider keys). ROUNDS=n sessions; WORKSPACE=<uuid> optional.
-demo-traffic: ## Fill the ledger with demo sessions (native DATABASE_URL; ROUNDS=n WORKSPACE=<uuid>)
-	$(NATIVE_ENV) go run ./cmd/demo-traffic -rounds $(or $(ROUNDS),5) $(if $(WORKSPACE),-workspace $(WORKSPACE))
+demo-traffic: ## Fill the ledger and the Savings page with demo sessions (native DATABASE_URL; ROUNDS=n WORKSPACE=<uuid> MONITORS=observe|note|block)
+	$(NATIVE_ENV) go run ./cmd/demo-traffic -rounds $(or $(ROUNDS),5) $(if $(WORKSPACE),-workspace $(WORKSPACE)) $(if $(MONITORS),-monitors $(MONITORS))
 clean: ## Remove bin, logs, web/dist, coverage and .dev
 	rm -rf bin .logs web/dist web/coverage .dev
