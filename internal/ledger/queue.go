@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -86,6 +87,7 @@ type queue struct {
 	enqueued, dropped, flushed, duplicates, lost, lostCloses, skipped, wrongOrg, unpriced, sessionsClosed, flushErrors atomic.Int64
 
 	errMu     sync.Mutex
+	refused   map[int]int64 // calls refused before the upstream, by HTTP status
 	lastErr   string
 	lastFlush time.Time
 }
@@ -111,6 +113,16 @@ func (q *queue) enqueue(it item) {
 	default:
 		q.dropped.Add(1)
 	}
+}
+
+// refuse counts a call refused before it reached the upstream.
+func (q *queue) refuse(status int) {
+	q.errMu.Lock()
+	if q.refused == nil {
+		q.refused = map[int]int64{}
+	}
+	q.refused[status]++
+	q.errMu.Unlock()
 }
 
 func (q *queue) close(ctx context.Context) error {
@@ -268,6 +280,10 @@ func (q *queue) ok() {
 func (q *queue) status() map[string]any {
 	q.errMu.Lock()
 	lastErr, lastFlush := q.lastErr, q.lastFlush
+	refused := make(map[string]int64, len(q.refused))
+	for status, n := range q.refused {
+		refused[strconv.Itoa(status)] = n
+	}
 	q.errMu.Unlock()
 	st := map[string]any{
 		"queue_depth":          len(q.ch),
@@ -283,6 +299,7 @@ func (q *queue) status() map[string]any {
 		"unpriced_calls":       q.unpriced.Load(),
 		"sessions_closed":      q.sessionsClosed.Load(),
 		"flush_errors":         q.flushErrors.Load(),
+		"refused_by_status":    refused,
 		"last_flush_error":     lastErr,
 	}
 	if !lastFlush.IsZero() {

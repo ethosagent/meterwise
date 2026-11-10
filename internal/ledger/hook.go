@@ -128,6 +128,13 @@ func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
 		h.q.wrongOrg.Add(1)
 		return
 	}
+	// A call refused before it reached the upstream (admission 429, provider or CIDR 403, unknown or
+	// retired id 404/410) is not a call: no row, no session, no last_call_at. A rejection of 500 or more
+	// (extension fault, upstream unreachable) did get as far as the upstream and is still recorded.
+	if m.Finish == tollgate.FinishRejected && m.Status < 500 {
+		h.q.refuse(m.Status)
+		return
+	}
 	rec, ok := h.record(ctx, c, m)
 	if !ok {
 		h.q.skipped.Add(1)
