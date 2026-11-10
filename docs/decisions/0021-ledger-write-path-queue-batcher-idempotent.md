@@ -23,8 +23,10 @@ failing for a reason other than an unreachable database, retried record by recor
 cannot sink the rest. `OnSessionClosed` travels the same queue, so a close is applied after the calls
 enqueued before it. `Close(ctx)` flushes. Tool-call names and text presence come from `OnEvent`
 (neutral events), never from provider JSON; a non-streamed response has no events, so its tool names
-stay empty in tollgate v0.1.0. Sessions are keyed `(workspace_id, id)`. Status (queue depth, dropped,
-flushed, lost, unpriced, last error) is exposed through `Status()` for `/statusz`.
+stay empty in tollgate v0.1.0. Sessions are keyed `(workspace_id, id)`. Session closes use the same retry path as calls and a close that still fails is counted
+in `lost_closes`. `Options.PrivacyMode` is a `*bool` and nil means privacy ON. A record whose `org_id` is
+not `store.OrgID()` is refused and counted in `skipped_wrong_org`. Status (queue depth, dropped,
+flushed, lost, lost_closes, unpriced, last error) is exposed through `Status()` for `/statusz`.
 
 ## Consequences
 
@@ -35,3 +37,7 @@ Harder: a crash loses up to one flush interval of rows, and a database outage lo
 Forbidden: any other writer of `calls`, `sessions`, `monitor_events` (archtest H4).
 Enforced by: `TestQueueNeverBlocksAndDropsAreCounted`, `TestWriteCallsIsIdempotentAndAggregatesSessions`,
 `TestFailedWritesRetryThenIsolateAPoisonRecord`, `TestNoMessageTextIsPersistedUnlessCaptureOnAndPrivacyOff`.
+
+Deviation: plan 05 section 3 said `make demo-traffic` replays tollgate testkit fixtures. `cmd/demo-traffic`
+cannot import the testkit (archtest H1/H4: it is test-only), so it serves hand-made request and response
+bodies shaped like the fixtures from its own loopback upstream. The scenarios therefore do not track fixture changes.

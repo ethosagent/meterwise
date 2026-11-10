@@ -82,6 +82,11 @@ func pct(d []time.Duration, p float64) time.Duration {
 // measure interleaves calls to a bare proxy and one with the ledger, so machine noise hits both alike,
 // in trials; it returns the smallest added p99 of any trial. Noise (a busy machine, GC) only ever
 // inflates a trial, so the best trial is the honest estimate of what the ledger adds.
+//
+// This is a 2 ms smoke bound, not a regression guard: taking the best trial absorbs any regression
+// smaller than machine noise (on a loaded machine the measured added p99 is often negative). It
+// catches a hook that blocks the request path, not one that got 10% slower; BenchmarkHookOverhead
+// is the number to compare across commits.
 func measure(t testing.TB, bare, with *proxyRig, trials, n int) (added time.Duration, b, w []time.Duration) {
 	for i := range 50 { // warm both
 		bare.one(t, i)
