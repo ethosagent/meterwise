@@ -267,3 +267,52 @@ func TestMonitorStatsTokenFieldsNeverSumCertainAndLikely(t *testing.T) {
 		t.Errorf("usd saved/likely/would = %v/%v/%v, want 3000/1200/210", d.Saved, d.Likely, d.WouldSave)
 	}
 }
+
+// UpdateWorkspaceSetting writes one saver key, keeps every other key, accepts only trim/router/memory, and a
+// settings replacement through UpdateWorkspace keeps all four validated keys.
+func TestWorkspaceSaverSettingsStayApart(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	org := store.OrgID()
+	for _, key := range []string{"trim", "router", "memory"} {
+		err := s.UpdateWorkspaceSetting(ctx, org, ws, key, func(cur any) (string, error) {
+			if cur != nil {
+				t.Errorf("%s: a fresh workspace has no stored key, got %v", key, cur)
+			}
+			return `{"mode":"observe"}`, nil
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", key, err)
+		}
+	}
+	if _, err := s.UpdateWorkspaceMonitors(ctx, org, ws, func(c contract.MonitorConfig) (contract.MonitorConfig, error) { return c, nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.UpdateWorkspace(ctx, org, ws, nil, map[string]any{"theme": "x", "trim": "no", "router": "no", "memory": "no", "monitors": "no"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"trim", "router", "memory", "monitors"} {
+		if m, ok := got.Settings[key].(map[string]any); !ok || (key != "monitors" && m["mode"] != "observe") {
+			t.Errorf("%s after a settings replace = %v, want the stored value", key, got.Settings[key])
+		}
+	}
+	if got.Settings["theme"] != "x" {
+		t.Errorf("settings = %v, want theme kept", got.Settings)
+	}
+	if err := s.UpdateWorkspaceSetting(ctx, org, ws, "monitors", func(any) (string, error) { return `{}`, nil }); code(err) != contract.CodeValidationFailed {
+		t.Errorf("monitors is not a generic key: %v", err)
+	}
+	if err := s.UpdateWorkspaceSetting(ctx, org, ws, "trim", func(any) (string, error) { return "", contract.Invalid("x", "bad") }); code(err) != contract.CodeValidationFailed {
+		t.Errorf("an apply error must come back as is: %v", err)
+	}
+	if w, _ := s.Workspace(ctx, org, ws); w.Settings["theme"] != "x" || w.Settings["trim"] == nil {
+		t.Errorf("a rejected update changed settings: %v", w.Settings)
+	}
+	if err := s.UpdateWorkspaceSetting(ctx, org, "nope", "trim", func(any) (string, error) { return `{}`, nil }); code(err) != contract.CodeNotFound {
+		t.Errorf("malformed id: %v", err)
+	}
+	if err := s.UpdateWorkspaceSetting(ctx, "00000000-0000-0000-0000-000000000000", ws, "trim", func(any) (string, error) { return `{}`, nil }); code(err) != contract.CodeNotFound {
+		t.Errorf("another org: %v", err)
+	}
+}

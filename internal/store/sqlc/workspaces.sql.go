@@ -441,12 +441,38 @@ func (q *Queries) SetWorkspacePublicID(ctx context.Context, arg SetWorkspacePubl
 	return err
 }
 
+const setWorkspaceSetting = `-- name: SetWorkspaceSetting :one
+UPDATE workspaces SET settings = jsonb_set(settings, ARRAY[$1::text], $2::jsonb, true)
+WHERE org_id = $3::text::uuid AND id = $4::text::uuid
+RETURNING settings
+`
+
+type SetWorkspaceSettingParams struct {
+	Key   string
+	Value []byte
+	OrgID string
+	ID    string
+}
+
+// Replace only settings.<key>; every other key of the settings is kept. The key is checked in Go (trim, router, memory).
+func (q *Queries) SetWorkspaceSetting(ctx context.Context, arg SetWorkspaceSettingParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, setWorkspaceSetting,
+		arg.Key,
+		arg.Value,
+		arg.OrgID,
+		arg.ID,
+	)
+	var settings []byte
+	err := row.Scan(&settings)
+	return settings, err
+}
+
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspaces SET name = COALESCE($1, name),
     settings = CASE WHEN $2::jsonb IS NULL THEN settings
-                    ELSE ($2::jsonb - 'monitors')
-                         || CASE WHEN settings->'monitors' IS NOT NULL THEN jsonb_build_object('monitors', settings->'monitors')
-                                 ELSE '{}'::jsonb END END
+                    ELSE ($2::jsonb - 'monitors' - 'trim' - 'router' - 'memory')
+                         || COALESCE((SELECT jsonb_object_agg(e.key, e.value) FROM jsonb_each(settings) AS e
+                                      WHERE e.key IN ('monitors', 'trim', 'router', 'memory')), '{}'::jsonb) END
 WHERE org_id = $3::text::uuid AND id = $4::text::uuid
 RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
           last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
@@ -471,8 +497,8 @@ type UpdateWorkspaceRow struct {
 	AllowedClientCidrs []string
 }
 
-// A settings replacement keeps settings.monitors (Plan 06): the monitors have their own validated route, so the
-// replacement's own "monitors" key is dropped and the stored one is put back, atomically in this statement.
+// A settings replacement keeps the validated per-feature keys (monitors, trim, router, memory): each has its own
+// route, so the replacement's own copies are dropped and the stored ones put back, atomically in this statement.
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (UpdateWorkspaceRow, error) {
 	row := q.db.QueryRow(ctx, updateWorkspace,
 		arg.Name,

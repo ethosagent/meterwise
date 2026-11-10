@@ -47,13 +47,13 @@ INSERT INTO workspace_public_ids (public_id, org_id, workspace_id)
 VALUES (sqlc.arg(public_id), sqlc.arg(org_id)::text::uuid, sqlc.arg(workspace_id)::text::uuid);
 
 -- name: UpdateWorkspace :one
--- A settings replacement keeps settings.monitors (Plan 06): the monitors have their own validated route, so the
--- replacement's own "monitors" key is dropped and the stored one is put back, atomically in this statement.
+-- A settings replacement keeps the validated per-feature keys (monitors, trim, router, memory): each has its own
+-- route, so the replacement's own copies are dropped and the stored ones put back, atomically in this statement.
 UPDATE workspaces SET name = COALESCE(sqlc.narg(name), name),
     settings = CASE WHEN sqlc.narg(settings)::jsonb IS NULL THEN settings
-                    ELSE (sqlc.narg(settings)::jsonb - 'monitors')
-                         || CASE WHEN settings->'monitors' IS NOT NULL THEN jsonb_build_object('monitors', settings->'monitors')
-                                 ELSE '{}'::jsonb END END
+                    ELSE (sqlc.narg(settings)::jsonb - 'monitors' - 'trim' - 'router' - 'memory')
+                         || COALESCE((SELECT jsonb_object_agg(e.key, e.value) FROM jsonb_each(settings) AS e
+                                      WHERE e.key IN ('monitors', 'trim', 'router', 'memory')), '{}'::jsonb) END
 WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
 RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
           last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs;
@@ -98,5 +98,11 @@ FOR UPDATE;
 -- name: SetWorkspaceMonitors :one
 -- Replace only settings.monitors; every other key of the settings is kept.
 UPDATE workspaces SET settings = jsonb_set(settings, '{monitors}', sqlc.arg(monitors)::jsonb, true)
+WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
+RETURNING settings;
+
+-- name: SetWorkspaceSetting :one
+-- Replace only settings.<key>; every other key of the settings is kept. The key is checked in Go (trim, router, memory).
+UPDATE workspaces SET settings = jsonb_set(settings, ARRAY[sqlc.arg(key)::text], sqlc.arg(value)::jsonb, true)
 WHERE org_id = sqlc.arg(org_id)::text::uuid AND id = sqlc.arg(id)::text::uuid
 RETURNING settings;
