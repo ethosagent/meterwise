@@ -54,7 +54,7 @@ func TestAppendNoteTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := wire.AppendNote(tc.w, []byte(tc.body), note)
+			out, err := wire.AppendNotes(tc.w, []byte(tc.body), []string{note})
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("err = %v, want %v", err, tc.wantErr)
@@ -83,8 +83,8 @@ func TestAppendNoteTable(t *testing.T) {
 
 func TestAppendNoteTwiceKeepsBothAndValid(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":"a"}]}`)
-	one, _ := wire.AppendNote(tollgate.WireOpenAIChat, body, "[proxy] one")
-	two, err := wire.AppendNote(tollgate.WireOpenAIChat, one, "[proxy] two")
+	one, _ := wire.AppendNotes(tollgate.WireOpenAIChat, body, []string{"[proxy] one"})
+	two, err := wire.AppendNotes(tollgate.WireOpenAIChat, one, []string{"[proxy] two"})
 	if err != nil || !json.Valid(two) || bytes.Count(two, []byte("[proxy]")) != 2 {
 		t.Fatalf("two notes: %v %s", err, two)
 	}

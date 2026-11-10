@@ -8,12 +8,6 @@ import (
 	"github.com/ethosagent/tollgate"
 )
 
-// AppendNote returns body with note added at the end of the conversation, spliced in place: the
-// bytes before and after the inserted text are identical to the input. It is AppendNotes of one note.
-func AppendNote(w tollgate.WireFormat, body []byte, note string) ([]byte, error) {
-	return AppendNotes(w, body, []string{note})
-}
-
 // AppendNotes returns body with every note added at the end of the conversation, in order, scanning the
 // body and copying it once however many notes there are. The bytes before and after the inserted text are
 // identical to the input.

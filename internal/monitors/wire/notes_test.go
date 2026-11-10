@@ -27,14 +27,14 @@ func TestAppendNotesEqualsAppendingOneByOne(t *testing.T) {
 			want := []byte(tc.body)
 			for _, n := range notes {
 				var err error
-				if want, err = wire.AppendNote(tc.w, want, n); err != nil {
+				if want, err = wire.AppendNotes(tc.w, want, []string{n}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			for k := 1; k <= len(notes); k++ {
 				seq := []byte(tc.body)
 				for _, n := range notes[:k] {
-					seq, _ = wire.AppendNote(tc.w, seq, n)
+					seq, _ = wire.AppendNotes(tc.w, seq, []string{n})
 				}
 				got, err := wire.AppendNotes(tc.w, []byte(tc.body), notes[:k])
 				if err != nil || !bytes.Equal(got, seq) {
