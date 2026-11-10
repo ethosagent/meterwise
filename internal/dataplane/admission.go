@@ -85,12 +85,14 @@ func (a *Admission) Acquire(ctx context.Context, t tollgate.Tenant, c *tollgate.
 		return nil, err
 	}
 	a.inFlight.Add(1)
-	var once sync.Once
+	// tollgate's limiter release is idempotent (sync.Once inside, v0.1.0), so it is called as is.
+	// The gauge is ours and is not, so a flag keeps a repeated release from driving it negative.
+	var freed atomic.Bool
 	return func() {
-		once.Do(func() {
+		if !freed.Swap(true) {
 			a.inFlight.Add(-1)
-			release()
-		})
+		}
+		release()
 	}, nil
 }
 

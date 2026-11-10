@@ -32,14 +32,15 @@ type idKey struct{}
 
 // WithPublicID carries the workspace id beside a request whose path no longer has it: Front strips
 // /w/{id} from the path (so tollgate shapes every refusal for the provider the path names) and
-// hands the id to the authenticator here.
+// hands the id to the authenticator here. id must have passed Parse; Front is the only caller.
 func WithPublicID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, idKey{}, id)
 }
 
 // requestID is the public id of the request: the one Front stashed, else the one in the path.
+// Front stashes an id only after Parse validated its shape, so it is not judged again here.
 func requestID(ctx context.Context, r *http.Request) (string, bool) {
-	if id, ok := ctx.Value(idKey{}).(string); ok && contract.ValidPublicID(id) {
+	if id, ok := ctx.Value(idKey{}).(string); ok && id != "" {
 		return id, true
 	}
 	id, _, ok := Parse(r.URL.Path)

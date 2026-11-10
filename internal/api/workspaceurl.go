@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/ethosagent/meterwise/internal/access"
@@ -40,11 +41,8 @@ func (s *server) workspaceViewOf(c Call, ws contract.Workspace) (contract.Worksp
 }
 
 func (s *server) workspaceView(ws contract.Workspace, withURL bool) contract.WorkspaceView {
-	settings := ws.Settings
-	if settings == nil {
-		settings = map[string]any{}
-	}
-	v := contract.WorkspaceView{ID: ws.ID, Name: ws.Name, IsDefault: ws.IsDefault, Settings: settings, CreatedAt: contract.RFC3339(ws.CreatedAt)}
+	// ws comes from the store, whose settingsOf never returns a nil map.
+	v := contract.WorkspaceView{ID: ws.ID, Name: ws.Name, IsDefault: ws.IsDefault, Settings: ws.Settings, CreatedAt: contract.RFC3339(ws.CreatedAt)}
 	if withURL {
 		pid, url := ws.PublicID, s.proxyURL(ws.PublicID)
 		cidrs := ws.AllowedClientCIDRs
@@ -74,7 +72,7 @@ func (s *server) resetWorkspaceURL(c Call, req contract.ResetURLRequest) (contra
 		grace = *req.GraceMinutes
 	}
 	if grace < 0 || grace > contract.MaxGraceMinutes {
-		return contract.ResetURLResponse{}, contract.Invalid("graceMinutes", "must be between 0 and 1440")
+		return contract.ResetURLResponse{}, contract.Invalid("graceMinutes", "must be between 0 and "+strconv.Itoa(contract.MaxGraceMinutes))
 	}
 	id := c.Path("id")
 	res, err := s.Tenancy.ResetURL(c.Ctx, c.Principal, id, time.Duration(grace)*time.Minute)

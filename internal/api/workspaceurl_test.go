@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -253,5 +254,26 @@ func TestOnlyOneProxyURLBuilderExists(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("the proxy URL prefix appears %d times in api sources, want exactly 1 (proxyPrefix)", n)
+	}
+}
+
+func TestResetURLGraceMessageNamesTheContractMaximum(t *testing.T) {
+	s := newStack(t)
+	admin := s.admin(t, "user_admin")
+	_, id := s.defaultWorkspace(t, admin.tok)
+	code, b := s.call(t, "POST", "/api/workspaces/"+id+"/url/reset", admin.tok, `{"graceMinutes":1441}`)
+	wantErr(t, code, b, 422, contract.CodeValidationFailed)
+	if want := "between 0 and " + strconv.Itoa(contract.MaxGraceMinutes); !strings.Contains(string(b), want) {
+		t.Fatalf("body %s lacks %q", b, want)
+	}
+}
+
+func TestWorkspaceSettingsRenderAsAnObjectNeverNull(t *testing.T) {
+	s := newStack(t)
+	admin := s.admin(t, "user_admin")
+	s.defaultWorkspace(t, admin.tok)
+	raw := s.must(t, admin.tok, "GET", "/api/workspaces", "", 200)
+	if !strings.Contains(string(raw), `"settings":{`) {
+		t.Fatalf("settings is not an object: %s", raw)
 	}
 }

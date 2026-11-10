@@ -2,6 +2,7 @@ package dataplane
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,5 +66,53 @@ func TestStatusCountsInFlightRejectionsAndLimiterErrors(t *testing.T) {
 	rel3()
 	if get("limiter_errors") != 1 {
 		t.Fatalf("limiter_errors = %d, want 1", get("limiter_errors"))
+	}
+}
+
+// A release may be called more than once (tollgate's limiter tolerates it); the in-flight gauge and
+// the slot must each move exactly once, even when the calls race.
+func TestConcurrentReleasesFreeOneSlotAndMoveTheGaugeOnce(t *testing.T) {
+	a, err := NewAdmission(1, 10*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ten := tollgate.Tenant{ID: "a"}
+	rel, err := a.Acquire(ctx, ten, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() { defer wg.Done(); rel() }()
+	}
+	wg.Wait()
+	if n := a.Status()["in_flight"]; n != int64(0) {
+		t.Fatalf("in_flight = %v after racing releases, want 0", n)
+	}
+	r1, err := a.Acquire(ctx, ten, nil)
+	if err != nil {
+		t.Fatalf("the slot was not freed: %v", err)
+	}
+	if _, err := a.Acquire(ctx, ten, nil); err == nil {
+		t.Fatal("a repeated release freed more than one slot")
+	}
+	r1()
+}
+
+func TestAcquireAndReleaseAllocationBudget(t *testing.T) {
+	a, err := NewAdmission(4, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, ten := context.Background(), tollgate.Tenant{ID: "a"}
+	n := testing.AllocsPerRun(200, func() {
+		rel, _ := a.Acquire(ctx, ten, nil)
+		rel()
+	})
+	t.Logf("allocs per Acquire+release: %v", n)
+	if n > 6 {
+		t.Fatalf("%v allocs per Acquire+release, budget 6", n)
 	}
 }
