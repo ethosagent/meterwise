@@ -1,6 +1,9 @@
 package wsauth
 
 import (
+	"encoding/json"
+	"math"
+
 	"github.com/ethosagent/tollgate"
 )
 
@@ -10,7 +13,42 @@ const (
 	SettingAllowedModels    = "allowedModels"
 	SettingCapture          = "capture"
 	SettingPrivacyMode      = "privacyMode"
+	SettingMaxConcurrent    = "maxConcurrent"
 )
+
+// MaxConcurrentCap is the largest per-workspace concurrency override honoured. A larger value is
+// clamped to it, so a settings blob cannot ask for an unbounded number of slots.
+const MaxConcurrentCap = 1024
+
+// MaxConcurrentOf reads settings.maxConcurrent: a whole number of at least 1 (JSON numbers arrive
+// as float64 or json.Number, tests may pass int). It returns 0 for a missing, mistyped,
+// fractional or non-positive value, meaning "use the default", and clamps to MaxConcurrentCap.
+func MaxConcurrentOf(settings map[string]any) int {
+	var n int64
+	switch v := settings[SettingMaxConcurrent].(type) {
+	case int:
+		n = int64(v)
+	case int64:
+		n = v
+	case float64:
+		if v != math.Trunc(v) || v < 1 { // also NaN
+			return 0
+		}
+		n = int64(min(v, MaxConcurrentCap))
+	case json.Number:
+		i, err := v.Int64()
+		if err != nil {
+			return 0
+		}
+		n = i
+	default:
+		return 0
+	}
+	if n < 1 {
+		return 0
+	}
+	return int(min(n, MaxConcurrentCap))
+}
 
 // PolicyOf turns workspace settings into the tollgate per-tenant policy. A missing or mistyped key
 // takes tollgate's default (all providers, all models, no capture, inherit privacy mode), so a bad

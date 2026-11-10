@@ -2,6 +2,8 @@ package tenancy_test
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +18,7 @@ type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
 
-func newDir(t *testing.T) (*tenancy.Directory, *tenancy.Service, *store.Store, *clock) {
+func newDir(t testing.TB) (*tenancy.Directory, *tenancy.Service, *store.Store, *clock) {
 	t.Helper()
 	dsn := pgtest.NewDatabase(t)
 	if _, err := store.Migrate(context.Background(), dsn); err != nil {
@@ -103,7 +105,7 @@ func TestDirectoryIsBustedOnUpdateAndDelete(t *testing.T) {
 	}
 }
 
-func TestDirectoryUnknownIdsAreNotFoundAndNotCached(t *testing.T) {
+func TestDirectoryUnknownIdsAreNotFound(t *testing.T) {
 	dir, _, _, _ := newDir(t)
 	for _, id := range []string{"ZZZZZZZZZZZZZZZZZZZZZZ", "short", "", "' OR '1'='1"} {
 		if _, err := dir.ByPublicID(context.Background(), id); contract.AsError(err).Code != contract.CodeNotFound {
@@ -150,5 +152,87 @@ func TestSwitchRejectsAWorkspaceOutsideTheOrg(t *testing.T) {
 	_, svc, _, _ := newDir(t)
 	if _, err := svc.SwitchWorkspace(context.Background(), principal(), "00000000-0000-0000-0000-000000000042"); contract.AsError(err).Code != contract.CodeNotFound {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func loads(d *tenancy.Directory) uint64 { return d.Status()["loads"].(uint64) }
+
+func TestConcurrentMissesOnOneIDShareOnePostgresRead(t *testing.T) {
+	dir, svc, _, _ := newDir(t)
+	ctx := context.Background()
+	ws, err := svc.CreateWorkspace(ctx, principal(), "Alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := loads(dir)
+	var wg sync.WaitGroup
+	for range 60 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got, err := dir.ByPublicID(ctx, ws.PublicID); err != nil || got.ID != ws.ID {
+				t.Errorf("ByPublicID = %+v, %v", got, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := loads(dir) - before; n != 1 {
+		t.Fatalf("60 concurrent misses made %d Postgres reads, want 1", n)
+	}
+}
+
+func TestUnknownIDsAreRememberedFor5SecondsInABoundedCache(t *testing.T) {
+	dir, _, _, clk := newDir(t)
+	ctx := context.Background()
+	const id = "ZZZZZZZZZZZZZZZZZZZZZZ"
+	for range 3 {
+		if _, err := dir.ByPublicID(ctx, id); contract.AsError(err).Code != contract.CodeNotFound {
+			t.Fatalf("ByPublicID = %v", err)
+		}
+	}
+	if n := loads(dir); n != 1 {
+		t.Fatalf("3 lookups of one unknown id made %d reads, want 1", n)
+	}
+	clk.t = clk.t.Add(6 * time.Second)
+	_, _ = dir.ByPublicID(ctx, id)
+	if n := loads(dir); n != 2 {
+		t.Fatalf("after the 5 s the id must be asked again: %d reads", n)
+	}
+	for i := range 1200 {
+		_, _ = dir.ByPublicID(ctx, fmt.Sprintf("%022d", i))
+	}
+	if n := dir.Status()["negative_entries"].(int); n > 1024 {
+		t.Fatalf("negative cache holds %d entries, cap is 1024", n)
+	}
+}
+
+func TestCachedViewServesHitsWithoutPostgresAndFollowsBust(t *testing.T) {
+	dir, svc, _, _ := newDir(t)
+	ctx := context.Background()
+	ws, _ := svc.CreateWorkspace(ctx, principal(), "Alpha")
+	dir.SetView(func(w contract.Workspace) any { return "view:" + w.Name })
+	if _, ok, _ := dir.CachedView(ws.PublicID); ok {
+		t.Fatal("a cold cache answered")
+	}
+	v, err := dir.LoadView(ctx, ws.PublicID)
+	if err != nil || v != "view:Alpha" {
+		t.Fatalf("LoadView = %v, %v", v, err)
+	}
+	before := loads(dir)
+	if v, ok, err := dir.CachedView(ws.PublicID); !ok || err != nil || v != "view:Alpha" {
+		t.Fatalf("CachedView = %v, %v, %v", v, ok, err)
+	}
+	if loads(dir) != before {
+		t.Fatal("a hit read Postgres")
+	}
+	dir.Bust(ws.ID)
+	if _, ok, _ := dir.CachedView(ws.PublicID); ok {
+		t.Fatal("a busted entry still answers")
+	}
+	if _, err := dir.LoadView(ctx, "ZZZZZZZZZZZZZZZZZZZZZZ"); contract.AsError(err).Code != contract.CodeNotFound {
+		t.Fatalf("unknown id: %v", err)
+	}
+	if _, ok, err := dir.CachedView("ZZZZZZZZZZZZZZZZZZZZZZ"); !ok || contract.AsError(err).Code != contract.CodeNotFound {
+		t.Fatalf("a remembered unknown id must answer from the cache: ok=%v err=%v", ok, err)
 	}
 }

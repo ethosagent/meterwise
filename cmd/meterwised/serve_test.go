@@ -314,7 +314,8 @@ func TestTheStubResolverCannotBeBuiltOutsideDev(t *testing.T) {
 
 func TestRequireDevForNoAuthRefusesEveryFormOfNoAuthOutsideDev(t *testing.T) {
 	var nilPtr *tollgate.NoAuth
-	forms := map[string]tollgate.Authenticator{"nil": nil, "value": tollgate.NoAuth{}, "pointer": &tollgate.NoAuth{}, "nil pointer": nilPtr}
+	// a nil interface is not NoAuth any more: serve then builds the /w/{id} authenticator
+	forms := map[string]tollgate.Authenticator{"value": tollgate.NoAuth{}, "pointer": &tollgate.NoAuth{}, "nil pointer": nilPtr}
 	for _, appEnv := range []string{"prod", "test", ""} {
 		for name, auth := range forms {
 			if err := requireDevForNoAuth(appEnv, auth); err == nil || !strings.Contains(err.Message, "no authenticator") {
@@ -324,6 +325,9 @@ func TestRequireDevForNoAuthRefusesEveryFormOfNoAuthOutsideDev(t *testing.T) {
 		if err := requireDevForNoAuth(appEnv, realAuth{}); err != nil {
 			t.Errorf("a real authenticator refused with APP_ENV=%q: %v", appEnv, err)
 		}
+	}
+	if err := requireDevForNoAuth("prod", nil); err != nil {
+		t.Errorf("a nil authenticator must be allowed (serve builds the real one): %v", err)
 	}
 	for name, auth := range forms {
 		if err := requireDevForNoAuth("dev", auth); err != nil {
@@ -352,7 +356,7 @@ func TestBootGuardsAreIndependent(t *testing.T) {
 		want    contract.Code
 		message string
 	}{
-		{"prod, real resolver, no proxy auth", bootGuardConfig("prod", true), nil, contract.CodeConfigInvalid, "no authenticator"},
+		{"prod, real resolver, no explicit proxy auth gets the workspace authenticator", bootGuardConfig("prod", true), nil, contract.CodeUnavailable, ""},
 		{"prod, real resolver, NoAuth value", bootGuardConfig("prod", true), tollgate.NoAuth{}, contract.CodeConfigInvalid, "no authenticator"},
 		{"prod, real resolver, NoAuth pointer", bootGuardConfig("prod", true), &tollgate.NoAuth{}, contract.CodeConfigInvalid, "no authenticator"},
 		{"prod, real resolver, nil NoAuth pointer", bootGuardConfig("prod", true), nilPtr, contract.CodeConfigInvalid, "no authenticator"},

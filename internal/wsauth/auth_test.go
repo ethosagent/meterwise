@@ -81,7 +81,7 @@ func statusOf(err error) int {
 
 func TestAuthenticateOutcomes(t *testing.T) {
 	d := &dir{}
-	a := wsauth.New(d, 0)
+	a := wsauth.New(wsauth.Uncached(d.ByPublicID), 0)
 	for _, tc := range []struct {
 		name, path, remote string
 		status             int // 0 = authenticated
@@ -123,7 +123,7 @@ func TestAuthenticateOutcomes(t *testing.T) {
 
 func TestMalformedIDsNeverReachTheDirectory(t *testing.T) {
 	d := &dir{}
-	a := wsauth.New(d, 0)
+	a := wsauth.New(wsauth.Uncached(d.ByPublicID), 0)
 	for _, p := range []string{"/", "/w/", "/w//x", "/w/x", "/x/w/" + curID, "/w/" + curID + "x/v1"} {
 		if _, err := a.Authenticate(context.Background(), authReq(p, "198.51.100.1:1")); statusOf(err) != 404 {
 			t.Errorf("%s: %v", p, err)
@@ -135,11 +135,11 @@ func TestMalformedIDsNeverReachTheDirectory(t *testing.T) {
 }
 
 func TestLookupFailureAndTimeoutAre503(t *testing.T) {
-	a := wsauth.New(&dir{fail: errors.New("pg down")}, 0)
+	a := wsauth.New(wsauth.Uncached((&dir{fail: errors.New("pg down")}).ByPublicID), 0)
 	if _, err := a.Authenticate(context.Background(), authReq("/w/"+curID+"/x", "198.51.100.1:1")); statusOf(err) != 503 {
 		t.Fatalf("failure: %v", err)
 	}
-	slow := wsauth.New(&dir{block: true}, 30*time.Millisecond)
+	slow := wsauth.New(wsauth.Uncached((&dir{block: true}).ByPublicID), 30*time.Millisecond)
 	start := time.Now()
 	_, err := slow.Authenticate(context.Background(), authReq("/w/"+curID+"/x", "198.51.100.1:1"))
 	if statusOf(err) != 503 || time.Since(start) > time.Second {
@@ -147,13 +147,20 @@ func TestLookupFailureAndTimeoutAre503(t *testing.T) {
 	}
 }
 
-func TestParseAndRest(t *testing.T) {
-	id, rest, ok := wsauth.Parse("/w/" + curID + "/v1/chat/completions")
-	if !ok || id != curID || rest != "/v1/chat/completions" {
-		t.Fatalf("parse: %q %q %v", id, rest, ok)
-	}
-	if wsauth.Rest("/w/"+curID) != "/" || wsauth.Rest("/openai/v1") != "" {
-		t.Fatal("rest")
+func TestParse(t *testing.T) {
+	for _, tc := range []struct {
+		path, id, rest string
+		ok             bool
+	}{
+		{"/w/" + curID + "/v1/chat/completions", curID, "/v1/chat/completions", true},
+		{"/w/" + curID, curID, "/", true},
+		{"/openai/v1", "", "", false},
+		{"/w/short/v1", "", "", false},
+	} {
+		id, rest, ok := wsauth.Parse(tc.path)
+		if id != tc.id || rest != tc.rest || ok != tc.ok {
+			t.Errorf("Parse(%q) = %q %q %v", tc.path, id, rest, ok)
+		}
 	}
 }
 
@@ -201,7 +208,7 @@ func copyMeta(m map[string]any) map[string]any {
 type pathResolver struct{ base *url.URL }
 
 func (r pathResolver) Resolve(_ context.Context, _ tollgate.Tenant, req *http.Request) (tollgate.Provider, string, error) {
-	rest := wsauth.Rest(req.URL.Path)
+	_, rest, _ := wsauth.Parse(req.URL.Path)
 	if strings.HasSuffix(rest, "/messages") {
 		return tollgate.Provider{Name: "anthropic", Wire: tollgate.WireAnthropicMessages, BaseURL: r.base}, rest, nil
 	}
@@ -219,7 +226,7 @@ func newRig(t *testing.T) *rig {
 	up := testkit.NewFakeUpstream(t, testkit.Options{})
 	base, _ := url.Parse(up.URL)
 	p, err := tollgate.New(tollgate.Options{
-		Auth: wsauth.New(&dir{}, 0), Providers: pathResolver{base}, Limits: tollgate.DefaultLimits(),
+		Auth: wsauth.New(wsauth.Uncached((&dir{}).ByPublicID), 0), Providers: pathResolver{base}, Limits: tollgate.DefaultLimits(),
 		Admission: tollgate.Unlimited{}, Metrics: tollgate.DiscardSink{},
 	})
 	if err != nil {
