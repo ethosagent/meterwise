@@ -104,8 +104,8 @@ func (s *sessStore) queue(key, text string) {
 	}
 }
 
-// take removes and returns up to n queued notes, oldest first.
-func (s *sessStore) take(key string, n int) []string {
+// peek returns up to n queued notes, oldest first, leaving them queued.
+func (s *sessStore) peek(key string, n int) []string {
 	if n <= 0 {
 		return nil
 	}
@@ -116,10 +116,27 @@ func (s *sessStore) take(key string, n int) []string {
 	if e == nil || len(e.pending) == 0 {
 		return nil
 	}
-	n = min(n, len(e.pending))
-	out := append([]string(nil), e.pending[:n]...)
-	e.pending = e.pending[n:]
-	return out
+	return append([]string(nil), e.pending[:min(n, len(e.pending))]...)
+}
+
+// drop removes the notes peek returned from the front of the queue, as far as they are still there (a
+// concurrent call of the session may have taken them already).
+func (s *sessStore) drop(key string, taken []string) {
+	if len(taken) == 0 {
+		return
+	}
+	sh := s.shard(key)
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	e := s.entry(sh, key, false)
+	if e == nil {
+		return
+	}
+	i := 0
+	for i < len(taken) && i < len(e.pending) && e.pending[i] == taken[i] {
+		i++
+	}
+	e.pending = e.pending[i:]
 }
 
 func (s *sessStore) remove(key string) {

@@ -127,9 +127,10 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 		return nil, nil
 	}
 	p := h.decide(c, fired, cfg)
-	if ctx.Err() != nil {
+	if ctx.Err() != nil { // the chain stopped waiting: nothing is delivered, so nothing is used up (S2)
 		return nil, nil
 	}
+	h.commit(c, p)
 	if p.body != nil {
 		c.Body = p.body
 	}
