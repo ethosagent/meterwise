@@ -1,23 +1,14 @@
--- name: ListSessionsFirst :many
--- First page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
+-- name: ListSessions :many
+-- One page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
+-- A NULL cursor is the first page: the keyset bound becomes ('infinity', ''), which every finite row is below,
+-- so the planner still sees one row-comparison range on the (started_at, id) order.
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
        COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
        (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
 FROM sessions
 WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
   AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
-ORDER BY started_at DESC, id DESC
-LIMIT sqlc.arg(max_rows)::int;
-
--- name: ListSessionsAfter :many
--- The page after the keyset (cursor_at, cursor_id): rows strictly older in (started_at, id) order.
-SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
-       COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
-       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
-FROM sessions
-WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
-  AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
-  AND (started_at, id) < (sqlc.arg(cursor_at)::timestamptz, sqlc.arg(cursor_id)::text)
+  AND (started_at, id) < (COALESCE(sqlc.narg(cursor_at)::timestamptz, 'infinity'::timestamptz), COALESCE(sqlc.narg(cursor_id)::text, ''))
 ORDER BY started_at DESC, id DESC
 LIMIT sqlc.arg(max_rows)::int;
 
@@ -36,22 +27,16 @@ WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND session_id = sqlc.ar
 ORDER BY call_index, started_at, id
 LIMIT sqlc.arg(max_rows)::int;
 
--- name: StatsByDay :many
--- Per UTC day of [from_ts, to_ts): spend (priced calls only), calls and distinct sessions.
+-- name: Stats :many
+-- Per UTC day of [from_ts, to_ts) (spend over priced calls only, calls, distinct sessions) plus one totals row,
+-- the row whose day is NULL (the empty grouping set always yields a row, even for no calls).
 SELECT (started_at AT TIME ZONE 'UTC')::date AS day, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spend_micro,
        COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions
 FROM calls
 WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
   AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
-GROUP BY 1
-ORDER BY 1;
-
--- name: StatsTotals :one
-SELECT (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spend_micro, COUNT(*)::bigint AS calls,
-       COUNT(DISTINCT session_id)::bigint AS sessions
-FROM calls
-WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
-  AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz;
+GROUP BY GROUPING SETS (((started_at AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST;
 
 -- name: CallStatus :one
 -- Setup.status: the first call ever and today's count (since since_ts, the UTC day start).

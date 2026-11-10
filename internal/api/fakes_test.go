@@ -58,6 +58,10 @@ func (m *memTenancy) Setup(context.Context, contract.Principal, string) (contrac
 	return contract.SetupState{PublicID: "AAAAAAAAAAAAAAAAAAAAAA"}, nil
 }
 
+func (m *memTenancy) MonitorConfig(context.Context, contract.Principal, string) (contract.MonitorConfig, error) {
+	return contract.DefaultMonitorConfig(), nil
+}
+
 func (m *memTenancy) ListMembers(context.Context, contract.Principal) ([]contract.Member, error) {
 	return nil, nil
 }
@@ -141,8 +145,16 @@ func (emptyLedger) ListSessions(context.Context, contract.SessionQuery) (contrac
 	return contract.SessionPage{}, nil
 }
 
-func (emptyLedger) Session(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, error) {
-	return contract.SessionRecord{}, nil, nil
+func (emptyLedger) Session(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, bool, error) {
+	return contract.SessionRecord{}, nil, false, nil
+}
+
+func (emptyLedger) SessionMonitorEvents(context.Context, string, string) ([]contract.MonitorEventRecord, error) {
+	return nil, nil
+}
+
+func (emptyLedger) MonitorStats(context.Context, string, time.Time, time.Time) ([]contract.MonitorStatRow, error) {
+	return nil, nil
 }
 
 func (emptyLedger) Stats(context.Context, string, time.Time, time.Time) (contract.Stats, error) {

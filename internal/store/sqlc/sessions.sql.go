@@ -168,28 +168,28 @@ func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsPara
 	return items, nil
 }
 
-const listSessionsAfter = `-- name: ListSessionsAfter :many
+const listSessions = `-- name: ListSessions :many
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
        COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
        (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
 FROM sessions
 WHERE workspace_id = $1::text::uuid
   AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-  AND (started_at, id) < ($4::timestamptz, $5::text)
+  AND (started_at, id) < (COALESCE($4::timestamptz, 'infinity'::timestamptz), COALESCE($5::text, ''))
 ORDER BY started_at DESC, id DESC
 LIMIT $6::int
 `
 
-type ListSessionsAfterParams struct {
+type ListSessionsParams struct {
 	WorkspaceID string
 	FromTs      pgtype.Timestamptz
 	ToTs        pgtype.Timestamptz
 	CursorAt    pgtype.Timestamptz
-	CursorID    string
+	CursorID    pgtype.Text
 	MaxRows     int32
 }
 
-type ListSessionsAfterRow struct {
+type ListSessionsRow struct {
 	ID               string
 	WorkspaceID      string
 	Source           string
@@ -207,9 +207,11 @@ type ListSessionsAfterRow struct {
 	Client           string
 }
 
-// The page after the keyset (cursor_at, cursor_id): rows strictly older in (started_at, id) order.
-func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterParams) ([]ListSessionsAfterRow, error) {
-	rows, err := q.db.Query(ctx, listSessionsAfter,
+// One page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
+// A NULL cursor is the first page: the keyset bound becomes ('infinity', ”), which every finite row is below,
+// so the planner still sees one row-comparison range on the (started_at, id) order.
+func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]ListSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listSessions,
 		arg.WorkspaceID,
 		arg.FromTs,
 		arg.ToTs,
@@ -221,9 +223,9 @@ func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterPa
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListSessionsAfterRow
+	var items []ListSessionsRow
 	for rows.Next() {
-		var i ListSessionsAfterRow
+		var i ListSessionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,
@@ -251,117 +253,40 @@ func (q *Queries) ListSessionsAfter(ctx context.Context, arg ListSessionsAfterPa
 	return items, nil
 }
 
-const listSessionsFirst = `-- name: ListSessionsFirst :many
-SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
-       COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
-       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
-FROM sessions
-WHERE workspace_id = $1::text::uuid
-  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-ORDER BY started_at DESC, id DESC
-LIMIT $4::int
-`
-
-type ListSessionsFirstParams struct {
-	WorkspaceID string
-	FromTs      pgtype.Timestamptz
-	ToTs        pgtype.Timestamptz
-	MaxRows     int32
-}
-
-type ListSessionsFirstRow struct {
-	ID               string
-	WorkspaceID      string
-	Source           string
-	StartedAt        pgtype.Timestamptz
-	LastSeenAt       pgtype.Timestamptz
-	ClosedAt         pgtype.Timestamptz
-	Calls            int32
-	InputTokens      int64
-	OutputTokens     int64
-	CostMicro        int64
-	HasCost          bool
-	SavedMicro       int64
-	LikelySavedMicro int64
-	Outcome          string
-	Client           string
-}
-
-// First page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
-func (q *Queries) ListSessionsFirst(ctx context.Context, arg ListSessionsFirstParams) ([]ListSessionsFirstRow, error) {
-	rows, err := q.db.Query(ctx, listSessionsFirst,
-		arg.WorkspaceID,
-		arg.FromTs,
-		arg.ToTs,
-		arg.MaxRows,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListSessionsFirstRow
-	for rows.Next() {
-		var i ListSessionsFirstRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Source,
-			&i.StartedAt,
-			&i.LastSeenAt,
-			&i.ClosedAt,
-			&i.Calls,
-			&i.InputTokens,
-			&i.OutputTokens,
-			&i.CostMicro,
-			&i.HasCost,
-			&i.SavedMicro,
-			&i.LikelySavedMicro,
-			&i.Outcome,
-			&i.Client,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const statsByDay = `-- name: StatsByDay :many
+const stats = `-- name: Stats :many
 SELECT (started_at AT TIME ZONE 'UTC')::date AS day, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spend_micro,
        COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions
 FROM calls
 WHERE workspace_id = $1::text::uuid
   AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-GROUP BY 1
-ORDER BY 1
+GROUP BY GROUPING SETS (((started_at AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST
 `
 
-type StatsByDayParams struct {
+type StatsParams struct {
 	WorkspaceID string
 	FromTs      pgtype.Timestamptz
 	ToTs        pgtype.Timestamptz
 }
 
-type StatsByDayRow struct {
+type StatsRow struct {
 	Day        pgtype.Date
 	SpendMicro int64
 	Calls      int64
 	Sessions   int64
 }
 
-// Per UTC day of [from_ts, to_ts): spend (priced calls only), calls and distinct sessions.
-func (q *Queries) StatsByDay(ctx context.Context, arg StatsByDayParams) ([]StatsByDayRow, error) {
-	rows, err := q.db.Query(ctx, statsByDay, arg.WorkspaceID, arg.FromTs, arg.ToTs)
+// Per UTC day of [from_ts, to_ts) (spend over priced calls only, calls, distinct sessions) plus one totals row,
+// the row whose day is NULL (the empty grouping set always yields a row, even for no calls).
+func (q *Queries) Stats(ctx context.Context, arg StatsParams) ([]StatsRow, error) {
+	rows, err := q.db.Query(ctx, stats, arg.WorkspaceID, arg.FromTs, arg.ToTs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []StatsByDayRow
+	var items []StatsRow
 	for rows.Next() {
-		var i StatsByDayRow
+		var i StatsRow
 		if err := rows.Scan(
 			&i.Day,
 			&i.SpendMicro,
@@ -376,31 +301,4 @@ func (q *Queries) StatsByDay(ctx context.Context, arg StatsByDayParams) ([]Stats
 		return nil, err
 	}
 	return items, nil
-}
-
-const statsTotals = `-- name: StatsTotals :one
-SELECT (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spend_micro, COUNT(*)::bigint AS calls,
-       COUNT(DISTINCT session_id)::bigint AS sessions
-FROM calls
-WHERE workspace_id = $1::text::uuid
-  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-`
-
-type StatsTotalsParams struct {
-	WorkspaceID string
-	FromTs      pgtype.Timestamptz
-	ToTs        pgtype.Timestamptz
-}
-
-type StatsTotalsRow struct {
-	SpendMicro int64
-	Calls      int64
-	Sessions   int64
-}
-
-func (q *Queries) StatsTotals(ctx context.Context, arg StatsTotalsParams) (StatsTotalsRow, error) {
-	row := q.db.QueryRow(ctx, statsTotals, arg.WorkspaceID, arg.FromTs, arg.ToTs)
-	var i StatsTotalsRow
-	err := row.Scan(&i.SpendMicro, &i.Calls, &i.Sessions)
-	return i, err
 }

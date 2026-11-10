@@ -2,20 +2,13 @@ package store
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
-
-// DefaultAuditLimit is the page size when the caller does not ask; a page never holds more than
-// contract.MaxAuditLimit.
-const DefaultAuditLimit = 50
 
 // AppendAudit inserts one audit row. It is the only INSERT into audit_log (internal/audit calls it);
 // the table refuses updates and deletes, so nothing here can change a row once written.
@@ -44,14 +37,11 @@ func nonNilMap(m map[string]any) map[string]any {
 }
 
 // ListAudit returns one page of the org's audit log, newest first by (created_at, id). An invalid
-// cursor, workspace id or limit is a validation error; the limit defaults to DefaultAuditLimit.
+// cursor, workspace id or limit is a validation error; the limit defaults to contract.DefaultPageLimit.
 func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQuery) (contract.AuditPage, error) {
-	limit := q.Limit
-	switch {
-	case limit == 0:
-		limit = DefaultAuditLimit
-	case limit < contract.MinPageLimit || limit > contract.MaxAuditLimit:
-		return contract.AuditPage{}, contract.Invalid("limit", contract.LimitMessage)
+	limit, err := contract.ResolvePageLimit(q.Limit)
+	if err != nil {
+		return contract.AuditPage{}, err
 	}
 	if q.WorkspaceID != "" && !validID(q.WorkspaceID) {
 		return contract.AuditPage{}, contract.Invalid("workspaceId", "must be a workspace id")
@@ -101,26 +91,18 @@ func (s *Store) auditRows(ctx context.Context, orgID string, q contract.AuditQue
 	})
 }
 
-// The cursor is "<unix micro>.<id>" in URL-safe base64: opaque to clients, exact for Postgres's
-// microsecond timestamps.
 func encodeAuditCursor(at time.Time, id int64) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d.%d", at.UnixMicro(), id)))
+	return encodeCursor(at, strconv.FormatInt(id, 10))
 }
 
 func decodeAuditCursor(c string) (time.Time, int64, error) {
-	if c == "" {
-		return time.Time{}, 0, nil
+	at, raw, err := decodeCursor(c)
+	if err != nil || c == "" {
+		return at, 0, err
 	}
-	bad := contract.Invalid("cursor", "is not a cursor this API issued")
-	raw, err := base64.RawURLEncoding.DecodeString(c)
-	if err != nil {
-		return time.Time{}, 0, bad
+	id, perr := strconv.ParseInt(raw, 10, 64)
+	if perr != nil || id <= 0 {
+		return time.Time{}, 0, contract.Invalid("cursor", "is not a cursor this API issued")
 	}
-	us, idStr, ok := strings.Cut(string(raw), ".")
-	micro, err1 := strconv.ParseInt(us, 10, 64)
-	id, err2 := strconv.ParseInt(idStr, 10, 64)
-	if !ok || err1 != nil || err2 != nil || id <= 0 {
-		return time.Time{}, 0, bad
-	}
-	return time.UnixMicro(micro).UTC(), id, nil
+	return at, id, nil
 }

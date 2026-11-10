@@ -11,8 +11,10 @@ import (
 // write side belongs to internal/ledger (rule H4): nothing here can change a row.
 type Ledger interface {
 	ListSessions(ctx context.Context, q contract.SessionQuery) (contract.SessionPage, error)
-	Session(ctx context.Context, workspaceID, id string) (contract.SessionRecord, []contract.CallRecord, error)
+	Session(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, err error)
 	Stats(ctx context.Context, workspaceID string, from, to time.Time) (contract.Stats, error)
+	SessionMonitorEvents(ctx context.Context, workspaceID, sessionID string) ([]contract.MonitorEventRecord, error)
+	MonitorStats(ctx context.Context, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error)
 }
 
 // registerLedger wires the Plan 05 read routes. The gateway has already authorized the workspace
@@ -25,7 +27,7 @@ func (s *server) registerLedger() {
 
 func (s *server) ledger() (Ledger, error) {
 	if s.Ledger == nil {
-		return nil, contract.NewError(contract.CodeNotAvailable, "the ledger is not configured")
+		return nil, contract.Unavailable("the ledger", "")
 	}
 	return s.Ledger, nil
 }
@@ -74,14 +76,23 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	}
 	// The gateway authorized session:read on workspaceId before this runs; the store reads
 	// (workspace_id, id), so a session of another workspace is simply not found.
-	sess, calls, err := led.Session(c.Ctx, c.Query("workspaceId"), c.Path("id"))
+	sess, calls, truncated, err := led.Session(c.Ctx, c.Query("workspaceId"), c.Path("id"))
 	if err != nil {
 		return contract.SessionDetail{}, err
 	}
-	// the session row counts every call ever recorded; the read is capped, so fewer calls than that is a truncation
-	out := contract.SessionDetail{Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: sess.Calls > len(calls)}
+	events, err := led.SessionMonitorEvents(c.Ctx, c.Query("workspaceId"), c.Path("id"))
+	if err != nil {
+		return contract.SessionDetail{}, err
+	}
+	out := contract.SessionDetail{
+		Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: truncated,
+		MonitorEvents: make([]contract.MonitorEventView, len(events)),
+	}
 	for i, r := range calls {
 		out.Calls[i] = callView(r)
+	}
+	for i, e := range events {
+		out.MonitorEvents[i] = e.View()
 	}
 	return out, nil
 }
@@ -100,20 +111,45 @@ func sessionView(r contract.SessionRecord) contract.SessionView {
 }
 
 func callView(r contract.CallRecord) contract.CallView {
-	tools := r.ToolCalls
-	if tools == nil {
-		tools = []string{}
-	}
 	return contract.CallView{
 		ID: r.ID, CallIndex: r.CallIndex, StartedAt: contract.RFC3339(r.StartedAt), Provider: r.Provider, Model: r.Model, Wire: r.Wire,
 		Stream: r.Stream, Status: r.Status, Finish: r.Finish, InputTokens: r.Usage.Input, OutputTokens: r.Usage.Output,
 		CachedTokens: r.Usage.Cached, ReasoningTokens: r.Usage.Reasoning, CostUsd: r.Cost, TtfbMs: r.TTFBMs, DurationMs: r.DurationMs,
-		ToolCalls: tools, Blocked: r.Blocked, NotesInjected: r.NotesInjected,
+		ToolCalls: r.ToolCalls, Blocked: r.Blocked, NotesInjected: r.NotesInjected,
 	}
 }
 
 // statsRanges are the accepted ?range= values and their length in UTC days.
 var statsRanges = map[string]int{"7d": 7, "30d": 30}
+
+// now is the server's clock (Options.Now in tests, time.Now otherwise): every handler reads time here.
+func (s *server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// statsWindow is the [from, to) UTC-day window of a range of days ending with today.
+func statsWindow(now time.Time, days int) (from, to time.Time) {
+	today := contract.UTCDayStart(now)
+	return today.AddDate(0, 0, -(days - 1)), today.AddDate(0, 0, 1)
+}
+
+// fillDays turns the days that had calls into one entry per day of the window, zero-filled.
+func fillDays(from time.Time, days int, have []contract.StatsDay) []contract.StatsDayView {
+	byDay := make(map[string]contract.StatsDay, len(have))
+	for _, d := range have {
+		byDay[d.Day.UTC().Format(time.DateOnly)] = d
+	}
+	out := make([]contract.StatsDayView, 0, days)
+	for d := range days {
+		key := from.AddDate(0, 0, d).Format(time.DateOnly)
+		day := byDay[key]
+		out = append(out, contract.StatsDayView{Day: key, SpendUsd: day.Spend, Calls: day.Calls, Sessions: day.Sessions})
+	}
+	return out
+}
 
 func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
 	led, err := s.ledger()
@@ -128,28 +164,17 @@ func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
 	if !ok {
 		return contract.StatsView{}, contract.Invalid("range", "must be 7d or 30d")
 	}
-	now := time.Now()
-	if s.Now != nil {
-		now = s.Now()
-	}
-	today := now.UTC().Truncate(24 * time.Hour)
-	from, to := today.AddDate(0, 0, -(days-1)), today.AddDate(0, 0, 1)
+	from, to := statsWindow(s.now(), days)
 	st, err := led.Stats(c.Ctx, c.Path("id"), from, to)
 	if err != nil {
 		return contract.StatsView{}, err
 	}
-	have := make(map[string]contract.StatsDay, len(st.ByDay))
-	for _, d := range st.ByDay {
-		have[d.Day.UTC().Format(time.DateOnly)] = d
+	out := contract.StatsView{
+		SpendUsd: st.Spend, Calls: st.Calls, Sessions: st.Sessions, ByDay: fillDays(from, days, st.ByDay),
+		SavedUsd: st.Saved, LikelySavedUsd: st.Likely, // two numbers, never a total
 	}
-	out := contract.StatsView{SpendUsd: st.Spend, Calls: st.Calls, Sessions: st.Sessions, ByDay: make([]contract.StatsDayView, 0, days)}
 	if st.Sessions > 0 {
 		out.AvgCallsPerSession = float64(st.Calls) / float64(st.Sessions)
-	}
-	for d := range days {
-		key := from.AddDate(0, 0, d).Format(time.DateOnly)
-		day := have[key]
-		out.ByDay = append(out.ByDay, contract.StatsDayView{Day: key, SpendUsd: day.Spend, Calls: day.Calls, Sessions: day.Sessions})
 	}
 	return out, nil
 }

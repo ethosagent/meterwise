@@ -26,10 +26,12 @@ const PLAN_04_ACTIONS = [
   "group.member_remove",
   "group.members_update",
   "org.permissions_update",
+  "workspace.monitors_update", // Plan 06
+  "monitor_event.feedback", // Plan 06
 ];
 
 describe("audit action list", () => {
-  it("the generated list is the Plan 04 list", () => {
+  it("the generated list is the Plan 04 list plus the two Plan 06 actions", () => {
     expect([...AUDIT_ACTIONS]).toEqual(PLAN_04_ACTIONS);
   });
   it("the filter offers exactly the generated actions", () => {

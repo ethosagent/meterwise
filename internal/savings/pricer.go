@@ -4,6 +4,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,7 +22,18 @@ type TablePricer struct{ snap atomic.Pointer[snapshot] }
 
 type snapshot struct {
 	byProvider map[string][]series // series sorted by model, then rows by effective_from
+
+	// memo caches provider+model -> index into byProvider[provider] (-1: no series matches), filled
+	// lazily. The snapshot is immutable, so an entry never goes stale: Replace swaps in a new snapshot
+	// and its empty memo. Model names come from the wire, so the memo is bounded: past maxMemo entries
+	// a lookup just scans, as it did before.
+	memo  sync.Map
+	nMemo atomic.Int64
 }
+
+type memoKey struct{ provider, model string }
+
+const maxMemo = 4096
 
 type series struct {
 	model string
@@ -114,12 +126,7 @@ func (p *TablePricer) Cost(provider, model string, u contract.Usage, at time.Tim
 
 func (s *snapshot) find(provider, model string, at time.Time) (PriceRow, bool) {
 	list := s.byProvider[provider]
-	best := -1
-	for i, sr := range list {
-		if matches(sr.model, model) && (best < 0 || len(sr.model) > len(list[best].model)) {
-			best = i
-		}
-	}
+	best := s.seriesIndex(list, provider, model)
 	if best < 0 {
 		return PriceRow{}, false
 	}
@@ -170,4 +177,24 @@ func allDigits(s string) bool {
 		}
 	}
 	return s != ""
+}
+
+// seriesIndex is the index in list of the series that prices model (the longest matching name), or -1.
+func (s *snapshot) seriesIndex(list []series, provider, model string) int {
+	k := memoKey{provider, model}
+	if v, ok := s.memo.Load(k); ok {
+		return v.(int)
+	}
+	best := -1
+	for i, sr := range list {
+		if matches(sr.model, model) && (best < 0 || len(sr.model) > len(list[best].model)) {
+			best = i
+		}
+	}
+	if s.nMemo.Load() < maxMemo {
+		if _, loaded := s.memo.LoadOrStore(k, best); !loaded {
+			s.nMemo.Add(1)
+		}
+	}
+	return best
 }

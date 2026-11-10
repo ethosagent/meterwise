@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
 )
@@ -18,15 +16,8 @@ func adminExec(t *testing.T, dsn string, stmts ...string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
+	if err := pgtest.Exec(ctx, dsn, stmts...); err != nil {
 		t.Fatal(err)
-	}
-	defer func() { _ = conn.Close(ctx) }()
-	for _, s := range stmts {
-		if _, err := conn.Exec(ctx, s); err != nil {
-			t.Fatalf("%s: %v", s, err)
-		}
 	}
 }
 

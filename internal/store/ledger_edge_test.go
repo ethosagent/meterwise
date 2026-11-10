@@ -3,6 +3,7 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func TestSessionStartedAtNeverMovesAfterTheFirstInsert(t *testing.T) {
 	if _, err := s.WriteCalls(ctx, []contract.CallRecord{rec(ws, "early", "s1", 1, base, "ok", true, mu(10))}); err != nil {
 		t.Fatal(err)
 	}
-	sess, calls, err := s.Session(ctx, ws, "s1")
+	sess, calls, _, err := s.Session(ctx, ws, "s1")
 	if err != nil || sess.Calls != 2 || len(calls) != 2 {
 		t.Fatalf("%+v %d %v", sess, len(calls), err)
 	}
@@ -54,7 +55,7 @@ func TestUnreadableToolCallsAreCountedAndLoggedOnce(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&global, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	for range 2 {
-		_, calls, err := s.Session(ctx, ws, "s1")
+		_, calls, _, err := s.Session(ctx, ws, "s1")
 		if err != nil || len(calls) != 1 || len(calls[0].ToolCalls) != 0 {
 			t.Fatalf("%+v %v", calls, err)
 		}
@@ -67,5 +68,43 @@ func TestUnreadableToolCallsAreCountedAndLoggedOnce(t *testing.T) {
 	}
 	if global.Len() != 0 {
 		t.Fatalf("the store wrote to slog.Default: %s", global.String())
+	}
+}
+
+// A call with no tool calls reads back as an empty list, never nil (which would marshal as null).
+func TestSessionCallsNeverHaveNilToolCalls(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	r := rec(ws, "c1", "s1", 1, base, "ok", true, nil)
+	r.ToolCalls = nil
+	if _, err := s.WriteCalls(ctx, []contract.CallRecord{r}); err != nil {
+		t.Fatal(err)
+	}
+	_, calls, _, err := s.Session(ctx, ws, "s1")
+	if err != nil || len(calls) != 1 || calls[0].ToolCalls == nil || len(calls[0].ToolCalls) != 0 {
+		t.Fatalf("calls = %+v, %v; want one call with a non-nil empty ToolCalls", calls, err)
+	}
+}
+
+// The session read is capped at 5000 calls; the store, not the API, says whether it cut anything.
+func TestSessionReportsTruncation(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	for _, tc := range []struct {
+		n    int
+		want bool
+	}{{5000, false}, {5001, true}} {
+		sid := fmt.Sprintf("s%d", tc.n)
+		batch := make([]contract.CallRecord, tc.n)
+		for i := range batch {
+			batch[i] = rec(ws, fmt.Sprintf("%s-%d", sid, i), sid, i+1, base.Add(time.Duration(i)*time.Millisecond), "ok", true, nil)
+		}
+		if _, err := s.WriteCalls(ctx, batch); err != nil {
+			t.Fatal(err)
+		}
+		_, calls, truncated, err := s.Session(ctx, ws, sid)
+		if err != nil || len(calls) != min(tc.n, 5000) || truncated != tc.want {
+			t.Errorf("%d calls: got %d calls truncated=%v err=%v, want truncated=%v", tc.n, len(calls), truncated, err, tc.want)
+		}
 	}
 }

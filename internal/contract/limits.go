@@ -10,8 +10,6 @@ const (
 	MaxGraceMinutes = 24 * 60
 	// MaxAllowedCIDRs is how many source networks a workspace may list.
 	MaxAllowedCIDRs = 32
-	// MaxAuditLimit is the largest page the audit log serves: the one page bound of every paged list.
-	MaxAuditLimit = MaxPageLimit
 )
 
 // Limit is one named number of the contract; Name is its TypeScript constant.
@@ -26,6 +24,6 @@ func Limits() []Limit {
 		{"GRACE_MINUTES_DEFAULT", DefaultGraceMinutes},
 		{"GRACE_MINUTES_MAX", MaxGraceMinutes},
 		{"ALLOWED_CIDRS_MAX", MaxAllowedCIDRs},
-		{"AUDIT_LIMIT_MAX", MaxAuditLimit},
+		{"AUDIT_LIMIT_MAX", MaxPageLimit},
 	}
 }

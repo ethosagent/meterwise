@@ -43,18 +43,8 @@ func NewDatabase(t testing.TB) string {
 
 func exec(ctx context.Context, t testing.TB, dsn, stmt string) {
 	t.Helper()
-	cfg, err := pgx.ParseConfig(dsn)
-	if err != nil {
+	if err := Exec(ctx, dsn, stmt); err != nil {
 		t.Fatalf("pgtest: %v", err)
-	}
-	cfg.ConnectTimeout = 5 * time.Second
-	conn, err := pgx.ConnectConfig(ctx, cfg)
-	if err != nil {
-		t.Fatalf("pgtest: connect: %v", err)
-	}
-	defer func() { _ = conn.Close(ctx) }()
-	if _, err := conn.Exec(ctx, stmt); err != nil {
-		t.Fatalf("pgtest: %s: %v", stmt, err)
 	}
 }
 

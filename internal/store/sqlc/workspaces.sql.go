@@ -341,6 +341,25 @@ func (q *Queries) LockWorkspaceCreation(ctx context.Context, orgID string) error
 	return err
 }
 
+const lockWorkspaceSettings = `-- name: LockWorkspaceSettings :one
+SELECT settings FROM workspaces
+WHERE org_id = $1::text::uuid AND id = $2::text::uuid
+FOR UPDATE
+`
+
+type LockWorkspaceSettingsParams struct {
+	OrgID string
+	ID    string
+}
+
+// The settings of one org workspace, row-locked for a read-modify-write of one key (the monitors).
+func (q *Queries) LockWorkspaceSettings(ctx context.Context, arg LockWorkspaceSettingsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, lockWorkspaceSettings, arg.OrgID, arg.ID)
+	var settings []byte
+	err := row.Scan(&settings)
+	return settings, err
+}
+
 const retireCurrentPublicID = `-- name: RetireCurrentPublicID :one
 UPDATE workspace_public_ids SET retired_at = $1::timestamptz, grace_until = $2::timestamptz
 WHERE org_id = $3::text::uuid AND workspace_id = $4::text::uuid AND retired_at IS NULL
@@ -386,6 +405,26 @@ func (q *Queries) SetAllowedClientCIDRs(ctx context.Context, arg SetAllowedClien
 	return allowed_client_cidrs, err
 }
 
+const setWorkspaceMonitors = `-- name: SetWorkspaceMonitors :one
+UPDATE workspaces SET settings = jsonb_set(settings, '{monitors}', $1::jsonb, true)
+WHERE org_id = $2::text::uuid AND id = $3::text::uuid
+RETURNING settings
+`
+
+type SetWorkspaceMonitorsParams struct {
+	Monitors []byte
+	OrgID    string
+	ID       string
+}
+
+// Replace only settings.monitors; every other key of the settings is kept.
+func (q *Queries) SetWorkspaceMonitors(ctx context.Context, arg SetWorkspaceMonitorsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, setWorkspaceMonitors, arg.Monitors, arg.OrgID, arg.ID)
+	var settings []byte
+	err := row.Scan(&settings)
+	return settings, err
+}
+
 const setWorkspacePublicID = `-- name: SetWorkspacePublicID :exec
 UPDATE workspaces SET public_id = $1
 WHERE org_id = $2::text::uuid AND id = $3::text::uuid
@@ -403,7 +442,11 @@ func (q *Queries) SetWorkspacePublicID(ctx context.Context, arg SetWorkspacePubl
 }
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
-UPDATE workspaces SET name = COALESCE($1, name), settings = COALESCE($2::jsonb, settings)
+UPDATE workspaces SET name = COALESCE($1, name),
+    settings = CASE WHEN $2::jsonb IS NULL THEN settings
+                    ELSE ($2::jsonb - 'monitors')
+                         || CASE WHEN settings->'monitors' IS NOT NULL THEN jsonb_build_object('monitors', settings->'monitors')
+                                 ELSE '{}'::jsonb END END
 WHERE org_id = $3::text::uuid AND id = $4::text::uuid
 RETURNING id::text AS id, org_id::text AS org_id, public_id, name, is_default, settings, created_at,
           last_call_at, allowed_client_cidrs::text[] AS allowed_client_cidrs
@@ -428,6 +471,8 @@ type UpdateWorkspaceRow struct {
 	AllowedClientCidrs []string
 }
 
+// A settings replacement keeps settings.monitors (Plan 06): the monitors have their own validated route, so the
+// replacement's own "monitors" key is dropped and the stored one is put back, atomically in this statement.
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (UpdateWorkspaceRow, error) {
 	row := q.db.QueryRow(ctx, updateWorkspace,
 		arg.Name,

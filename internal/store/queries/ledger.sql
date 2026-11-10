@@ -10,26 +10,34 @@ SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'se
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'provider', r.j->>'model', r.j->>'wire',
        (r.j->>'stream')::bool, (r.j->>'status')::int, r.j->>'finish', (r.j->>'input')::bigint, (r.j->>'output')::bigint,
        (r.j->>'cached')::bigint, (r.j->>'reasoning')::bigint, (r.j->>'cost')::numeric / 1000000, (r.j->>'ttfbMs')::int,
-       (r.j->>'durationMs')::int, r.j->'toolCalls', (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
+       (r.j->>'durationMs')::int, COALESCE(r.j->'toolCalls', '[]'::jsonb), (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
 FROM jsonb_array_elements(sqlc.arg(calls_json)::jsonb) AS r(j)
 ON CONFLICT (id) DO NOTHING
 RETURNING id;
 
--- name: UpsertSession :exec
--- The only INSERT into sessions (H4). The ledger passes the aggregate of the calls a batch really inserted
--- (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed session.
--- started_at is the keyset sort key of the session list: it is set by the first insert and never changes.
+-- name: UpsertSessions :exec
+-- The only INSERT into sessions (H4), one statement for every session of a batch (a JSON array with one object per
+-- session, sorted so concurrent batches lock rows in one order). The ledger passes the aggregate of the calls a
+-- batch really inserted (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed
+-- session. started_at is the keyset sort key of the session list: set by the first insert, never changed. A missing
+-- "cost" is NULL (all calls unpriced). "saved" and "likely" are the two savings numbers of the inserted calls (monitor
+-- events that acted, by confidence; never summed, never observe). Money converts from micro-USD to numeric(14,6)
+-- here; times are unix microseconds.
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
-                      client, first_user_message_preview, last_finish, last_had_text)
-VALUES (sqlc.arg(id)::text, sqlc.arg(org_id)::text::uuid, sqlc.arg(workspace_id)::text::uuid, sqlc.arg(source)::text,
-        sqlc.arg(started_at)::timestamptz, sqlc.arg(last_seen_at)::timestamptz, sqlc.arg(calls)::int,
-        sqlc.arg(input_tokens)::bigint, sqlc.arg(output_tokens)::bigint, sqlc.narg(cost_micro)::bigint::numeric / 1000000,
-        NULLIF(sqlc.arg(client)::text, ''), NULLIF(sqlc.arg(preview)::text, ''), sqlc.arg(last_finish)::text,
-        sqlc.arg(last_had_text)::bool)
+                      client, first_user_message_preview, last_finish, last_had_text, saved_usd, likely_saved_usd)
+SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'source',
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond',
+       timestamptz 'epoch' + (r.j->>'lastSeenUs')::bigint * interval '1 microsecond',
+       (r.j->>'calls')::int, (r.j->>'input')::bigint, (r.j->>'output')::bigint, (r.j->>'cost')::numeric / 1000000,
+       NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool,
+       (r.j->>'saved')::numeric / 1000000, (r.j->>'likely')::numeric / 1000000
+FROM jsonb_array_elements(sqlc.arg(sessions_json)::jsonb) AS r(j)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
     calls = sessions.calls + EXCLUDED.calls,
     input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
     output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
+    saved_usd = sessions.saved_usd + EXCLUDED.saved_usd,
+    likely_saved_usd = sessions.likely_saved_usd + EXCLUDED.likely_saved_usd,
     cost_usd = CASE WHEN sessions.cost_usd IS NULL AND EXCLUDED.cost_usd IS NULL THEN NULL
                     ELSE COALESCE(sessions.cost_usd, 0) + COALESCE(EXCLUDED.cost_usd, 0) END,
     client = COALESCE(sessions.client, EXCLUDED.client),
@@ -40,16 +48,42 @@ ON CONFLICT (workspace_id, id) DO UPDATE SET
     outcome = CASE WHEN EXCLUDED.last_seen_at > sessions.last_seen_at THEN 'open' ELSE sessions.outcome END,
     last_seen_at = GREATEST(sessions.last_seen_at, EXCLUDED.last_seen_at);
 
--- name: CloseSession :execrows
--- Finalise a quiet session: closed_at and the outcome heuristic (last finish ok and non-empty assistant
--- text is completed, anything else abandoned). An already closed session is left alone.
-UPDATE sessions
-SET closed_at = sqlc.arg(closed_at)::timestamptz,
-    outcome = CASE WHEN last_finish = 'ok' AND last_had_text THEN 'completed' ELSE 'abandoned' END
-WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND id = sqlc.arg(id)::text AND closed_at IS NULL;
+-- name: CloseSessions :execrows
+-- Finalise quiet sessions, one statement per flush (a JSON array of {workspaceId, id, atUs}): closed_at and the
+-- outcome heuristic (last finish ok and non-empty assistant text is completed, anything else abandoned). An already
+-- closed session is left alone.
+UPDATE sessions s
+SET closed_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond',
+    outcome = CASE WHEN s.last_finish = 'ok' AND s.last_had_text THEN 'completed' ELSE 'abandoned' END
+FROM jsonb_array_elements(sqlc.arg(closes_json)::jsonb) AS t(j)
+WHERE s.workspace_id = (t.j->>'workspaceId')::uuid AND s.id = t.j->>'id' AND s.closed_at IS NULL;
 
--- name: TouchWorkspaceLastCall :exec
--- One coalesced touch per workspace per batch; never moves last_call_at backwards.
-UPDATE workspaces
-SET last_call_at = GREATEST(COALESCE(last_call_at, sqlc.arg(at)::timestamptz), sqlc.arg(at)::timestamptz)
-WHERE id = sqlc.arg(workspace_id)::text::uuid AND org_id = sqlc.arg(org_id)::text::uuid;
+-- name: TouchWorkspacesLastCall :exec
+-- One statement per batch (a JSON array of {workspaceId, orgId, atUs}): each workspace's last_call_at moves to its
+-- newest call end, and only forward (a batch of older calls writes nothing).
+UPDATE workspaces w
+SET last_call_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond'
+FROM jsonb_array_elements(sqlc.arg(touches_json)::jsonb) AS t(j)
+WHERE w.id = (t.j->>'workspaceId')::uuid AND w.org_id = (t.j->>'orgId')::uuid
+  AND (w.last_call_at IS NULL OR w.last_call_at < timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond');
+
+-- name: InsertMonitorEvents :execrows
+-- The only INSERT into monitor_events (H4): one statement for the verdicts of the calls a batch really inserted (a
+-- JSON array of event objects), idempotent on (workspace_id, call_id, monitor). ts is the call's start;
+-- "estMicro" is micro-USD, converted to numeric(14,6) here.
+INSERT INTO monitor_events (org_id, workspace_id, session_id, call_id, call_index, ts, monitor, mode, action, evidence,
+                            est_saved_tokens, est_saved_usd, confidence)
+SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId', (r.j->>'callIndex')::int,
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'monitor', r.j->>'mode', r.j->>'action',
+       r.j->'evidence', (r.j->>'estTokens')::bigint, (r.j->>'estMicro')::numeric / 1000000, r.j->>'confidence'
+FROM jsonb_array_elements(sqlc.arg(events_json)::jsonb) AS r(j)
+ON CONFLICT (workspace_id, call_id, monitor) DO NOTHING;
+
+-- name: SetMonitorEventFeedback :one
+-- The only UPDATE of monitor_events (H4): feedback on one event of one workspace; a foreign or unknown id matches no
+-- row (the store reports not_found). A NULL feedback clears it.
+UPDATE monitor_events
+SET feedback = sqlc.narg(feedback)::text
+WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND id = sqlc.arg(id)::bigint
+RETURNING id, org_id::text AS org_id, workspace_id::text AS workspace_id, session_id, call_id, call_index, ts, monitor, mode, action,
+          evidence, est_saved_tokens, (est_saved_usd * 1000000)::bigint AS est_saved_micro, confidence, feedback, created_at;

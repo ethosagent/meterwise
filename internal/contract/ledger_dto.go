@@ -51,9 +51,10 @@ type SessionList struct {
 // SessionDetail is GET /api/sessions/{id}: the session and its calls in call order. Truncated is true
 // when the session has more calls than Calls holds (the detail returns at most 5000).
 type SessionDetail struct {
-	Session   SessionView `json:"session"`
-	Calls     []CallView  `json:"calls"`
-	Truncated bool        `json:"truncated"`
+	Session       SessionView        `json:"session"`
+	Calls         []CallView         `json:"calls"`
+	Truncated     bool               `json:"truncated"`
+	MonitorEvents []MonitorEventView `json:"monitorEvents"` // call order, at most MonitorEventCap
 }
 
 // StatsDayView is one UTC day of the stats response; Day is YYYY-MM-DD.
@@ -72,4 +73,6 @@ type StatsView struct {
 	Sessions           int            `json:"sessions"`
 	AvgCallsPerSession float64        `json:"avgCallsPerSession"`
 	ByDay              []StatsDayView `json:"byDay"`
+	SavedUsd           MicroUSD       `json:"savedUsd"`       // certain savings of the range
+	LikelySavedUsd     MicroUSD       `json:"likelySavedUsd"` // likely savings of the range; never summed with SavedUsd
 }

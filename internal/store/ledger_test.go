@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func TestWriteCallsIsIdempotentAndAggregatesSessions(t *testing.T) {
 	if err != nil || again.Inserted != 0 || again.Duplicates != 3 {
 		t.Fatalf("replay = %+v, %v", again, err)
 	}
-	sess, calls, err := s.Session(ctx, ws, "s1")
+	sess, calls, _, err := s.Session(ctx, ws, "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestWriteCallsIsIdempotentAndAggregatesSessions(t *testing.T) {
 	if _, err := s.WriteCalls(ctx, []contract.CallRecord{rec(ws, "c4", "s3", 1, base, "ok", true, nil)}); err != nil {
 		t.Fatal(err)
 	}
-	if s3, _, _ := s.Session(ctx, ws, "s3"); s3.Cost != nil {
+	if s3, _, _, _ := s.Session(ctx, ws, "s3"); s3.Cost != nil {
 		t.Fatalf("all-unpriced session cost = %v, want NULL", *s3.Cost)
 	}
 	// last_call_at moved to the newest call end, via the setup status
@@ -86,11 +87,11 @@ func TestSessionsAreKeyedByWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ws := range []string{a, b} {
-		if sess, calls, err := s.Session(ctx, ws, "same"); err != nil || sess.Calls != 1 || len(calls) != 1 || sess.WorkspaceID != ws {
+		if sess, calls, _, err := s.Session(ctx, ws, "same"); err != nil || sess.Calls != 1 || len(calls) != 1 || sess.WorkspaceID != ws {
 			t.Fatalf("workspace %s: %+v %v %v", ws, sess, calls, err)
 		}
 	}
-	if _, _, err := s.Session(ctx, missingID, "same"); code(err) != contract.CodeNotFound {
+	if _, _, _, err := s.Session(ctx, missingID, "same"); code(err) != contract.CodeNotFound {
 		t.Fatalf("a session in another workspace must be not found: %v", err)
 	}
 }
@@ -118,25 +119,25 @@ func TestCloseSessionOutcomeHeuristic(t *testing.T) {
 			t.Fatal(err)
 		}
 		closedAt := base.Add(time.Hour)
-		if ok, err := s.CloseSession(ctx, ws, tc.sess, closedAt); err != nil || !ok {
+		if ok, err := closeOne(ctx, s, ws, tc.sess, closedAt); err != nil || !ok {
 			t.Fatalf("%s: close = %v, %v", tc.sess, ok, err)
 		}
-		got, _, err := s.Session(ctx, ws, tc.sess)
+		got, _, _, err := s.Session(ctx, ws, tc.sess)
 		if err != nil || got.Outcome != tc.want || got.ClosedAt == nil || !got.ClosedAt.Equal(closedAt) {
 			t.Errorf("%s: outcome %q closed %v, want %q (%v)", tc.sess, got.Outcome, got.ClosedAt, tc.want, err)
 		}
 	}
-	if ok, err := s.CloseSession(ctx, ws, "done", base.Add(2*time.Hour)); err != nil || ok {
+	if ok, err := closeOne(ctx, s, ws, "done", base.Add(2*time.Hour)); err != nil || ok {
 		t.Fatalf("closing a closed session changed it: %v %v", ok, err)
 	}
-	if ok, err := s.CloseSession(ctx, ws, "nope", base); err != nil || ok {
+	if ok, err := closeOne(ctx, s, ws, "nope", base); err != nil || ok {
 		t.Fatalf("closing an unknown session: %v %v", ok, err)
 	}
 	// a later call reopens a closed session
 	if _, err := s.WriteCalls(ctx, []contract.CallRecord{rec(ws, "again", "done", 3, base.Add(3*time.Hour), "ok", true, mu(5))}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := s.Session(ctx, ws, "done"); got.Outcome != contract.OutcomeOpen || got.ClosedAt != nil || got.Calls != 3 {
+	if got, _, _, _ := s.Session(ctx, ws, "done"); got.Outcome != contract.OutcomeOpen || got.ClosedAt != nil || got.Calls != 3 {
 		t.Fatalf("reopen: %+v", got)
 	}
 }
@@ -218,4 +219,60 @@ func TestPricingIsSeeded(t *testing.T) {
 	if !seen["openai"] || !seen["anthropic"] {
 		t.Fatalf("providers seeded = %v", seen)
 	}
+}
+
+// closeOne closes a single session through the batch API and reports whether a row changed.
+func closeOne(ctx context.Context, s *store.Store, ws, id string, at time.Time) (bool, error) {
+	n, err := s.CloseSessions(ctx, []contract.SessionClose{{WorkspaceID: ws, SessionID: id, At: at}})
+	return n > 0, err
+}
+
+// One CloseSessions statement finalises many sessions, skips closed or unknown ones and a malformed workspace id.
+func TestCloseSessionsBatch(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	batch := []contract.CallRecord{
+		rec(ws, "c1", "a", 1, base, "ok", true, mu(1)),
+		rec(ws, "c2", "b", 1, base, "error", false, mu(1)),
+		rec(ws, "c3", "c", 1, base, "ok", true, mu(1)),
+	}
+	if _, err := s.WriteCalls(ctx, batch); err != nil {
+		t.Fatal(err)
+	}
+	at := base.Add(time.Hour)
+	n, err := s.CloseSessions(ctx, []contract.SessionClose{sc(ws, "a", at), sc(ws, "b", at), sc(ws, "nope", at), sc("not-a-uuid", "c", at)})
+	if err != nil || n != 2 {
+		t.Fatalf("closed %d, %v; want 2", n, err)
+	}
+	for id, want := range map[string]string{"a": contract.OutcomeCompleted, "b": contract.OutcomeAbandoned, "c": contract.OutcomeOpen} {
+		if got, _, _, _ := s.Session(ctx, ws, id); got.Outcome != want {
+			t.Errorf("session %s outcome = %s, want %s", id, got.Outcome, want)
+		}
+	}
+	if n, err := s.CloseSessions(ctx, []contract.SessionClose{sc(ws, "a", at)}); err != nil || n != 0 {
+		t.Errorf("re-closing changed %d rows, %v", n, err)
+	}
+	if n, err := s.CloseSessions(ctx, nil); err != nil || n != 0 {
+		t.Errorf("empty close = %d, %v", n, err)
+	}
+}
+
+// last_call_at only moves forward: a batch of older calls leaves it alone (carry L8).
+func TestLastCallAtOnlyMovesForward(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	for i, at := range []time.Time{base.Add(time.Hour), base, base.Add(2 * time.Hour)} {
+		if _, err := s.WriteCalls(ctx, []contract.CallRecord{rec(ws, fmt.Sprintf("c%d", i), "s", i+1, at, "ok", true, mu(1))}); err != nil {
+			t.Fatal(err)
+		}
+		w, err := s.Workspace(ctx, store.OrgID(), ws)
+		want := []time.Time{base.Add(time.Hour + time.Second), base.Add(time.Hour + time.Second), base.Add(2*time.Hour + time.Second)}[i]
+		if err != nil || w.LastCallAt == nil || !w.LastCallAt.Equal(want) {
+			t.Fatalf("after batch %d last_call_at = %v, %v; want %v", i, w.LastCallAt, err, want)
+		}
+	}
+}
+
+func sc(ws, id string, at time.Time) contract.SessionClose {
+	return contract.SessionClose{WorkspaceID: ws, SessionID: id, At: at}
 }

@@ -50,7 +50,7 @@ func TestSessionCloseThatKeepsFailingIsCountedAsLost(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := h.Status()
-	if st["lost_closes"] != int64(2) || st["sessions_closed"] != int64(0) || st["flush_errors"].(int64) < 2 {
+	if st["lost_closes"] != int64(2) || st["sessions_closed"] != int64(0) || st["flush_errors"].(int64) < 1 {
 		t.Fatalf("status %v", st)
 	}
 }
@@ -94,5 +94,15 @@ func TestRecordFromAnotherOrgIsRefusedAndCounted(t *testing.T) {
 	st := h.Status()
 	if len(got) != 1 || got[0].ID != "org-2" || st["skipped_wrong_org"] != int64(1) || st["enqueued"] != int64(1) {
 		t.Fatalf("rows %+v status %v", got, st)
+	}
+}
+
+// The Writer port carries the store's data-problem counters, so /statusz shows them for any Writer.
+func TestStatusReportsWriterCounters(t *testing.T) {
+	w := &fakeWriter{unreadable: 3, unexpected: 2}
+	h := newHook(t, w, nil)
+	st := h.Status()
+	if st["unreadable_tool_calls"] != int64(3) || st["unexpected_55000"] != int64(2) {
+		t.Fatalf("status %v", st)
 	}
 }

@@ -46,7 +46,9 @@ func (e pricingError) Error() string { return string(e) }
 
 const errEmptyPricing = pricingError("ledger: the pricing table is empty; keeping the previous prices")
 
-// Run loads now and then every Every until ctx ends; failures are logged and the next tick retries.
+// Run reloads every Every until ctx ends, starting one tick from now: the caller has just loaded the table
+// (startLedger does, synchronously), so a second immediate read would be wasted. Failures are logged and
+// the next tick retries.
 func (l *PriceLoader) Run(ctx context.Context) {
 	every := l.Every
 	if every <= 0 {
@@ -61,7 +63,6 @@ func (l *PriceLoader) Run(ctx context.Context) {
 			log.LogAttrs(ctx, slog.LevelError, "ledger: pricing refresh failed", slog.String("err", err.Error()))
 		}
 	}
-	load()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {

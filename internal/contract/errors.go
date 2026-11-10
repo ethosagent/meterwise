@@ -144,3 +144,13 @@ func (e *Error) Body() ErrorBody {
 func Forbidden(message, reason string) *Error {
 	return &Error{Code: CodeForbidden, Message: message, Reason: reason}
 }
+
+// Unavailable is the one not_available error for a port that is not wired in this build or process:
+// "<what> is not configured", plus ", so <so>" when the consequence is worth naming.
+func Unavailable(what, so string) *Error {
+	msg := what + " is not configured"
+	if so != "" {
+		msg += ", so " + so
+	}
+	return NewError(CodeNotAvailable, msg)
+}

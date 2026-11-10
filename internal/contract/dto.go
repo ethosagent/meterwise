@@ -305,6 +305,11 @@ type DTO struct {
 // DTOs lists every API type exported to the web twin and openapi.json, in a
 // fixed order. A new DTO is added here, nowhere else.
 func DTOs() []DTO {
+	return append(coreDTOs(), monitorDTOs()...)
+}
+
+// coreDTOs are the Plan 01-05 types.
+func coreDTOs() []DTO {
 	return []DTO{
 		{"Health", reflect.TypeFor[Health]()},
 		{"Version", reflect.TypeFor[Version]()},

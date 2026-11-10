@@ -1,10 +1,10 @@
 package ledger
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,7 +16,11 @@ import (
 // Writer is what the batcher needs from the store; *store.Store implements it and tests fake it.
 type Writer interface {
 	WriteCalls(ctx context.Context, recs []contract.CallRecord) (store.WriteResult, error)
-	CloseSession(ctx context.Context, workspaceID, sessionID string, at time.Time) (bool, error)
+	CloseSessions(ctx context.Context, closes []contract.SessionClose) (int, error)
+	// UnreadableToolCalls counts stored tool_calls values the store could not read; UnexpectedStateErrors
+	// counts 55000 errors whose wording the retry policy does not recognise. Both go to /statusz.
+	UnreadableToolCalls() int64
+	UnexpectedStateErrors() int64
 }
 
 // Options configures the hook. Zero values take the documented defaults.
@@ -36,9 +40,23 @@ type Options struct {
 	RetryWindow time.Duration
 	// RetryBackoffMax caps the doubled backoff; default 5 s.
 	RetryBackoffMax time.Duration
-	Log             *slog.Logger
-	Now             func() time.Time
+	// Estimator prices what a verdict saves (savings.Estimate when the host wires it); nil finds nothing:
+	// zero tokens, confidence none, so verdicts are recorded without a saving.
+	Estimator Estimator
+	Log       *slog.Logger
+	Now       func() time.Time
 }
+
+// Defaults of the zero Options values.
+const (
+	defaultQueueSize       = 10_000
+	defaultBatchSize       = 500
+	defaultFlushInterval   = 250 * time.Millisecond
+	defaultRetries         = 3
+	defaultRetryBackoff    = 200 * time.Millisecond
+	defaultRetryWindow     = 30 * time.Second
+	defaultRetryBackoffMax = 5 * time.Second
+)
 
 func (o Options) withDefaults() (Options, error) {
 	if o.Writer == nil || o.Pricer == nil {
@@ -48,26 +66,16 @@ func (o Options) withDefaults() (Options, error) {
 		on := true
 		o.PrivacyMode = &on
 	}
-	if o.QueueSize <= 0 {
-		o.QueueSize = 10_000
-	}
-	if o.BatchSize <= 0 {
-		o.BatchSize = 500
-	}
-	if o.FlushInterval <= 0 {
-		o.FlushInterval = 250 * time.Millisecond
-	}
-	if o.Retries <= 0 {
-		o.Retries = 3
-	}
-	if o.RetryBackoff <= 0 {
-		o.RetryBackoff = 200 * time.Millisecond
-	}
-	if o.RetryWindow <= 0 {
-		o.RetryWindow = 30 * time.Second
-	}
-	if o.RetryBackoffMax <= 0 {
-		o.RetryBackoffMax = 5 * time.Second
+	// cmp.Or takes the first non-zero value; max(v, 0) makes a negative setting mean "default" too.
+	o.QueueSize = cmp.Or(max(o.QueueSize, 0), defaultQueueSize)
+	o.BatchSize = cmp.Or(max(o.BatchSize, 0), defaultBatchSize)
+	o.FlushInterval = cmp.Or(max(o.FlushInterval, 0), defaultFlushInterval)
+	o.Retries = cmp.Or(max(o.Retries, 0), defaultRetries)
+	o.RetryBackoff = cmp.Or(max(o.RetryBackoff, 0), defaultRetryBackoff)
+	o.RetryWindow = cmp.Or(max(o.RetryWindow, 0), defaultRetryWindow)
+	o.RetryBackoffMax = cmp.Or(max(o.RetryBackoffMax, 0), defaultRetryBackoffMax)
+	if o.Estimator == nil {
+		o.Estimator = zeroEstimate
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
@@ -97,12 +105,19 @@ type queue struct {
 	abort  context.CancelFunc // ends the batcher's writes when Close's context expires
 
 	enqueued, dropped, flushed, duplicates, lost, lostCloses, skipped, wrongOrg, unpriced, sessionsClosed, flushErrors atomic.Int64
+	// blocksDowngraded counts block verdicts on a call that already had usage (the upstream was reached first);
+	// invalidVerdicts counts verdicts dropped for a name, mode or action outside the fixed sets.
+	blocksDowngraded, invalidVerdicts atomic.Int64
 
-	errMu     sync.Mutex
-	refused   map[int]int64 // calls refused before the upstream, by HTTP status
+	// refused counts calls refused before the upstream, indexed by HTTP status (a status outside 0..599 is 0).
+	refused [maxStatus]atomic.Int64
+
+	errMu     sync.Mutex // guards lastErr and lastFlush
 	lastErr   string
 	lastFlush time.Time
 }
+
+const maxStatus = 600
 
 func newQueue(o Options) *queue {
 	return &queue{o: o, ch: make(chan item, o.QueueSize), stop: make(chan struct{}), done: make(chan struct{})}
@@ -132,12 +147,10 @@ func (q *queue) enqueue(it item) {
 
 // refuse counts a call refused before it reached the upstream.
 func (q *queue) refuse(status int) {
-	q.errMu.Lock()
-	if q.refused == nil {
-		q.refused = map[int]int64{}
+	if status < 0 || status >= maxStatus {
+		status = 0
 	}
-	q.refused[status]++
-	q.errMu.Unlock()
+	q.refused[status].Add(1)
 }
 
 func (q *queue) close(ctx context.Context) error {
@@ -170,27 +183,16 @@ func (q *queue) run(ctx context.Context) {
 	for {
 		select {
 		case it := <-q.ch:
-			buf = q.add(ctx, buf, it, false)
-		case <-tick.C:
-			if len(buf) > 0 {
-				q.flush(ctx, buf, false)
-				buf = buf[:0]
+			if buf = append(buf, it); len(buf) >= q.o.BatchSize {
+				buf = q.flush(ctx, buf, false)
 			}
+		case <-tick.C:
+			buf = q.flush(ctx, buf, false)
 		case <-q.stop:
 			q.drain(ctx, buf)
 			return
 		}
 	}
-}
-
-// add appends it and flushes a full batch.
-func (q *queue) add(ctx context.Context, buf []item, it item, final bool) []item {
-	buf = append(buf, it)
-	if len(buf) >= q.o.BatchSize {
-		q.flush(ctx, buf, final)
-		buf = buf[:0]
-	}
-	return buf
 }
 
 // drain writes everything still queued; close() holds the write lock before stop, so nothing more
@@ -199,172 +201,42 @@ func (q *queue) drain(ctx context.Context, buf []item) {
 	for {
 		select {
 		case it := <-q.ch:
-			buf = q.add(ctx, buf, it, true)
-		default:
-			if len(buf) > 0 {
-				q.flush(ctx, buf, true)
+			if buf = append(buf, it); len(buf) >= q.o.BatchSize {
+				buf = q.flush(ctx, buf, true)
 			}
+		default:
+			q.flush(ctx, buf, true)
 			return
 		}
 	}
 }
 
-// flush writes the calls of buf in one transaction, then applies its session closes. A failed batch
-// is retried with backoff: for the retry window with doubling backoff while the database is
-// unreachable, otherwise Retries times (not when shutting down). One that keeps failing for a reason
-// other than an unreachable database is retried record by record, each with the same small retry, so
-// a single poison record cannot sink the rest.
-func (q *queue) flush(parent context.Context, buf []item, final bool) {
+// flush writes the calls of buf in one transaction, then applies its session closes, and returns buf
+// emptied (the flush owns the reset; an empty buf is a no-op). A failed batch is retried with backoff:
+// for the retry window with doubling backoff while the database is unreachable, otherwise Retries times
+// (not when shutting down). One that keeps failing for a reason other than an unreachable database is
+// retried record by record, each with the same small retry, so a single poison record cannot sink the rest.
+func (q *queue) flush(parent context.Context, buf []item, final bool) []item {
+	if len(buf) == 0 {
+		return buf
+	}
 	var calls []contract.CallRecord
+	var closes []contract.SessionClose
 	for _, it := range buf {
 		if it.call != nil {
 			calls = append(calls, *it.call)
+		} else {
+			closes = append(closes, contract.SessionClose{WorkspaceID: it.closeWS, SessionID: it.closeID, At: it.closeAt})
 		}
 	}
-	// one retry budget for the whole flush: an outage burns it once, not once per operation
-	deadline := time.Now().Add(q.o.RetryWindow)
+	plan := retryPlan{final: final, deadline: time.Now().Add(q.o.RetryWindow)}
 	ctx, cancel := context.WithTimeout(parent, q.o.RetryWindow+30*time.Second)
 	defer cancel()
 	if len(calls) > 0 {
-		q.writeCalls(ctx, calls, final, deadline)
+		q.writeCalls(ctx, calls, plan)
 	}
-	for _, it := range buf {
-		if it.call != nil {
-			continue
-		}
-		q.closeSession(ctx, it, final, deadline)
+	if len(closes) > 0 {
+		q.closeSessions(ctx, closes, plan)
 	}
-}
-
-// closeSession applies one session close with the retry policy of a call batch. A close that still
-// fails is counted in lost_closes: the session stays open until a later call or close touches it.
-func (q *queue) closeSession(ctx context.Context, it item, final bool, deadline time.Time) {
-	for attempt := 1; ; attempt++ {
-		ok, err := q.o.Writer.CloseSession(ctx, it.closeWS, it.closeID, it.closeAt)
-		if err == nil {
-			if ok {
-				q.sessionsClosed.Add(1)
-			}
-			q.ok()
-			return
-		}
-		q.fail(ctx, err)
-		if !q.again(ctx, attempt, deadline, err, final) {
-			break
-		}
-	}
-	q.lostCloses.Add(1)
-}
-
-// again sleeps the backoff of a failed attempt and reports whether to try once more. While the database
-// is unreachable the backoff doubles up to RetryBackoffMax and the tries last until deadline, also
-// during the final flush (Close's context ends them); any other failure gets Retries attempts with a
-// linear backoff, none during the final flush. A cancelled ctx never retries.
-func (q *queue) again(ctx context.Context, attempt int, deadline time.Time, err error, final bool) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	var d time.Duration
-	if store.IsTransient(err) {
-		d = q.o.RetryBackoff
-		for i := 1; i < attempt && d < q.o.RetryBackoffMax; i++ {
-			d *= 2
-		}
-		d = min(d, q.o.RetryBackoffMax)
-		if time.Now().Add(d).After(deadline) {
-			return false
-		}
-	} else {
-		if final || attempt >= q.o.Retries {
-			return false
-		}
-		d = time.Duration(attempt) * q.o.RetryBackoff
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
-func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, final bool, deadline time.Time) {
-	err := q.tryWrite(ctx, calls, final, deadline)
-	if err == nil {
-		q.ok()
-		return
-	}
-	if len(calls) > 1 && !store.IsTransient(err) && ctx.Err() == nil {
-		for _, c := range calls { // isolate the record the database refuses
-			if q.tryWrite(ctx, []contract.CallRecord{c}, final, deadline) != nil {
-				q.lost.Add(1)
-			}
-		}
-		return
-	}
-	q.lost.Add(int64(len(calls)))
-}
-
-// tryWrite writes recs, retrying as again allows; it returns the last error, or nil once written.
-func (q *queue) tryWrite(ctx context.Context, recs []contract.CallRecord, final bool, deadline time.Time) error {
-	for attempt := 1; ; attempt++ {
-		res, err := q.o.Writer.WriteCalls(ctx, recs)
-		if err == nil {
-			q.flushed.Add(int64(res.Inserted))
-			q.duplicates.Add(int64(res.Duplicates))
-			return nil
-		}
-		q.fail(ctx, err)
-		if !q.again(ctx, attempt, deadline, err, final) {
-			return err
-		}
-	}
-}
-
-func (q *queue) fail(ctx context.Context, err error) {
-	q.flushErrors.Add(1)
-	q.errMu.Lock()
-	q.lastErr = err.Error()
-	q.errMu.Unlock()
-	q.o.Log.LogAttrs(ctx, slog.LevelError, "ledger: flush failed", slog.String("err", err.Error()))
-}
-
-func (q *queue) ok() {
-	q.errMu.Lock()
-	q.lastErr = ""
-	q.lastFlush = q.o.Now()
-	q.errMu.Unlock()
-}
-
-func (q *queue) status() map[string]any {
-	q.errMu.Lock()
-	lastErr, lastFlush := q.lastErr, q.lastFlush
-	refused := make(map[string]int64, len(q.refused))
-	for status, n := range q.refused {
-		refused[strconv.Itoa(status)] = n
-	}
-	q.errMu.Unlock()
-	st := map[string]any{
-		"queue_depth":          len(q.ch),
-		"queue_capacity":       cap(q.ch),
-		"enqueued":             q.enqueued.Load(),
-		"dropped":              q.dropped.Load(),
-		"flushed":              q.flushed.Load(),
-		"duplicates":           q.duplicates.Load(),
-		"lost":                 q.lost.Load(),
-		"lost_closes":          q.lostCloses.Load(),
-		"skipped_wrong_org":    q.wrongOrg.Load(),
-		"skipped_unattributed": q.skipped.Load(),
-		"unpriced_calls":       q.unpriced.Load(),
-		"sessions_closed":      q.sessionsClosed.Load(),
-		"flush_errors":         q.flushErrors.Load(),
-		"refused_by_status":    refused,
-		"last_flush_error":     lastErr,
-	}
-	if !lastFlush.IsZero() {
-		st["last_flush_at"] = lastFlush.UTC().Format(time.RFC3339)
-	}
-	return st
+	return buf[:0]
 }
