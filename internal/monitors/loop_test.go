@@ -221,11 +221,11 @@ type agentRun struct {
 
 // runAgent is the client loop: call, run every tool the response names, repeat; it stops on a turn
 // with no tool call, or after max calls. A call is blocked when the upstream did not see it.
-func runAgent(t *testing.T, r *rig, up *scripted, v variant, msgs []tollgate.Message, max int) agentRun {
+func runAgent(t *testing.T, r *rig, up *scripted, v variant, msgs []tollgate.Message, maxCalls int) agentRun {
 	t.Helper()
 	out := agentRun{msgs: msgs}
 	ids := map[string]bool{}
-	for out.calls < max {
+	for out.calls < maxCalls {
 		before := up.count()
 		rep := r.call(v.wire, v.stream, out.msgs)
 		out.calls++

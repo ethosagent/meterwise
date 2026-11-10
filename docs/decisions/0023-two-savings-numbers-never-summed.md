@@ -31,7 +31,7 @@ Fix round 2: the classes stay apart in tokens too. The stats row carries `savedT
 `likelySavedTokens` and `wouldSaveTokens` beside the three USD fields; the old `estSavedTokens`, which
 added certain and likely tokens, is gone (B3). And one call is counted once: when several monitors fire
 on the same call, only one verdict keeps the estimate (the block, else the largest likely one that acted,
-else the largest would-save), the others record 0 (M1, ADR 0022 §10).
+else the largest would-save), the others record 0 (M1, ADR 0022 §8).
 
 ## Consequences
 

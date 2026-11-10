@@ -62,44 +62,16 @@ writer per table, H4); return the verdict in the `Response` (only works for bloc
      `second_guessing` counts phrases of two words or more only (`wait`, `actually`, `hmm` are everyday
      wording) and needs a reversal to the very call of two calls ago: same tool and same arguments
      hash, A-B-A (M3).
-7. **The ring is keyed and ordered by call index (B2).** One entry per index, ascending, the 50 newest
-   indexes. `After` puts its call at its own index, so a late or out-of-order `After` replaces that entry
-   and never appends a duplicate. The ring also remembers the newest index whose `After` ran, failed
-   calls included.
-   - Catch-up: a request whose call index is ahead of the newest index the ring knows (the previous
-     call's `After` has not run yet) fills the missing indexes from its own messages, the k-th newest
-     assistant turn being index `calls - k`, at most 50 back. Only the missing turns are parsed
-     (`turns_read`). It works past 50 calls. A failed call's index is known, so it is never filled
-     from another turn.
-   - A trailing assistant message is a prefill, not a turn: it is skipped by history and by the block.
-   - A call answered without a stream (a block, or `stream:false`) leaves an empty entry; the next
-     `Before` heals it from the request's newest turn. A fill never overwrites an entry with content,
-     and an `After` with no content keeps what a catch-up found.
-   - A session with no ring (a restart, an eviction) is rebuilt from the last 200 messages, newest 50
-     turns. After a full process restart tollgate's call counter starts again, so the rebuilt turns get
-     indexes below 1; evidence can then name call 0 or a negative call.
-   - Not filled: a hole below the newest known index (an `After` that is late while a newer one already
-     ran). The late `After` fills it.
-8. **Before stays inside its deadline (m1, m2).** `history.Before` asks the chain's deadline before
-   each turn it parses and stops at `MinDeadline` (5 ms) before it, keeping the newest turns it read
-   (`skipped_deadline`, `cut_deadline`). `monitors.Before` checks at its start and again after
-   detection, and only then takes the session's queued notes, so a late `Before` loses none. A context
-   cancelled in the microseconds between that check and the write still loses that call's notes.
-   Measured (201 messages, 40 trials): a full rebuild p99 0.98 ms with 2 KB arguments per turn and
-   5.1 ms with 32 KB; a catch-up of one turn p99 0.04-0.32 ms.
-9. **History is bounded by bytes as well as sessions (M4).** `HISTORY_MAX_BYTES` (default 256 MiB)
-   is split across the shards; beyond it the least recently used sessions go (`evicted_bytes`, `bytes`
-   on `/statusz`). `MaxSessions` (tollgate's limit) still caps the count. The charge per ring is an
-   estimate (struct sizes, hash slices, tool names, key), not a heap count; the verifier measured about
-   13 KB of heap for a full 50-entry ring.
-10. **Estimates are tokens, one per call (M1).** `savings.Estimate` returns `contract.Usage` and a
+7. **The history ring, its catch-up and its bounds** are recorded in ADR 0024 (fix round 2: B2, M4,
+   m1, m2).
+8. **Estimates are tokens, one per call (M1).** `savings.Estimate` returns `contract.Usage` and a
     confidence; the ledger prices it (R6). Every verdict of a call describes the same avoided call, so
     the ledger keeps one estimate per call: the largest certain one that acted (a block), else the
     largest likely one that acted (a note), else the largest would-save of an observed one. The other
     verdicts record 0 and keep their evidence. Observe mode is would-save, never in either number. The
     stats API reports tokens and USD per class (`savedTokens`, `likelySavedTokens`, `wouldSaveTokens`
     and the three USD fields): no field adds two classes (B3).
-11. **Feedback uses `session:read` (m3).** Marking an event correct or wrong is how a reader of a
+9. **Feedback uses `session:read` (m3).** Marking an event correct or wrong is how a reader of a
     session reviews it; it changes only the event's `feedback` column and the false-positive rate. It
     is audited (`monitor_event.feedback`), scoped to the workspace in the path (an event of another
     workspace is a 404), and a member without that workspace's grant cannot reach it. A separate
@@ -120,11 +92,8 @@ member order but not nested order.
 Enforced by archtest H3 (purity) and H8, `TestDetectorsOnRingFixtures` (a positive and a negative
 fixture per detector, exact evidence), `TestRecreatedHistoryGivesTheSameVerdictsAndBlock`,
 `TestBlockAnswersWithoutCallingTheUpstream`, `TestLoopingAgentFinishesUnderBlockOnBothWiresAndStreamModes`,
-`TestSecondRepeatOfABlockedSubjectIsNotedNotBlocked`, `TestCatchUpWorksPastTheRingDepth`,
-`TestOutOfOrderAfterKeepsOneEntryPerIndex`, `TestAssistantPrefillIsNotATurn`,
-`TestPendingTurnsOwnWriteBeforeAReadBreaksThePattern`, `TestOneCallIsAttributedOnce`,
-`TestMonitorStatsTokenFieldsNeverSumCertainAndLikely`, `TestRingsStayWithinTheByteBudget`,
-`TestBeforeStopsReadingAtItsDeadline`, `TestLateBeforeLeavesQueuedNotesForTheNextCall`,
+`TestSecondRepeatOfABlockedSubjectIsNotedNotBlocked`, `TestPendingTurnsOwnWriteBeforeAReadBreaksThePattern`, `TestOneCallIsAttributedOnce`,
+`TestMonitorStatsTokenFieldsNeverSumCertainAndLikely`,
 `TestNoteIsExactlyOneSplicedNoteAndNotRepeated`, `TestObserveLeavesEveryByteAlone`,
 `TestBeforeP99UnderOneMillisecondFor200Messages`, `TestStreamDetectorsAddNothingToTTFB`,
 `TestRingHoldsNoMessageText` and `TestPrivacyNothingFromTheConversationReachesVerdicts`.
