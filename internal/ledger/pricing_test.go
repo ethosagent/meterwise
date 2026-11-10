@@ -73,20 +73,39 @@ func TestPriceLoaderRefreshesAndKeepsTheSnapshotOnFailure(t *testing.T) {
 	}
 }
 
+// stampSource reports when the pricing table is first read.
+type stampSource struct {
+	*fakeSource
+	first chan time.Time
+}
+
+func (s stampSource) Pricing(ctx context.Context) ([]contract.PriceRow, error) {
+	select {
+	case s.first <- time.Now():
+	default:
+	}
+	return s.fakeSource.Pricing(ctx)
+}
+
 // Run does not read the table before its first tick: the caller loaded it synchronously just before
-// (startLedger), so an immediate second read would only double the boot query.
+// (startLedger), so an immediate second read would only double the boot query. The first read is stamped
+// by the source itself, so no sleep is needed: it must come at least one tick after Run started.
 func TestPriceLoaderRunWaitsOneTickBeforeTheFirstReload(t *testing.T) {
-	src := &fakeSource{rows: []contract.PriceRow{{Provider: "openai", Model: "gpt-4o", InputPerM: 1, OutputPerM: 1, EffectiveFrom: epoch}}}
-	l := &ledger.PriceLoader{Source: src, Pricer: savings.NewTablePricer(nil), Every: time.Hour}
+	const every = 50 * time.Millisecond
+	src := stampSource{&fakeSource{rows: []contract.PriceRow{{Provider: "openai", Model: "gpt-4o", InputPerM: 1, OutputPerM: 1, EffectiveFrom: epoch}}}, make(chan time.Time, 1)}
+	l := &ledger.PriceLoader{Source: src, Pricer: savings.NewTablePricer(nil), Every: every}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	start := time.Now()
 	go func() { l.Run(ctx); close(done) }()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case at := <-src.first:
+		if waited := at.Sub(start); waited < every {
+			t.Fatalf("Run read the pricing table after %v, before its first tick (%v)", waited, every)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run never reloaded the pricing table")
+	}
 	cancel()
 	<-done
-	src.mu.Lock()
-	defer src.mu.Unlock()
-	if src.n != 0 {
-		t.Fatalf("Run read the pricing table %d times before its first tick", src.n)
-	}
 }
