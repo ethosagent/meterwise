@@ -29,7 +29,7 @@ const RetryAfter = 2 * time.Second
 // use: the default plus at most wsauth.MaxConcurrentCap more. A call goes to the limiter for its
 // workspace's current cap. While a call admitted under the old cap is still in flight, the workspace
 // can briefly hold old-cap plus new-cap slots at once (the old call finishes on its old limiter);
-// nothing is lost or leaked. See docs/decisions/0019.
+// nothing is lost or leaked. See docs/decisions/0030.
 type Admission struct {
 	def   *concurrency.Limiter
 	max   int
