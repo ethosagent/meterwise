@@ -14,7 +14,7 @@ import (
 const listSaves = `-- name: ListSaves :many
 SELECT e.id, e.session_id, e.call_id, e.call_index, e.ts, e.monitor, e.action, e.confidence,
        (e.est_saved_usd * 1000000)::bigint AS est_micro, e.est_saved_tokens,
-       NULLIF(c.client, '')::text AS client, COALESCE(c.model, '')::text AS model
+       COALESCE(NULLIF(c.client, ''), '')::text AS client, COALESCE(c.model, '')::text AS model
 FROM monitor_events e
 LEFT JOIN calls c ON c.id = e.call_id AND c.workspace_id = e.workspace_id
 WHERE e.workspace_id = $1::text::uuid AND e.action <> 'observe' AND e.est_saved_usd > 0
