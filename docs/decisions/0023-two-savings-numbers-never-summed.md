@@ -27,6 +27,12 @@ and `likely_saved_usd` are added to in the same transaction that inserts the cal
 key `(workspace_id, call_id, monitor)` is the backstop. A block verdict on a call that already has usage
 (the upstream was reached first) is downgraded to observe and counted in `blocks_downgraded`.
 
+Fix round 2: the classes stay apart in tokens too. The stats row carries `savedTokens`,
+`likelySavedTokens` and `wouldSaveTokens` beside the three USD fields; the old `estSavedTokens`, which
+added certain and likely tokens, is gone (B3). And one call is counted once: when several monitors fire
+on the same call, only one verdict keeps the estimate (the block, else the largest likely one that acted,
+else the largest would-save), the others record 0 (M1, ADR 0022 §10).
+
 ## Consequences
 
 Easier: every figure on a dashboard traces to event rows (`SELECT SUM(est_saved_usd) ... WHERE
@@ -37,4 +43,6 @@ change to the estimator moves future events only: stored rows are never re-price
 `TestRealPostgresVerdictsReconcileWithSessionSums` and `TestRealPostgresReplayedCallWritesNoSecondEvent`
 (internal/ledger), `TestWriteCallsWritesMonitorEventsAndSessionSums` (internal/store),
 `TestMonitorStatsRoute` (internal/api, which also asserts the wire form never carries a sum), and
-`TestLateBlockIsDowngradedToObserve`.
+`TestLateBlockIsDowngradedToObserve`, `TestOneCallIsAttributedOnce` (internal/ledger),
+`TestMonitorStatsTokenFieldsNeverSumCertainAndLikely` (internal/store) and
+`TestMonitorStatsRowHasNoSummedSavingsField` (internal/contract).
