@@ -14,22 +14,27 @@ import (
 type DetectFunc func(c *tollgate.Call, r contract.RingView, cfg contract.MonitorConfig) (contract.MonitorVerdict, bool)
 
 // Detector is one registry entry. Stream detectors run in After over the text OnEvent collected;
-// the others run in Before.
+// the others run in Before. CanBlock says the monitor's block mode may answer the call itself; every other
+// monitor's block mode acts as note. BlockAfter, when set, is the verdict count from which the monitor's
+// note mode blocks too (0 or nil: never).
 type Detector struct {
-	Name   contract.MonitorName
-	Stream bool
-	Detect DetectFunc
+	Name       contract.MonitorName
+	Stream     bool
+	CanBlock   bool
+	BlockAfter func(cfg contract.MonitorConfig) int
+	Detect     DetectFunc
 }
 
 // Registry returns the six detectors in the fixed contract.MonitorNames order.
 func Registry() []Detector {
 	return []Detector{
-		{contract.MonitorDuplicateToolCall, false, DetectDuplicateToolCall},
-		{contract.MonitorRepeatedRead, false, DetectRepeatedRead},
-		{contract.MonitorNoProgress, false, DetectNoProgress},
-		{contract.MonitorStepBudget, false, DetectStepBudget},
-		{contract.MonitorReasoningLoop, true, DetectReasoningLoop},
-		{contract.MonitorSecondGuessing, true, DetectSecondGuessing},
+		{Name: contract.MonitorDuplicateToolCall, CanBlock: true, Detect: DetectDuplicateToolCall},
+		{Name: contract.MonitorRepeatedRead, CanBlock: true, Detect: DetectRepeatedRead,
+			BlockAfter: func(cfg contract.MonitorConfig) int { return cfg.RepeatedRead.BlockAfter }},
+		{Name: contract.MonitorNoProgress, Detect: DetectNoProgress},
+		{Name: contract.MonitorStepBudget, Detect: DetectStepBudget},
+		{Name: contract.MonitorReasoningLoop, Stream: true, Detect: DetectReasoningLoop},
+		{Name: contract.MonitorSecondGuessing, Stream: true, Detect: DetectSecondGuessing},
 	}
 }
 

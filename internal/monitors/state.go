@@ -23,6 +23,7 @@ const (
 // calls OnEvent saw, each bounded. It lives in Meta as a pointer, so a late write cannot corrupt a copy.
 type callState struct {
 	cfg   contract.MonitorConfig
+	key   string // the session's note-state key, computed once per call
 	noted int
 
 	mu     sync.Mutex

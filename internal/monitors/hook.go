@@ -57,15 +57,10 @@ type Hook struct {
 	opt  Options
 	cfgs *configMemo
 	sess *sessStore
+	ctr  *counters
 
-	fires           [6]atomic.Int64
-	skipped         atomic.Int64
-	notesNotAdopted atomic.Int64
-	blocksDegraded  atomic.Int64
-	blocksCapped    atomic.Int64
-	blocks          atomic.Int64
-	notesInjected   atomic.Int64
-	notesDropped    atomic.Int64
+	skipped, notesNotAdopted, blocks, notesInjected, notesDropped *atomic.Int64
+	degraded                                                      [blockReasons]*atomic.Int64 // by blockReason
 }
 
 // New builds a Hook.
@@ -82,7 +77,13 @@ func New(o Options) *Hook {
 	if o.MinDeadline <= 0 {
 		o.MinDeadline = 5 * time.Millisecond
 	}
-	return &Hook{opt: o, cfgs: newConfigMemo(), sess: newSessStore(o.MaxSessions)}
+	ctr := newCounters()
+	h := &Hook{opt: o, cfgs: newConfigMemo(), sess: newSessStore(o.MaxSessions), ctr: ctr,
+		skipped: ctr.of(ctrSkipped), notesNotAdopted: ctr.of(ctrNotesNotAdopted), blocks: ctr.of(ctrBlocks),
+		notesInjected: ctr.of(ctrNotesInjected), notesDropped: ctr.of(ctrNotesDropped)}
+	h.degraded[blockNoEarlier], h.degraded[blockWire] = ctr.of(ctrBlocksDegraded), ctr.of(ctrBlocksDegraded)
+	h.degraded[blockCapped] = ctr.of(ctrBlocksCapped)
+	return h
 }
 
 // Name identifies the hook.
@@ -101,7 +102,15 @@ func split(all []Detector) (before, stream []Detector) {
 	return before, stream
 }
 
-func sessKey(c *tollgate.Call) string { return c.Tenant.ID + "\x00" + c.Session.ID }
+// sessKey names a session's note state; Before computes it once per call and keeps it in the call state.
+func sessKey(tenant, session string) string { return tenant + "\x00" + session }
+
+// metaOf is what history left in the call's Meta for the monitors: the verdict collection and the ring.
+func metaOf(c *tollgate.Call) (*contract.CallVerdicts, contract.RingView) {
+	vs, _ := c.Meta[contract.MetaMonitors].(*contract.CallVerdicts)
+	ring, _ := c.Meta[contract.MetaRing].(contract.RingView)
+	return vs, ring
+}
 
 // Before runs the history detectors over the ring, then blocks, notes or only observes per the
 // workspace config. It does no I/O. It writes the verdicts through the pointer history left in Meta,
@@ -111,34 +120,30 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 	if c.Provider.Wire == tollgate.WirePassthrough || len(c.Messages) == 0 {
 		return nil, nil
 	}
-	vs, _ := c.Meta[contract.MetaMonitors].(*contract.CallVerdicts)
-	ring, _ := c.Meta[contract.MetaRing].(contract.RingView)
-	if vs == nil || ring == nil {
-		return nil, nil
-	}
-	if h.late(ctx) {
+	vs, ring := metaOf(c)
+	if vs == nil || ring == nil || h.late(ctx) {
 		return nil, nil
 	}
 	cfg := h.cfgs.get(c.Tenant.Attrs[AttrMonitors])
-	st := &callState{cfg: cfg}
+	st := &callState{cfg: cfg, key: sessKey(c.Tenant.ID, c.Session.ID)}
 	c.Meta[metaState] = st
 	fired := h.detect(c, ring, cfg)
 	if h.late(ctx) { // checked again before anything is taken from the session: queued notes stay queued (m2)
 		return nil, nil
 	}
-	p := h.decide(c, fired, cfg)
+	p := h.decide(c, st, fired)
 	if ctx.Err() != nil { // the chain stopped waiting: nothing is delivered, so nothing is used up (S2)
-		h.giveBack(sessKey(c), p.held)
+		h.giveBack(st.key, p.held)
 		return nil, nil
 	}
-	h.commit(c, p)
+	h.commit(st, p)
 	if p.body != nil {
 		c.Body = p.body
 	}
 	st.noted = p.notes
 	for _, v := range p.verdicts {
 		if vs.Add(v) {
-			h.countFire(v.Monitor)
+			h.ctr.of(firesName(v.Monitor)).Add(1)
 		}
 	}
 	vs.AddNotes(p.notes)
@@ -148,17 +153,11 @@ func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response
 // late reports, and counts, a chain that no longer waits for this hook: its context is done, or its
 // deadline is nearer than MinDeadline.
 func (h *Hook) late(ctx context.Context) bool {
-	if d, ok := ctx.Deadline(); ctx.Err() != nil || (ok && d.Sub(h.opt.Now()) < h.opt.MinDeadline) {
+	if ctx.Err() != nil || contract.NearDeadline(ctx, h.opt.Now(), h.opt.MinDeadline) {
 		h.skipped.Add(1)
 		return true
 	}
 	return false
-}
-
-func (h *Hook) countFire(m contract.MonitorName) {
-	if i := slices.Index(contract.MonitorNames(), m); i >= 0 {
-		h.fires[i].Add(1)
-	}
 }
 
 // detect runs the Before detectors in registry order and fills each verdict's estimate basis.
@@ -244,45 +243,35 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 	if st.noted > 0 && !bytes.Contains(c.Body, []byte(notePrefix)) {
 		h.notesNotAdopted.Add(1)
 	}
-	vs, _ := c.Meta[contract.MetaMonitors].(*contract.CallVerdicts)
-	ring, _ := c.Meta[contract.MetaRing].(contract.RingView)
+	vs, ring := metaOf(c)
 	if vs == nil || ring == nil || !c.Stream || m.Finish != tollgate.FinishOK || m.Status >= 400 {
 		return
 	}
 	for _, d := range streamDetectors {
 		if v, ok := d.Detect(c, ring, st.cfg); ok {
-			h.recordStream(c, vs, v)
+			h.recordStream(st, vs, v)
 		}
 	}
 }
 
-func (h *Hook) recordStream(c *tollgate.Call, vs *contract.CallVerdicts, v contract.MonitorVerdict) {
+func (h *Hook) recordStream(st *callState, vs *contract.CallVerdicts, v contract.MonitorVerdict) {
 	v.Action = contract.ModeObserve
-	if v.Mode != contract.ModeObserve {
-		if h.sess.queue(sessKey(c), dedupKey(v), noteText(v)) {
-			v.Action = contract.ModeNote
-		}
+	if v.Mode != contract.ModeObserve && h.sess.queue(st.key, dedupKey(v), noteText(v)) {
+		v.Action = contract.ModeNote
 	}
 	if vs.Add(v) {
-		h.countFire(v.Monitor)
+		h.ctr.of(firesName(v.Monitor)).Add(1)
 	}
 }
 
 // OnSessionClosed drops the session's note state.
 func (h *Hook) OnSessionClosed(_ context.Context, s tollgate.Session) {
-	h.sess.remove(s.TenantID + "\x00" + s.ID)
+	h.sess.remove(sessKey(s.TenantID, s.ID))
 }
 
 // Status is the hook's counters for /statusz.
 func (h *Hook) Status() map[string]any {
-	m := map[string]any{
-		"skipped_deadline": h.skipped.Load(), "notes_not_adopted": h.notesNotAdopted.Load(),
-		"blocks_degraded": h.blocksDegraded.Load(), "blocks_capped": h.blocksCapped.Load(), "blocks": h.blocks.Load(),
-		"notes_injected": h.notesInjected.Load(), "notes_dropped": h.notesDropped.Load(),
-		"sessions": h.sess.size(), "sessions_evicted": h.sess.evicted.Load(),
-	}
-	for i, n := range contract.MonitorNames() {
-		m["fires_"+string(n)] = h.fires[i].Load()
-	}
+	m := map[string]any{"sessions": h.sess.size(), "sessions_evicted": h.sess.evicted.Load()}
+	h.ctr.fill(m)
 	return m
 }

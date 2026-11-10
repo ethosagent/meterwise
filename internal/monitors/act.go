@@ -19,20 +19,30 @@ type plan struct {
 	held []noteItem
 }
 
-// effective is the action a verdict's mode allows. Only duplicate_tool_call and repeated_read can
-// block; repeated_read in note mode blocks from its BlockAfter-th read on; every other monitor's
-// block mode acts as note.
+var detectorOf = func() map[contract.MonitorName]Detector {
+	m := map[contract.MonitorName]Detector{}
+	for _, d := range Registry() {
+		m[d.Name] = d
+	}
+	return m
+}()
+
+// effective is the action a verdict's mode allows, from its detector's registry entry: only a CanBlock
+// monitor blocks in block mode (any other acts as note), and a monitor with a BlockAfter also blocks from
+// that count on in note mode.
 func effective(v contract.MonitorVerdict, cfg contract.MonitorConfig) contract.MonitorMode {
-	canBlock := v.Monitor == contract.MonitorDuplicateToolCall || v.Monitor == contract.MonitorRepeatedRead
+	d := detectorOf[v.Monitor]
 	switch v.Mode {
 	case contract.ModeBlock:
-		if canBlock {
+		if d.CanBlock {
 			return contract.ModeBlock
 		}
 		return contract.ModeNote
 	case contract.ModeNote:
-		if v.Monitor == contract.MonitorRepeatedRead && cfg.RepeatedRead.BlockAfter > 0 && v.Evidence.Count >= cfg.RepeatedRead.BlockAfter {
-			return contract.ModeBlock
+		if d.BlockAfter != nil {
+			if n := d.BlockAfter(cfg); n > 0 && v.Evidence.Count >= n {
+				return contract.ModeBlock
+			}
 		}
 		return contract.ModeNote
 	}
@@ -46,67 +56,95 @@ type noteItem struct {
 }
 
 // decide turns fired verdicts into a plan: the first blockable one whose earlier identical result is in
-// the request, and whose subject was not blocked before in this session, blocks the call; the rest become notes (queued stream notes first, at most MaxNotesPerCall in all, deduped
-// per session) or stay observed.
-func (h *Hook) decide(c *tollgate.Call, fired []contract.MonitorVerdict, cfg contract.MonitorConfig) plan {
+// the request, and whose subject was not blocked before in this session, blocks the call; the rest become
+// notes (queued stream notes first, at most MaxNotesPerCall in all, deduped per session) or stay observed.
+// The helpers below only report what they downgrade; decide alone writes the actions.
+func (h *Hook) decide(c *tollgate.Call, st *callState, fired []contract.MonitorVerdict) plan {
 	acts := make([]contract.MonitorMode, len(fired))
 	for i, v := range fired {
-		acts[i] = effective(v, cfg)
+		acts[i] = effective(v, st.cfg)
 	}
-	if resp, at := h.tryBlock(c, fired, acts); resp != nil {
+	if resp, at := h.tryBlock(c, st.key, fired, acts); resp != nil {
 		for i := range fired {
 			fired[i].Action = contract.ModeObserve
 		}
 		fired[at].Action = contract.ModeBlock
 		return plan{resp: resp, verdicts: fired, held: []noteItem{{verdict: at, key: blockKey(fired[at])}}}
 	}
-	body, held := h.splice(c, h.collectNotes(c, fired, acts), acts)
+	for i, a := range acts {
+		if a == contract.ModeBlock { // no block was possible: the verdict is noted instead
+			acts[i] = contract.ModeNote
+		}
+	}
+	items, lost := h.collectNotes(st.key, fired, acts)
+	body, held, failed := h.splice(c, st.key, items)
+	for _, i := range append(lost, failed...) {
+		acts[i] = contract.ModeObserve
+	}
 	for i := range fired {
 		fired[i].Action = acts[i]
 	}
 	return plan{body: body, verdicts: fired, notes: len(held), held: held}
 }
 
+// blockReason is why a block did not happen, for the degrade counters.
+type blockReason int
+
+const (
+	blockOK        blockReason = iota
+	blockNoEarlier             // the request holds no earlier identical result to point at
+	blockCapped                // the subject was already blocked (or is being blocked) in this session
+	blockWire                  // the wire editor could not build the response
+	blockReasons
+)
+
+// blockable finds what a block of verdict v in call c points at: the earlier identical result in the
+// request (B1). It reads only the request; the session's cap and the wire are the caller's.
+func blockable(c *tollgate.Call, v contract.MonitorVerdict) (resultLoc, blockReason) {
+	loc, ok := earlierResult(c.Messages, matcher(c.Tenant.ID, v))
+	if !ok {
+		return resultLoc{}, blockNoEarlier
+	}
+	return loc, blockOK
+}
+
 // tryBlock answers the call itself with a terminal text turn that points at the earlier identical result
 // (B1): the agent ends its turn instead of running the tool again. At most one block per session and
 // subject: a later repeat of a subject already blocked degrades to a note (counted as capped). A block
-// with no earlier identical result in the request, or a wire error, degrades to a note (counted).
-func (h *Hook) tryBlock(c *tollgate.Call, fired []contract.MonitorVerdict, acts []contract.MonitorMode) (*tollgate.Response, int) {
-	key := sessKey(c)
+// with no earlier identical result in the request, or a wire error, degrades to a note (counted). It
+// returns the response and the verdict that blocked, or nil: the caller then notes every block verdict.
+func (h *Hook) tryBlock(c *tollgate.Call, key string, fired []contract.MonitorVerdict, acts []contract.MonitorMode) (*tollgate.Response, int) {
 	for i, v := range fired {
 		if acts[i] != contract.ModeBlock {
 			continue
 		}
-		acts[i] = contract.ModeNote
 		if !h.sess.reserve(key, blockKey(v)) {
-			h.blocksCapped.Add(1)
+			h.degraded[blockCapped].Add(1)
 			continue
 		}
-		loc, ok := earlierResult(c.Messages, matcher(c.Tenant.ID, v))
-		if !ok {
+		loc, reason := blockable(c, v)
+		var resp *tollgate.Response
+		if reason == blockOK {
+			var err error
+			if resp, err = h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, blockText(v, loc)); err != nil {
+				reason = blockWire
+			}
+		}
+		if reason != blockOK {
 			h.sess.release(key, blockKey(v))
-			h.blocksDegraded.Add(1)
+			h.degraded[reason].Add(1)
 			continue
 		}
-		resp, err := h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, blockText(v, loc))
-		if err != nil {
-			h.sess.release(key, blockKey(v))
-			h.blocksDegraded.Add(1)
-			continue
-		}
-		acts[i] = contract.ModeBlock
 		return resp, i
 	}
 	return nil, -1
 }
 
 // collectNotes picks the notes this call carries (the session's queued notes first, then the fired
-// verdicts') and downgrades the verdicts that lose their note (over the cap, or the subject already noted
-// or being noted in this session) to observe in acts. Each note's key is reserved in the session; splice
+// verdicts') and lists the verdicts that lose their note (over the cap, or the subject already noted or
+// being noted in this session): they become observe. Each note's key is reserved in the session; splice
 // delivers or gives them back.
-func (h *Hook) collectNotes(c *tollgate.Call, fired []contract.MonitorVerdict, acts []contract.MonitorMode) []noteItem {
-	key := sessKey(c)
-	var items []noteItem
+func (h *Hook) collectNotes(key string, fired []contract.MonitorVerdict, acts []contract.MonitorMode) (items []noteItem, lost []int) {
 	for _, q := range h.sess.take(key, contract.MaxNotesPerCall) {
 		items = append(items, noteItem{text: q.text, verdict: -1, key: q.key})
 	}
@@ -116,21 +154,21 @@ func (h *Hook) collectNotes(c *tollgate.Call, fired []contract.MonitorVerdict, a
 		}
 		k := dedupKey(v)
 		if len(items) >= contract.MaxNotesPerCall || !h.sess.reserve(key, k) {
-			acts[i] = contract.ModeObserve
+			lost = append(lost, i)
 			continue
 		}
 		items = append(items, noteItem{text: noteText(v), verdict: i, key: k})
 	}
-	return items
+	return items, lost
 }
 
 // splice adds the notes to the body through the wire editor, in one edit. If the editor cannot place them
-// they are all dropped (counted): their verdicts are recorded as observed and their keys released, and the
-// queued notes go back to the session's queue, so only the notes spliced in are used up (K1). It returns the
-// new body (nil if unchanged) and the notes spliced in.
-func (h *Hook) splice(c *tollgate.Call, items []noteItem, acts []contract.MonitorMode) ([]byte, []noteItem) {
+// they are all dropped (counted): their keys are released and the queued notes go back to the session's
+// queue, so only the notes spliced in are used up (K1). It returns the new body (nil if unchanged), the
+// notes spliced in, and the verdicts whose note was dropped.
+func (h *Hook) splice(c *tollgate.Call, key string, items []noteItem) (body []byte, held []noteItem, failed []int) {
 	if len(items) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	texts := make([]string, len(items))
 	for i, it := range items {
@@ -141,13 +179,13 @@ func (h *Hook) splice(c *tollgate.Call, items []noteItem, acts []contract.Monito
 		h.notesDropped.Add(int64(len(items)))
 		for _, it := range items {
 			if it.verdict >= 0 {
-				acts[it.verdict] = contract.ModeObserve
+				failed = append(failed, it.verdict)
 			}
 		}
-		h.giveBack(sessKey(c), items)
-		return nil, nil
+		h.giveBack(key, items)
+		return nil, nil, failed
 	}
-	return body, items
+	return body, items, nil
 }
 
 // giveBack returns what a plan held but did not deliver to the session: a verdict's key is released, a
@@ -166,10 +204,9 @@ func (h *Hook) giveBack(key string, items []noteItem) {
 
 // commit records a delivered plan in the session: the subjects it noted or blocked, and the queued notes
 // it spliced, are used up. Before calls it last, once the chain still waits (S2).
-func (h *Hook) commit(c *tollgate.Call, p plan) {
-	key := sessKey(c)
+func (h *Hook) commit(st *callState, p plan) {
 	for _, it := range p.held {
-		h.sess.commit(key, it.key)
+		h.sess.commit(st.key, it.key)
 	}
 	h.notesInjected.Add(int64(p.notes))
 	if p.resp != nil {
