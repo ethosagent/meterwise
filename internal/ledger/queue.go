@@ -29,10 +29,15 @@ type Options struct {
 	QueueSize     int           // default 10000
 	BatchSize     int           // default 500
 	FlushInterval time.Duration // default 250 ms
-	Retries       int           // attempts per batch before it is given up on; default 3
-	RetryBackoff  time.Duration // default 200 ms, times the attempt number
-	Log           *slog.Logger
-	Now           func() time.Time
+	Retries       int           // attempts per batch before it is given up on, for a failure other than an unreachable database; default 3
+	RetryBackoff  time.Duration // default 200 ms: times the attempt number, or doubled per attempt while the database is unreachable
+	// RetryWindow is how long a batch or session close is retried while the database is unreachable
+	// (a restart or failover); default 30 s. The batch stays queued meanwhile, bounded by QueueSize.
+	RetryWindow time.Duration
+	// RetryBackoffMax caps the doubled backoff; default 5 s.
+	RetryBackoffMax time.Duration
+	Log             *slog.Logger
+	Now             func() time.Time
 }
 
 func (o Options) withDefaults() (Options, error) {
@@ -57,6 +62,12 @@ func (o Options) withDefaults() (Options, error) {
 	}
 	if o.RetryBackoff <= 0 {
 		o.RetryBackoff = 200 * time.Millisecond
+	}
+	if o.RetryWindow <= 0 {
+		o.RetryWindow = 30 * time.Second
+	}
+	if o.RetryBackoffMax <= 0 {
+		o.RetryBackoffMax = 5 * time.Second
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
@@ -83,6 +94,7 @@ type queue struct {
 	closed bool
 	stop   chan struct{}
 	done   chan struct{}
+	abort  context.CancelFunc // ends the batcher's writes when Close's context expires
 
 	enqueued, dropped, flushed, duplicates, lost, lostCloses, skipped, wrongOrg, unpriced, sessionsClosed, flushErrors atomic.Int64
 
@@ -97,7 +109,10 @@ func newQueue(o Options) *queue {
 }
 
 // start runs the batcher. ctx is detached from the caller's cancellation: a flush must outlive it until Close.
-func (q *queue) start(ctx context.Context) { go q.run(context.WithoutCancel(ctx)) }
+func (q *queue) start(ctx context.Context) {
+	ctx, q.abort = context.WithCancel(context.WithoutCancel(ctx))
+	go q.run(ctx)
+}
 
 // enqueue never blocks: a full or closed queue drops the item and counts it.
 func (q *queue) enqueue(it item) {
@@ -136,8 +151,15 @@ func (q *queue) close(ctx context.Context) error {
 	case <-q.done:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
 	}
+	// Out of time: stop retrying. The batcher counts what is in its hands and still queued as lost
+	// (every write now fails at once), so Status() stays honest; the wait for it is short and bounded.
+	q.abort()
+	select {
+	case <-q.done:
+	case <-time.After(5 * time.Second):
+	}
+	return ctx.Err()
 }
 
 func (q *queue) run(ctx context.Context) {
@@ -188,8 +210,10 @@ func (q *queue) drain(ctx context.Context, buf []item) {
 }
 
 // flush writes the calls of buf in one transaction, then applies its session closes. A failed batch
-// is retried with backoff (not when shutting down); one that keeps failing for a reason other than an
-// unreachable database is retried record by record so a single poison record cannot sink the rest.
+// is retried with backoff: for the retry window with doubling backoff while the database is
+// unreachable, otherwise Retries times (not when shutting down). One that keeps failing for a reason
+// other than an unreachable database is retried record by record, each with the same small retry, so
+// a single poison record cannot sink the rest.
 func (q *queue) flush(parent context.Context, buf []item, final bool) {
 	var calls []contract.CallRecord
 	for _, it := range buf {
@@ -197,23 +221,25 @@ func (q *queue) flush(parent context.Context, buf []item, final bool) {
 			calls = append(calls, *it.call)
 		}
 	}
-	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	// one retry budget for the whole flush: an outage burns it once, not once per operation
+	deadline := time.Now().Add(q.o.RetryWindow)
+	ctx, cancel := context.WithTimeout(parent, q.o.RetryWindow+30*time.Second)
 	defer cancel()
 	if len(calls) > 0 {
-		q.writeCalls(ctx, calls, final)
+		q.writeCalls(ctx, calls, final, deadline)
 	}
 	for _, it := range buf {
 		if it.call != nil {
 			continue
 		}
-		q.closeSession(ctx, it, final)
+		q.closeSession(ctx, it, final, deadline)
 	}
 }
 
 // closeSession applies one session close with the retry policy of a call batch. A close that still
 // fails is counted in lost_closes: the session stays open until a later call or close touches it.
-func (q *queue) closeSession(ctx context.Context, it item, final bool) {
-	for attempt := 1; attempt <= q.o.Retries; attempt++ {
+func (q *queue) closeSession(ctx context.Context, it item, final bool, deadline time.Time) {
+	for attempt := 1; ; attempt++ {
 		ok, err := q.o.Writer.CloseSession(ctx, it.closeWS, it.closeID, it.closeAt)
 		if err == nil {
 			if ok {
@@ -223,43 +249,78 @@ func (q *queue) closeSession(ctx context.Context, it item, final bool) {
 			return
 		}
 		q.fail(ctx, err)
-		if final || attempt == q.o.Retries {
+		if !q.again(ctx, attempt, deadline, err, final) {
 			break
 		}
-		time.Sleep(time.Duration(attempt) * q.o.RetryBackoff)
 	}
 	q.lostCloses.Add(1)
 }
 
-func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, final bool) {
-	var err error
-	for attempt := 1; attempt <= q.o.Retries; attempt++ {
-		var res store.WriteResult
-		if res, err = q.o.Writer.WriteCalls(ctx, calls); err == nil {
-			q.flushed.Add(int64(res.Inserted))
-			q.duplicates.Add(int64(res.Duplicates))
-			q.ok()
-			return
-		}
-		q.fail(ctx, err)
-		if final || attempt == q.o.Retries {
-			break
-		}
-		time.Sleep(time.Duration(attempt) * q.o.RetryBackoff)
+// again sleeps the backoff of a failed attempt and reports whether to try once more. While the database
+// is unreachable the backoff doubles up to RetryBackoffMax and the tries last until deadline, also
+// during the final flush (Close's context ends them); any other failure gets Retries attempts with a
+// linear backoff, none during the final flush. A cancelled ctx never retries.
+func (q *queue) again(ctx context.Context, attempt int, deadline time.Time, err error, final bool) bool {
+	if ctx.Err() != nil {
+		return false
 	}
-	if len(calls) > 1 && store.ClassOf(err) != store.ClassUnreachable {
+	var d time.Duration
+	if store.ClassOf(err) == store.ClassUnreachable {
+		d = q.o.RetryBackoff
+		for i := 1; i < attempt && d < q.o.RetryBackoffMax; i++ {
+			d *= 2
+		}
+		d = min(d, q.o.RetryBackoffMax)
+		if time.Now().Add(d).After(deadline) {
+			return false
+		}
+	} else {
+		if final || attempt >= q.o.Retries {
+			return false
+		}
+		d = time.Duration(attempt) * q.o.RetryBackoff
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, final bool, deadline time.Time) {
+	err := q.tryWrite(ctx, calls, final, deadline)
+	if err == nil {
+		q.ok()
+		return
+	}
+	if len(calls) > 1 && store.ClassOf(err) != store.ClassUnreachable && ctx.Err() == nil {
 		for _, c := range calls { // isolate the record the database refuses
-			if res, e := q.o.Writer.WriteCalls(ctx, []contract.CallRecord{c}); e != nil {
-				q.fail(ctx, e)
+			if q.tryWrite(ctx, []contract.CallRecord{c}, final, deadline) != nil {
 				q.lost.Add(1)
-			} else {
-				q.flushed.Add(int64(res.Inserted))
-				q.duplicates.Add(int64(res.Duplicates))
 			}
 		}
 		return
 	}
 	q.lost.Add(int64(len(calls)))
+}
+
+// tryWrite writes recs, retrying as again allows; it returns the last error, or nil once written.
+func (q *queue) tryWrite(ctx context.Context, recs []contract.CallRecord, final bool, deadline time.Time) error {
+	for attempt := 1; ; attempt++ {
+		res, err := q.o.Writer.WriteCalls(ctx, recs)
+		if err == nil {
+			q.flushed.Add(int64(res.Inserted))
+			q.duplicates.Add(int64(res.Duplicates))
+			return nil
+		}
+		q.fail(ctx, err)
+		if !q.again(ctx, attempt, deadline, err, final) {
+			return err
+		}
+	}
 }
 
 func (q *queue) fail(ctx context.Context, err error) {
