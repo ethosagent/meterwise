@@ -68,7 +68,11 @@ func TestBlockEstimateIsALowerBoundOverGapsZeroUsageAndShuffledAfters(t *testing
 	const trials = 120000
 	over, worst := 0, int64(0)
 	for i := 0; i < trials; i++ {
-		exact, body := growingRing(rng, 2+rng.IntN(13))
+		m := 2 + rng.IntN(13)
+		if rng.IntN(5) == 0 {
+			m = contract.RingDepth + 1 + rng.IntN(30) // beyond the window: only the last RingDepth calls count
+		}
+		exact, body := growingRing(rng, m)
 		call := &tollgate.Call{Body: make([]byte, body+rng.IntN(8000)), Session: tollgate.Session{Calls: len(exact) + 1}}
 		if got, want := certainEstimate(call, degrade(rng, exact)), certainEstimate(call, exact); got > want {
 			over++
@@ -135,10 +139,11 @@ func TestDeadlineSkippedCatchUpEstimateIsALowerBound(t *testing.T) {
 		h.After(context.Background(), c, tollgate.Metric{Finish: tollgate.FinishOK, Status: 200, Usage: tollgate.Usage{InputTokens: in, OutputTokens: out}})
 	}
 	play(call(1), 100, 10, "one")
-	play(call(2, asst("one")), 200, 20, "two")
+	usr := func() tollgate.Message { return tollgate.Message{Role: tollgate.RoleUser, Text: "next"} }
+	play(call(2, asst("one"), usr()), 200, 20, "two")
 	ctx, cancel := context.WithDeadline(context.Background(), now.Add(time.Millisecond))
 	defer cancel()
-	c4 := call(4, asst("one"), asst("two"), asst("three"))
+	c4 := call(4, asst("one"), asst("two"), asst("three"), usr())
 	if _, err := h.Before(ctx, c4); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +153,49 @@ func TestDeadlineSkippedCatchUpEstimateIsALowerBound(t *testing.T) {
 		{Index: 2, Input: 200, Output: 20, BodyBytes: 1200, UsageKnown: true},
 		{Index: 3, Input: 250, Output: 10, BodyBytes: 1800, UsageKnown: true},
 	}
+	// The trailing user turn keeps the request aligned, so only the deadline can leave index 3 out of the ring.
+	if idx := ringIndexes(ring); !slices.Equal(idx, []int{1, 2}) {
+		t.Fatalf("ring indexes %v, want [1 2]", idx)
+	}
+	// The deadline ends aligned()'s comparison ("what cannot be compared is not aligned"), so the same skip also
+	// counts once as heal_misaligned. caught_up stays 0: no catch-up ran.
+	if st := h.Status(); st["skipped_deadline"] != int64(1) || st["heal_misaligned"] != int64(1) || st["caught_up"] != int64(0) {
+		t.Fatalf("status %+v, want skipped_deadline 1, heal_misaligned 1, caught_up 0", st)
+	}
+	if b, want := basisOf(c4, ring), (contract.EstBasis{MedianOutputTokens: 10}); b != want {
+		t.Fatalf("basis %+v, want %+v", b, want)
+	}
 	if got, want := certainEstimate(c4, ring), certainEstimate(c4, exact); got > want {
 		t.Fatalf("estimate %d from ring %+v exceeds the exact %d", got, ring, want)
+	}
+}
+
+func ringIndexes(ring []contract.CallSummary) []int {
+	idx := make([]int, len(ring))
+	for i, s := range ring {
+		idx[i] = s.Index
+	}
+	return idx
+}
+
+// The output floor looks back at most RingDepth calls: lo = max(1, n-RingDepth). Calls older than that
+// window are ignored, so a long session's early large outputs do not move the floor (a window of lo := 1
+// would count them, they outnumber the window, and the floor would be 900, not 7).
+func TestOutputFloorWindowIsTheLastRingDepthCalls(t *testing.T) {
+	n := contract.RingDepth + 60 // 59 calls fall outside the window, more than the 50 inside it
+	ring := make([]contract.CallSummary, 0, n-1)
+	for k := 1; k < n; k++ {
+		out := int64(7)
+		if k < n-contract.RingDepth {
+			out = 900 // outside the window [n-RingDepth, n-1]
+		}
+		ring = append(ring, contract.CallSummary{Index: k, Input: int64(100 * k), Output: out, BodyBytes: 10 * k, UsageKnown: true})
+	}
+	call := &tollgate.Call{Body: make([]byte, 20*n), Session: tollgate.Session{Calls: n}}
+	if got := outputFloor(ring, n); got != 7 {
+		t.Fatalf("floor %d, want 7 (the window is the last %d calls)", got, contract.RingDepth)
+	}
+	if b := basisOf(call, ring); b.MedianOutputTokens != 7 || b.PriorInputTokens != int64(100*(n-1)) {
+		t.Fatalf("basis %+v", b)
 	}
 }
