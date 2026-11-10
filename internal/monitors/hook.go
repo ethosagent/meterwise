@@ -194,7 +194,11 @@ func basisOf(c *tollgate.Call, calls []contract.CallSummary) contract.EstBasis {
 	}
 	if n := len(calls); n > 0 {
 		b.PriorInputTokens = calls[n-1].Input
-		b.BodyDeltaBytes = max(0, int64(len(c.Body)-calls[n-1].BodyBytes))
+		// A caught-up entry (ADR 0024) has no body size: the growth since it is unknown, so it counts as 0 and the
+		// estimate stays a lower bound instead of pricing the whole body as new.
+		if last := calls[n-1]; last.BodyBytes > 0 {
+			b.BodyDeltaBytes = max(0, int64(len(c.Body)-last.BodyBytes))
+		}
 	}
 	if len(outs) > 0 {
 		slices.Sort(outs)

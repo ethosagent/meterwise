@@ -74,7 +74,7 @@ type sent struct {
 	upstream []byte // what the upstream received for it; nil when it never got there
 }
 
-// call sends the n-turn weather request of session on w and reports what the client got and what the
+// call sends the n-turn weather request of session on w, waits for its ledger row, and reports what the client got and what the
 // upstream saw.
 func (a *agent) call(w wireCase, session string, n int, stream bool) sent {
 	a.t.Helper()
@@ -98,6 +98,11 @@ func (a *agent) call(w wireCase, session string, n int, stream bool) sent {
 	s := sent{status: resp.StatusCode, header: resp.Header, body: got, request: body}
 	if reqs := a.up.Requests(); len(reqs) > before {
 		s.upstream = reqs[len(reqs)-1].Body
+	}
+	if s.status == http.StatusOK {
+		// Wait for this call's ledger row before the caller sends the next request: a client that outruns After
+		// gets its previous history entry caught up from the request, with no usage (a load-dependent estimate).
+		a.detail(session, n+1)
 	}
 	return s
 }
