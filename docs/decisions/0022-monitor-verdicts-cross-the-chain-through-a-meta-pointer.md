@@ -54,7 +54,9 @@ writer per table, H4); return the verdict in the `Response` (only works for bloc
      `MaxNotesPerCall` = 2 per call, deduped per session on monitor and subject).
    - `history` fills a ring entry from the stream. A call answered without one (a block, or
      `stream:false`) leaves an empty entry that the next `Before` heals from the client's last
-     assistant message; an empty ring is rebuilt from the last 200 messages (restart safe).
+     assistant message; an empty ring is rebuilt from the last 200 messages (restart safe). A ring that trails the request's
+     assistant turns (the previous call's After has not run yet) is caught up from the same messages,
+     and the late After replaces the entry that has its call index, so a fast client still sees every turn.
 6. **Estimates are tokens.** `savings.Estimate` returns `contract.Usage` and a confidence; the ledger
    prices it (R6). Observe mode gets the same estimate and is would-save, never in either number.
 

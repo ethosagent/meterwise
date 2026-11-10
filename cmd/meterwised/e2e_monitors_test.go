@@ -60,10 +60,9 @@ func (w wireCase) weather(n int, stream bool) []byte {
 
 // agent is one client of one workspace on one loopback upstream.
 type agent struct {
-	t     *testing.T
-	p     *plane
-	up    *testkit.FakeUpstream
-	calls int // proxied calls made so far
+	t  *testing.T
+	p  *plane
+	up *testkit.FakeUpstream
 }
 
 type sent struct {
@@ -99,27 +98,7 @@ func (a *agent) call(w wireCase, session string, n int, stream bool) sent {
 	if reqs := a.up.Requests(); len(reqs) > before {
 		s.upstream = reqs[len(reqs)-1].Body
 	}
-	a.calls++
-	a.settle()
 	return s
-}
-
-// settle waits until every hook has finished with the calls made so far. After runs once the response is
-// out and hooks run in chain order, so the ledger's enqueue count reaching the call count means history has
-// appended the call to its ring. A client that fires the next request faster than that would see a ring
-// one call short (a real agent spends its tool time in between).
-func (a *agent) settle() {
-	a.t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		_, body := get(a.t, a.p.admin+"/statusz")
-		var doc struct {
-			Sources map[string]map[string]any `json:"sources"`
-		}
-		if json.Unmarshal([]byte(body), &doc) == nil && doc.Sources["ledger"]["enqueued"] == float64(a.calls) {
-			return
-		}
-	}
-	a.t.Fatalf("the hooks never finished call %d", a.calls)
 }
 
 func (a *agent) send(method, path string, body any) (int, []byte) {

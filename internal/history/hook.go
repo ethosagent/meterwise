@@ -25,6 +25,7 @@ type Hook struct {
 	tollgate.NoopHook
 	st       *store
 	evicted  atomic.Int64
+	caughtUp atomic.Int64
 	rebuilt  atomic.Int64
 	appended atomic.Int64
 	healed   atomic.Int64
@@ -49,7 +50,8 @@ func (*Hook) Name() string { return "history" }
 func key(tenant, session string) string { return tenant + "\x00" + session }
 
 // Before stamps Meta with the ring snapshot and a fresh verdict collection. It never short-circuits,
-// so its Call copy is adopted (ruling R3). An empty ring is rebuilt from the call's messages.
+// so its Call copy is adopted (ruling R3). An empty ring is rebuilt from the call's messages, and a ring
+// that trails them (the previous call's After has not run yet) is caught up from the same messages.
 func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, error) {
 	if c.Provider.Wire == tollgate.WirePassthrough || c.Session.ID == "" {
 		return nil, nil
@@ -66,6 +68,8 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 			h.rebuilt.Add(1)
 		}
 		h.st.update(k, func([]contract.CallSummary) []contract.CallSummary { return calls })
+	case len(calls) > 0 && trails(calls, c):
+		calls = h.catchUp(k, c)
 	case len(calls) > 0 && emptyTurn(calls[len(calls)-1]):
 		calls = h.heal(k, c, calls)
 	}
@@ -73,6 +77,29 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 	c.Meta[contract.MetaMonitors] = &contract.CallVerdicts{}
 	c.Meta[metaLive] = &live{index: c.Session.Calls}
 	return nil, nil
+}
+
+// trails reports whether the request carries more assistant turns than the ring holds (capped at the
+// ring depth and the rebuild window): the newest turns are in the messages but not yet in the ring.
+func trails(calls []contract.CallSummary, c *tollgate.Call) bool {
+	return len(calls) < min(assistantTurns(c), RingDepth)
+}
+
+// catchUp appends the missing newest turns, read from the call's messages, to the session's ring. After
+// runs once the response is out, so a client faster than it sends its next request first; the late After
+// then fills the entry that has its index instead of adding another.
+func (h *Hook) catchUp(k string, c *tollgate.Call) []contract.CallSummary {
+	var out []contract.CallSummary
+	h.st.update(k, func(cur []contract.CallSummary) []contract.CallSummary {
+		out = cur
+		if !trails(cur, c) {
+			return cur
+		}
+		out = extend(cur, c)
+		h.caughtUp.Add(1)
+		return out
+	})
+	return out
 }
 
 func emptyTurn(s contract.CallSummary) bool { return len(s.Tools) == 0 && s.TextHash == 0 }
@@ -143,6 +170,6 @@ func (h *Hook) OnSessionClosed(_ context.Context, s tollgate.Session) {
 func (h *Hook) Status() map[string]any {
 	return map[string]any{
 		"sessions": h.st.size(), "evicted": h.evicted.Load(), "rebuilt": h.rebuilt.Load(),
-		"appended": h.appended.Load(), "healed": h.healed.Load(),
+		"appended": h.appended.Load(), "healed": h.healed.Load(), "caught_up": h.caughtUp.Load(),
 	}
 }

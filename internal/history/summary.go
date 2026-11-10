@@ -95,6 +95,36 @@ func rebuild(c *tollgate.Call) []contract.CallSummary {
 	return out
 }
 
+// assistantTurns counts the assistant messages in the rebuild window of c.
+func assistantTurns(c *tollgate.Call) int {
+	msgs := c.Messages
+	if len(msgs) > maxRebuildMessages {
+		msgs = msgs[len(msgs)-maxRebuildMessages:]
+	}
+	n := 0
+	for i := range msgs {
+		if msgs[i].Role == tollgate.RoleAssistant {
+			n++
+		}
+	}
+	return n
+}
+
+// extend returns cur plus the turns it misses, taken from the newest assistant messages of c and
+// indexed backwards from the current call. Token counts of the new entries are unknown (0).
+func extend(cur []contract.CallSummary, c *tollgate.Call) []contract.CallSummary {
+	missing := min(assistantTurns(c), RingDepth) - len(cur)
+	fresh := rebuild(c)
+	if missing <= 0 || len(fresh) < missing {
+		return cur
+	}
+	out := cur
+	for _, s := range fresh[len(fresh)-missing:] {
+		out = appendCall(out, s)
+	}
+	return out
+}
+
 // maxRebuildMessages bounds the messages a rebuild reads.
 const maxRebuildMessages = 200
 

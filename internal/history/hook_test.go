@@ -241,3 +241,58 @@ func TestConcurrentSessionsAreRaceFree(t *testing.T) {
 	wg.Wait()
 	h.Status()
 }
+
+// A client that sends the next request before the previous call's After has run (After runs once the
+// response is out) must still see that call in the ring, and the late After must not add it twice.
+func TestRingCatchesUpWhenTheNextRequestArrivesBeforeAfter(t *testing.T) {
+	g1, g2, g3 := tc("c1", "grep", `{"q":1}`), tc("c2", "grep", `{"q":2}`), tc("c3", "grep", `{"q":3}`)
+	tool := func(id string) tollgate.Message {
+		return tollgate.Message{Role: tollgate.RoleTool, ToolCallID: id, Text: "r"}
+	}
+	user := tollgate.Message{Role: tollgate.RoleUser, Text: "task"}
+	h := history.New(history.Options{})
+	run(t, h, newCall("ws", "s", 1, user), 10, 1, toolDelta(0, "grep", `{"q":1}`))
+
+	// call 2 is in flight: its Before and events ran, its After has not
+	c2 := newCall("ws", "s", 2, user, asst("", g1), tool("c1"))
+	if _, err := h.Before(bg, c2); err != nil {
+		t.Fatal(err)
+	}
+	h.OnEvent(bg, c2, toolDelta(0, "grep", `{"q":2}`))
+
+	// call 3 arrives now; its history carries call 2's turn
+	c3 := newCall("ws", "s", 3, user, asst("", g1), tool("c1"), asst("", g2), tool("c2"))
+	if _, err := h.Before(bg, c3); err != nil {
+		t.Fatal(err)
+	}
+	got := ringOf(t, c3)
+	if len(got) != 2 || got[1].Index != 2 || got[1].ArgsHashes[0] != contract.ToolArgsHash("grep", []byte(`{"q":2}`)) {
+		t.Fatalf("call 3 must see call 2 in its ring: %+v", got)
+	}
+	if h.Status()["caught_up"] != int64(1) {
+		t.Errorf("status %v", h.Status())
+	}
+
+	// the late After of call 2 fills the entry instead of adding a second one
+	h.After(bg, c2, tollgate.Metric{Finish: tollgate.FinishOK, Status: 200, Usage: tollgate.Usage{InputTokens: 20, OutputTokens: 2}})
+	h.OnEvent(bg, c3, toolDelta(0, "grep", `{"q":3}`))
+	h.After(bg, c3, tollgate.Metric{Finish: tollgate.FinishOK, Status: 200, Usage: tollgate.Usage{InputTokens: 30, OutputTokens: 3}})
+	c4 := newCall("ws", "s", 4, user, asst("", g1), tool("c1"), asst("", g2), tool("c2"), asst("", g3), tool("c3"))
+	h.Before(bg, c4)
+	got = ringOf(t, c4)
+	if len(got) != 3 || got[0].Index != 1 || got[1].Index != 2 || got[2].Index != 3 || got[1].Input != 20 {
+		t.Fatalf("ring after the late After: %+v", got)
+	}
+}
+
+// A client that trims its history (fewer assistant turns than the ring holds) must not change the ring.
+func TestRingIsLeftAloneWhenTheRequestCarriesFewerTurns(t *testing.T) {
+	h := history.New(history.Options{})
+	run(t, h, newCall("ws", "s", 1), 1, 1, toolDelta(0, "grep", `{"q":1}`))
+	run(t, h, newCall("ws", "s", 2), 1, 1, toolDelta(0, "grep", `{"q":2}`))
+	c := newCall("ws", "s", 3, tollgate.Message{Role: tollgate.RoleUser, Text: "summary"})
+	h.Before(bg, c)
+	if got := ringOf(t, c); len(got) != 2 || h.Status()["caught_up"] != int64(0) {
+		t.Fatalf("ring %+v status %v", got, h.Status())
+	}
+}

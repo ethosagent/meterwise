@@ -104,6 +104,9 @@ func (s *store) size() int {
 // appendCall returns a new ring: cur plus c, at most RingDepth long, only the newest ringShingles
 // keeping their shingles. cur is not modified.
 func appendCall(cur []contract.CallSummary, c contract.CallSummary) []contract.CallSummary {
+	if n := len(cur); n > 0 && cur[n-1].Index == c.Index {
+		cur = cur[:n-1] // the entry for this call was caught up from the next request: this one is the real one
+	}
 	keep := cur
 	if len(keep) >= RingDepth {
 		keep = keep[len(keep)-RingDepth+1:]
