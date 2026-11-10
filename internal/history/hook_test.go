@@ -472,3 +472,19 @@ func TestSideRequestWhileTheRingLagsIsNotCaughtUpFromItsOwnTurns(t *testing.T) {
 		t.Fatalf("ring %+v status %v", got, h.Status())
 	}
 }
+
+// R1-M1: tollgate's Usage has no "reported" flag, and a provider that sends no usage (an OpenAI chat stream
+// without include_usage) leaves it zero. A real call never has zero input, so a zero-input After is an unknown
+// entry (UsageKnown false), never a known call with no output.
+func TestUnreportedUsageLeavesTheEntryUnknown(t *testing.T) {
+	h := history.New(history.Options{})
+	run(t, h, newCall("ws", "s1", 1), 0, 0, text("a long answer with real output tokens"))
+	run(t, h, newCall("ws", "s1", 2, asst("a long answer with real output tokens")), 120, 9, text("two"))
+	r := ringOf(t, mustBefore(t, h, newCall("ws", "s1", 3, asst("a long answer with real output tokens"), asst("two"))))
+	if len(r) != 2 || r[0].UsageKnown || r[0].Input != 0 || r[0].Output != 0 {
+		t.Fatalf("entry 1 reported no usage: %+v", r)
+	}
+	if !r[1].UsageKnown || r[1].Input != 120 || r[1].Output != 9 {
+		t.Fatalf("entry 2 reported usage: %+v", r[1])
+	}
+}

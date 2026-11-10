@@ -275,9 +275,11 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 	s := l.finish().summary(true)
 	l.mu.Unlock()
 	s.Index = l.index
-	s.Input = m.Usage.InputTokens + m.Usage.CachedInputTokens
-	s.Output = m.Usage.OutputTokens
-	s.BodyBytes, s.UsageKnown = len(c.Body), true
+	// tollgate's Usage has no "reported" flag: a provider that sent none (an OpenAI chat stream without
+	// include_usage) leaves it zero. A real call never has zero input, so that is unknown, not a known 0 (R1-M1).
+	if in := m.Usage.InputTokens + m.Usage.CachedInputTokens; in > 0 {
+		s.Input, s.Output, s.BodyBytes, s.UsageKnown = in, m.Usage.OutputTokens, len(c.Body), true
+	}
 	h.st.update(k, func(r ring) ring {
 		r.top = max(r.top, l.index)
 		return r.with([]contract.CallSummary{s}, false)
