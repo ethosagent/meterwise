@@ -3,9 +3,10 @@ package monitors
 import (
 	"testing"
 
+	"github.com/ethosagent/tollgate"
+
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/savings"
-	"github.com/ethosagent/tollgate"
 )
 
 // A client that sends call n+1 before call n's After has run gets the previous entry caught up from the request

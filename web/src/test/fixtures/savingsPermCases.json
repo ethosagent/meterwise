@@ -1,395 +1,395 @@
 {
- "routes": {
-  "savings/overview": "savings:read",
-  "savings/causes": "savings:read",
-  "savings/saves": "savings:read",
-  "sessions": "session:read",
-  "monitors": "monitor_config:read"
- },
- "cases": [
-  {
-   "name": "admin reads savings/overview in any workspace",
-   "admin": true,
-   "grants": [],
-   "workspace": "B",
-   "route": "savings/overview",
-   "allowed": true
+  "routes": {
+    "savings/overview": "savings:read",
+    "savings/causes": "savings:read",
+    "savings/saves": "savings:read",
+    "sessions": "session:read",
+    "monitors": "monitor_config:read"
   },
-  {
-   "name": "no grants: savings/overview refused",
-   "admin": false,
-   "grants": [],
-   "workspace": "A",
-   "route": "savings/overview",
-   "allowed": false
-  },
-  {
-   "name": "session:read is not savings:read (savings/overview)",
-   "admin": false,
-   "grants": [
+  "cases": [
     {
-     "workspace": null,
-     "resourceType": "session",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/overview",
-   "allowed": false
-  },
-  {
-   "name": "workspace:read is not savings:read (savings/overview)",
-   "admin": false,
-   "grants": [
+      "name": "admin reads savings/overview in any workspace",
+      "admin": true,
+      "grants": [],
+      "workspace": "B",
+      "route": "savings/overview",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "workspace",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/overview",
-   "allowed": false
-  },
-  {
-   "name": "org-wide savings:read allows savings/overview in A",
-   "admin": false,
-   "grants": [
+      "name": "no grants: savings/overview refused",
+      "admin": false,
+      "grants": [],
+      "workspace": "A",
+      "route": "savings/overview",
+      "allowed": false
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/overview",
-   "allowed": true
-  },
-  {
-   "name": "org-wide savings:read allows savings/overview in B",
-   "admin": false,
-   "grants": [
+      "name": "session:read is not savings:read (savings/overview)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "session",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/overview",
+      "allowed": false
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "B",
-   "route": "savings/overview",
-   "allowed": true
-  },
-  {
-   "name": "savings:read on A reaches A (savings/overview)",
-   "admin": false,
-   "grants": [
+      "name": "workspace:read is not savings:read (savings/overview)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "workspace",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/overview",
+      "allowed": false
+    },
     {
-     "workspace": "A",
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/overview",
-   "allowed": true
-  },
-  {
-   "name": "savings:read on A does not reach B (savings/overview)",
-   "admin": false,
-   "grants": [
+      "name": "org-wide savings:read allows savings/overview in A",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/overview",
+      "allowed": true
+    },
     {
-     "workspace": "A",
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "B",
-   "route": "savings/overview",
-   "allowed": false
-  },
-  {
-   "name": "admin reads savings/causes in any workspace",
-   "admin": true,
-   "grants": [],
-   "workspace": "B",
-   "route": "savings/causes",
-   "allowed": true
-  },
-  {
-   "name": "no grants: savings/causes refused",
-   "admin": false,
-   "grants": [],
-   "workspace": "A",
-   "route": "savings/causes",
-   "allowed": false
-  },
-  {
-   "name": "session:read is not savings:read (savings/causes)",
-   "admin": false,
-   "grants": [
+      "name": "org-wide savings:read allows savings/overview in B",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "B",
+      "route": "savings/overview",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "session",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/causes",
-   "allowed": false
-  },
-  {
-   "name": "workspace:read is not savings:read (savings/causes)",
-   "admin": false,
-   "grants": [
+      "name": "savings:read on A reaches A (savings/overview)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "A",
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/overview",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "workspace",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/causes",
-   "allowed": false
-  },
-  {
-   "name": "org-wide savings:read allows savings/causes in A",
-   "admin": false,
-   "grants": [
+      "name": "savings:read on A does not reach B (savings/overview)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "A",
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "B",
+      "route": "savings/overview",
+      "allowed": false
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/causes",
-   "allowed": true
-  },
-  {
-   "name": "org-wide savings:read allows savings/causes in B",
-   "admin": false,
-   "grants": [
+      "name": "admin reads savings/causes in any workspace",
+      "admin": true,
+      "grants": [],
+      "workspace": "B",
+      "route": "savings/causes",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "B",
-   "route": "savings/causes",
-   "allowed": true
-  },
-  {
-   "name": "savings:read on A reaches A (savings/causes)",
-   "admin": false,
-   "grants": [
+      "name": "no grants: savings/causes refused",
+      "admin": false,
+      "grants": [],
+      "workspace": "A",
+      "route": "savings/causes",
+      "allowed": false
+    },
     {
-     "workspace": "A",
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/causes",
-   "allowed": true
-  },
-  {
-   "name": "savings:read on A does not reach B (savings/causes)",
-   "admin": false,
-   "grants": [
+      "name": "session:read is not savings:read (savings/causes)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "session",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/causes",
+      "allowed": false
+    },
     {
-     "workspace": "A",
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "B",
-   "route": "savings/causes",
-   "allowed": false
-  },
-  {
-   "name": "admin reads savings/saves in any workspace",
-   "admin": true,
-   "grants": [],
-   "workspace": "B",
-   "route": "savings/saves",
-   "allowed": true
-  },
-  {
-   "name": "no grants: savings/saves refused",
-   "admin": false,
-   "grants": [],
-   "workspace": "A",
-   "route": "savings/saves",
-   "allowed": false
-  },
-  {
-   "name": "session:read is not savings:read (savings/saves)",
-   "admin": false,
-   "grants": [
+      "name": "workspace:read is not savings:read (savings/causes)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "workspace",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/causes",
+      "allowed": false
+    },
     {
-     "workspace": null,
-     "resourceType": "session",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/saves",
-   "allowed": false
-  },
-  {
-   "name": "workspace:read is not savings:read (savings/saves)",
-   "admin": false,
-   "grants": [
+      "name": "org-wide savings:read allows savings/causes in A",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/causes",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "workspace",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/saves",
-   "allowed": false
-  },
-  {
-   "name": "org-wide savings:read allows savings/saves in A",
-   "admin": false,
-   "grants": [
+      "name": "org-wide savings:read allows savings/causes in B",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "B",
+      "route": "savings/causes",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/saves",
-   "allowed": true
-  },
-  {
-   "name": "org-wide savings:read allows savings/saves in B",
-   "admin": false,
-   "grants": [
+      "name": "savings:read on A reaches A (savings/causes)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "A",
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/causes",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "B",
-   "route": "savings/saves",
-   "allowed": true
-  },
-  {
-   "name": "savings:read on A reaches A (savings/saves)",
-   "admin": false,
-   "grants": [
+      "name": "savings:read on A does not reach B (savings/causes)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "A",
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "B",
+      "route": "savings/causes",
+      "allowed": false
+    },
     {
-     "workspace": "A",
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "savings/saves",
-   "allowed": true
-  },
-  {
-   "name": "savings:read on A does not reach B (savings/saves)",
-   "admin": false,
-   "grants": [
+      "name": "admin reads savings/saves in any workspace",
+      "admin": true,
+      "grants": [],
+      "workspace": "B",
+      "route": "savings/saves",
+      "allowed": true
+    },
     {
-     "workspace": "A",
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "B",
-   "route": "savings/saves",
-   "allowed": false
-  },
-  {
-   "name": "session:read allows sessions",
-   "admin": false,
-   "grants": [
+      "name": "no grants: savings/saves refused",
+      "admin": false,
+      "grants": [],
+      "workspace": "A",
+      "route": "savings/saves",
+      "allowed": false
+    },
     {
-     "workspace": null,
-     "resourceType": "session",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "sessions",
-   "allowed": true
-  },
-  {
-   "name": "savings:read is not session:read",
-   "admin": false,
-   "grants": [
+      "name": "session:read is not savings:read (savings/saves)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "session",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/saves",
+      "allowed": false
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "sessions",
-   "allowed": false
-  },
-  {
-   "name": "session:read on B does not reach A",
-   "admin": false,
-   "grants": [
+      "name": "workspace:read is not savings:read (savings/saves)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "workspace",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/saves",
+      "allowed": false
+    },
     {
-     "workspace": "B",
-     "resourceType": "session",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "sessions",
-   "allowed": false
-  },
-  {
-   "name": "monitor_config:read allows monitors",
-   "admin": false,
-   "grants": [
+      "name": "org-wide savings:read allows savings/saves in A",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/saves",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "monitor_config",
-     "action": "read"
-    }
-   ],
-   "workspace": "A",
-   "route": "monitors",
-   "allowed": true
-  },
-  {
-   "name": "monitor_config:write is not read",
-   "admin": false,
-   "grants": [
+      "name": "org-wide savings:read allows savings/saves in B",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "B",
+      "route": "savings/saves",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "monitor_config",
-     "action": "write"
-    }
-   ],
-   "workspace": "A",
-   "route": "monitors",
-   "allowed": false
-  },
-  {
-   "name": "savings:read is not monitor_config:read",
-   "admin": false,
-   "grants": [
+      "name": "savings:read on A reaches A (savings/saves)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "A",
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "savings/saves",
+      "allowed": true
+    },
     {
-     "workspace": null,
-     "resourceType": "savings",
-     "action": "read"
+      "name": "savings:read on A does not reach B (savings/saves)",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "A",
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "B",
+      "route": "savings/saves",
+      "allowed": false
+    },
+    {
+      "name": "session:read allows sessions",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "session",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "sessions",
+      "allowed": true
+    },
+    {
+      "name": "savings:read is not session:read",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "sessions",
+      "allowed": false
+    },
+    {
+      "name": "session:read on B does not reach A",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": "B",
+          "resourceType": "session",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "sessions",
+      "allowed": false
+    },
+    {
+      "name": "monitor_config:read allows monitors",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "monitor_config",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "monitors",
+      "allowed": true
+    },
+    {
+      "name": "monitor_config:write is not read",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "monitor_config",
+          "action": "write"
+        }
+      ],
+      "workspace": "A",
+      "route": "monitors",
+      "allowed": false
+    },
+    {
+      "name": "savings:read is not monitor_config:read",
+      "admin": false,
+      "grants": [
+        {
+          "workspace": null,
+          "resourceType": "savings",
+          "action": "read"
+        }
+      ],
+      "workspace": "A",
+      "route": "monitors",
+      "allowed": false
     }
-   ],
-   "workspace": "A",
-   "route": "monitors",
-   "allowed": false
-  }
- ]
+  ]
 }

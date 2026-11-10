@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"math/bits"
+	"math/big"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -126,17 +126,15 @@ func daysAndHero(r contract.SavingsRange, spend []sqlc.SavingsSpendByDayRow, eve
 }
 
 // basisPoints is part/whole in integer basis points (0-10000, rounded half up), nil when whole is 0. part is
-// clamped to [0, whole]. The product part*10000 is formed in 128 bits so no amount can overflow.
+// clamped to [0, whole]. The product part*10000 is formed in big integers so no amount can overflow.
 func basisPoints(part, whole contract.MicroUSD) *int {
 	if whole <= 0 {
 		return nil
 	}
-	p, w := uint64(min(max(part, 0), whole)), uint64(whole)
-	hi, lo := bits.Mul64(p, 10000)
-	lo, carry := bits.Add64(lo, w/2, 0)
-	hi += carry
-	q, _ := bits.Div64(hi, lo, w) // hi < w because p <= w, so the quotient fits in 64 bits
-	bp := int(q)
+	n := new(big.Int).Mul(big.NewInt(int64(min(max(part, 0), whole))), big.NewInt(10000))
+	n.Add(n, big.NewInt(int64(whole)/2))
+	n.Quo(n, big.NewInt(int64(whole)))
+	bp := int(n.Int64()) // 0..10000 by the clamp above
 	return &bp
 }
 
