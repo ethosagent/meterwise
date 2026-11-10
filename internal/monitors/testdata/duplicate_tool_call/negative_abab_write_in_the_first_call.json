@@ -1,0 +1,12 @@
+{
+  "description": "A-B-A-B where the first A turn wrote: the write sits inside the window, so it is not an alternation",
+  "ring": [
+    {"Index": 5, "Tools": ["list_dir", "edit_file"], "ArgsHashes": [21, 12], "WroteHashes": [9]},
+    {"Index": 6, "Tools": ["get_weather"], "ArgsHashes": [22]},
+    {"Index": 7, "Tools": ["list_dir", "edit_file"], "ArgsHashes": [21, 12]},
+    {"Index": 8, "Tools": ["get_weather"], "ArgsHashes": [22]}
+  ],
+  "session_calls": 9,
+  "config": {"duplicate_tool_call": {"maxRepeats": 3, "abab": true}},
+  "expect": {"fires": false}
+}

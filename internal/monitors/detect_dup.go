@@ -41,11 +41,11 @@ func exactDuplicate(c *tollgate.Call, calls []contract.CallSummary, k contract.D
 	for ti, h := range cur.ArgsHashes {
 		var matched []int
 		for i := n - 2; i >= start; i-- {
+			if hasWrite(calls[i]) { // its write runs after its results: it lies between that turn and the pending call
+				break
+			}
 			if slices.Contains(calls[i].ArgsHashes, h) {
 				matched = append(matched, calls[i].Index)
-			}
-			if hasWrite(calls[i]) {
-				break
 			}
 		}
 		if 1+len(matched) < k.MaxRepeats {
@@ -75,7 +75,7 @@ func alternation(c *tollgate.Call, calls []contract.CallSummary, _ contract.Dupl
 	}
 	a, b, a2, b2 := calls[n-4], calls[n-3], calls[n-2], calls[n-1]
 	if !slices.Equal(a.ArgsHashes, a2.ArgsHashes) || !slices.Equal(b.ArgsHashes, b2.ArgsHashes) ||
-		slices.Equal(a.ArgsHashes, b.ArgsHashes) || len(b2.ArgsHashes) == 0 || len(a.ArgsHashes) == 0 || hasWrite(b) || hasWrite(a2) {
+		slices.Equal(a.ArgsHashes, b.ArgsHashes) || len(b2.ArgsHashes) == 0 || len(a.ArgsHashes) == 0 || hasWrite(a) || hasWrite(b) || hasWrite(a2) {
 		return contract.MonitorEvidence{}, false
 	}
 	return contract.MonitorEvidence{

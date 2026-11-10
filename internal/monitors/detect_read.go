@@ -22,11 +22,11 @@ func DetectRepeatedRead(c *tollgate.Call, r contract.RingView, cfg contract.Moni
 	for _, p := range cur.ReadHashes {
 		var matched []int
 		for i := n - 2; i >= 0; i-- {
+			if hasWrite(calls[i]) { // its write runs after its results: it lies between that turn and the pending call
+				break
+			}
 			if slices.Contains(calls[i].ReadHashes, p) {
 				matched = append(matched, calls[i].Index)
-			}
-			if hasWrite(calls[i]) {
-				break
 			}
 		}
 		if 1+len(matched) < k.MinReads {

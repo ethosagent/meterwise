@@ -1,0 +1,9 @@
+{
+  "description": "the earlier identical call sat in a turn that also wrote, so a write lies between it and the pending call",
+  "ring": [
+    {"Index": 1, "Tools": ["get_weather", "edit_file"], "ArgsHashes": [11, 12], "WroteHashes": [9]},
+    {"Index": 2, "Tools": ["get_weather"], "ArgsHashes": [11]}
+  ],
+  "session_calls": 3,
+  "expect": {"fires": false}
+}

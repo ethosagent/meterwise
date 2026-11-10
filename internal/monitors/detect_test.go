@@ -95,7 +95,7 @@ func resolve(ev contract.MonitorEvidence) contract.MonitorEvidence {
 func TestDetectorsOnRingFixtures(t *testing.T) {
 	total := 0
 	defer func() {
-		if total < 29 {
+		if total < 32 {
 			t.Errorf("only %d fixtures ran", total)
 		}
 	}()
