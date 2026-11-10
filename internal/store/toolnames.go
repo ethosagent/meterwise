@@ -36,3 +36,7 @@ func (s *Store) toolNames(callID string, raw []byte) []string {
 	}
 	return tools
 }
+
+// UnexpectedStateErrors is how many 55000 errors with an unrecognised message the store has seen
+// (process-wide); the ledger reports it on /statusz.
+func (*Store) UnexpectedStateErrors() int64 { return UnexpectedStateErrors() }

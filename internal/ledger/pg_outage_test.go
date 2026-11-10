@@ -80,7 +80,4 @@ func TestStatusCarriesTheStoresUnreadableToolCallsCount(t *testing.T) {
 	if v, ok := h.Status()["unreadable_tool_calls"]; !ok || v != int64(0) {
 		t.Fatalf("status = %v", h.Status())
 	}
-	if _, ok := newHook(t, &fakeWriter{}, nil).Status()["unreadable_tool_calls"]; ok {
-		t.Fatal("a writer that cannot count them must not report a count")
-	}
 }

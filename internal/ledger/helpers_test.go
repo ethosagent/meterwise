@@ -50,7 +50,12 @@ type fakeWriter struct {
 	// failClose, when set, is asked before every CloseSessions attempt; a non-nil error fails that attempt.
 	failClose func() error
 	delay     time.Duration
+	// unreadable and unexpected are the data-problem counters the store reports through the Writer port.
+	unreadable, unexpected int64
 }
+
+func (w *fakeWriter) UnreadableToolCalls() int64   { return w.unreadable }
+func (w *fakeWriter) UnexpectedStateErrors() int64 { return w.unexpected }
 
 func (w *fakeWriter) WriteCalls(_ context.Context, recs []contract.CallRecord) (store.WriteResult, error) {
 	if w.delay > 0 {

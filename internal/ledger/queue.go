@@ -17,6 +17,10 @@ import (
 type Writer interface {
 	WriteCalls(ctx context.Context, recs []contract.CallRecord) (store.WriteResult, error)
 	CloseSessions(ctx context.Context, closes []contract.SessionClose) (int, error)
+	// UnreadableToolCalls counts stored tool_calls values the store could not read; UnexpectedStateErrors
+	// counts 55000 errors whose wording the retry policy does not recognise. Both go to /statusz.
+	UnreadableToolCalls() int64
+	UnexpectedStateErrors() int64
 }
 
 // Options configures the hook. Zero values take the documented defaults.

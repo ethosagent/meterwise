@@ -159,10 +159,8 @@ func (h *Hook) Close(ctx context.Context) error { return h.q.close(ctx) }
 // Status reports the queue and its counters for /statusz (it implements contract.StatusSource).
 func (h *Hook) Status() map[string]any {
 	st := h.q.status()
-	// stored tool_calls values the store could not read (the store counts them; the Writer may not be the store)
-	if w, ok := h.opt.Writer.(interface{ UnreadableToolCalls() int64 }); ok {
-		st["unreadable_tool_calls"] = w.UnreadableToolCalls()
-	}
+	st["unreadable_tool_calls"] = h.opt.Writer.UnreadableToolCalls()
+	st["unexpected_55000"] = h.opt.Writer.UnexpectedStateErrors()
 	return st
 }
 
