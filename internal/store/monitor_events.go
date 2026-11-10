@@ -135,10 +135,14 @@ func (s *Store) eventsWith(ctx context.Context, q *sqlc.Queries, workspaceID, se
 
 // MonitorStats returns the six monitors' counts over [from, to) in MonitorNames order, zero-filled.
 func (s *Store) MonitorStats(ctx context.Context, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error) {
+	return s.monitorStatsWith(ctx, s.q, workspaceID, from, to)
+}
+
+func (s *Store) monitorStatsWith(ctx context.Context, q *sqlc.Queries, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error) {
 	if !validID(workspaceID) {
 		return nil, contract.Invalid("workspaceId", "must be a workspace id")
 	}
-	rows, err := s.q.MonitorStats(ctx, sqlc.MonitorStatsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
+	rows, err := q.MonitorStats(ctx, sqlc.MonitorStatsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
 	if err != nil {
 		return nil, queryErr(err)
 	}

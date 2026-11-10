@@ -46,8 +46,9 @@ var (
 	farFuture = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
 )
 
-// ListSessions returns one page of a workspace's sessions, newest first by (started_at, id). An invalid
-// cursor, workspace id or limit is a validation error. The query is scoped by workspace_id.
+// ListSessions returns one page of a workspace's sessions, newest first by (started_at, id), optionally only
+// the sessions of one client (as stored; "unknown" is a NULL client) or outcome. An invalid cursor, workspace id,
+// limit or outcome is a validation error. The query is scoped by workspace_id.
 func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (contract.SessionPage, error) {
 	limit, err := contract.ResolvePageLimit(q.Limit)
 	if err != nil {
@@ -63,11 +64,15 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 	if to.IsZero() {
 		to = farFuture
 	}
+	if !contract.ValidSessionOutcome(q.Outcome) {
+		return contract.SessionPage{}, contract.Invalid("outcome", "must be completed, abandoned or open")
+	}
 	at, id, err := decodeCursor(q.Cursor)
 	if err != nil {
 		return contract.SessionPage{}, err
 	}
 	params := sqlc.ListSessionsParams{WorkspaceID: q.WorkspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: clampInt32(int64(limit + 1))}
+	params.Client, params.Outcome = textArg(q.Client), textArg(q.Outcome)
 	if q.Cursor != "" {
 		params.CursorAt, params.CursorID = pgts(at), pgtype.Text{String: id, Valid: true}
 	}
@@ -86,6 +91,9 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 	}
 	return page, nil
 }
+
+// textArg is a nullable text parameter: "" means no filter.
+func textArg(v string) pgtype.Text { return pgtype.Text{String: v, Valid: v != ""} }
 
 // sessionRow is the shape every session query returns.
 type sessionRow = sqlc.ListSessionsRow

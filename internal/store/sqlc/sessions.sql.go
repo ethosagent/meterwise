@@ -176,8 +176,10 @@ FROM sessions
 WHERE workspace_id = $1::text::uuid
   AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
   AND (started_at, id) < (COALESCE($4::timestamptz, 'infinity'::timestamptz), COALESCE($5::text, ''))
+  AND ($6::text IS NULL OR COALESCE(client, 'unknown') = $6::text)
+  AND ($7::text IS NULL OR outcome = $7::text)
 ORDER BY started_at DESC, id DESC
-LIMIT $6::int
+LIMIT $8::int
 `
 
 type ListSessionsParams struct {
@@ -186,6 +188,8 @@ type ListSessionsParams struct {
 	ToTs        pgtype.Timestamptz
 	CursorAt    pgtype.Timestamptz
 	CursorID    pgtype.Text
+	Client      pgtype.Text
+	Outcome     pgtype.Text
 	MaxRows     int32
 }
 
@@ -217,6 +221,8 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]L
 		arg.ToTs,
 		arg.CursorAt,
 		arg.CursorID,
+		arg.Client,
+		arg.Outcome,
 		arg.MaxRows,
 	)
 	if err != nil {
