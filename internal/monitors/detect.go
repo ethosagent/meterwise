@@ -63,5 +63,5 @@ func newVerdict(name contract.MonitorName, mode contract.MonitorMode, ev contrac
 
 // hashID is the privacy-safe public id of a ring hash inside the call's workspace (ruling R7).
 func hashID(c *tollgate.Call, h uint64) string {
-	return contract.HashID(c.Tenant.ID, contract.HashValue(h))
+	return contract.HashOf(c.Tenant.ID, h)
 }

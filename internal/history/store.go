@@ -3,7 +3,6 @@ package history
 import (
 	"cmp"
 	"container/list"
-	"hash/fnv"
 	"slices"
 	"sync"
 
@@ -85,9 +84,7 @@ func ringBytes(key string, r ring) int64 {
 }
 
 func (s *store) shard(key string) *shard {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return s.shards[int(h.Sum32())%len(s.shards)]
+	return s.shards[contract.HashString(key)%uint64(len(s.shards))]
 }
 
 // get returns the session's ring and whether it exists, and marks it recently used.

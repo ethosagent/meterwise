@@ -1,9 +1,10 @@
 package monitors
 
 import (
-	"hash/fnv"
 	"sync"
 	"sync/atomic"
+
+	"github.com/ethosagent/meterwise/internal/contract"
 )
 
 // Per-session note state: notes waiting for the session's next call (stream monitors decide after the
@@ -45,9 +46,7 @@ func newSessStore(maxSessions int) *sessStore {
 }
 
 func (s *sessStore) shard(key string) *sessShard {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return &s.shards[int(h.Sum32())%sessShards]
+	return &s.shards[contract.HashString(key)%sessShards]
 }
 
 // entry returns the session's entry, creating it (and dropping an arbitrary one when the shard is

@@ -220,7 +220,7 @@ func pathFor(c *tollgate.Call, pathHash string) string {
 	}
 	for _, tc := range c.Messages[i].ToolCalls {
 		p := contract.ToolPath(tc.Arguments)
-		if p != "" && contract.HashID(c.Tenant.ID, contract.HashValue(contract.HashString(p))) == pathHash {
+		if p != "" && hashID(c, contract.HashString(p)) == pathHash {
 			return p
 		}
 	}

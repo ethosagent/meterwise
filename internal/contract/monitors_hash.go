@@ -45,6 +45,17 @@ func HashID(workspaceID, value string) string {
 // HashValue renders a ring hash as the value HashID takes.
 func HashValue(h uint64) string { return strconv.FormatUint(h, 10) }
 
+// HashOf is HashID(workspaceID, HashValue(h)) without the intermediate strings: the public id of a ring
+// hash inside one workspace.
+func HashOf(workspaceID string, h uint64) string {
+	var buf [96]byte
+	b := append(buf[:0], workspaceID...)
+	b = append(b, ':')
+	b = strconv.AppendUint(b, h, 10)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:8])
+}
+
 // TextHasher hashes text as its lowercase letter/digit tokens joined by one space, so the result is
 // the same however the text is cut into stream deltas. Sum is 0 for text with no token.
 type TextHasher struct {
@@ -145,12 +156,7 @@ func TurnShingles(reasoning, text string) []uint64 {
 	return ShinglesOf(toks, MaxRingShingles)
 }
 
-func capText(s string) string {
-	if len(s) > ShingleTextCap {
-		return s[:ShingleTextCap]
-	}
-	return s
-}
+func capText(s string) string { return TruncateUTF8(s, ShingleTextCap) }
 
 // ToolKind classifies a tool by its name.
 type ToolKind int
