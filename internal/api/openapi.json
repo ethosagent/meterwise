@@ -293,6 +293,54 @@
         ],
         "type": "object"
       },
+      "DuplicateToolCallConfig": {
+        "properties": {
+          "abab": {
+            "type": "boolean"
+          },
+          "fuzzyPct": {
+            "type": "integer"
+          },
+          "lookBack": {
+            "type": "integer"
+          },
+          "maxRepeats": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "maxRepeats",
+          "lookBack",
+          "fuzzyPct",
+          "abab"
+        ],
+        "type": "object"
+      },
+      "DuplicateToolCallPatch": {
+        "properties": {
+          "abab": {
+            "type": "boolean"
+          },
+          "fuzzyPct": {
+            "type": "integer"
+          },
+          "lookBack": {
+            "type": "integer"
+          },
+          "maxRepeats": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -617,6 +665,317 @@
         ],
         "type": "object"
       },
+      "MonitorConfig": {
+        "properties": {
+          "duplicate_tool_call": {
+            "$ref": "#/components/schemas/DuplicateToolCallConfig"
+          },
+          "no_progress": {
+            "$ref": "#/components/schemas/NoProgressConfig"
+          },
+          "reasoning_loop": {
+            "$ref": "#/components/schemas/ReasoningLoopConfig"
+          },
+          "repeated_read": {
+            "$ref": "#/components/schemas/RepeatedReadConfig"
+          },
+          "second_guessing": {
+            "$ref": "#/components/schemas/SecondGuessingConfig"
+          },
+          "step_budget": {
+            "$ref": "#/components/schemas/StepBudgetConfig"
+          }
+        },
+        "required": [
+          "duplicate_tool_call",
+          "repeated_read",
+          "no_progress",
+          "step_budget",
+          "reasoning_loop",
+          "second_guessing"
+        ],
+        "type": "object"
+      },
+      "MonitorConfigPatch": {
+        "properties": {
+          "duplicate_tool_call": {
+            "$ref": "#/components/schemas/DuplicateToolCallPatch"
+          },
+          "no_progress": {
+            "$ref": "#/components/schemas/NoProgressPatch"
+          },
+          "reasoning_loop": {
+            "$ref": "#/components/schemas/ReasoningLoopPatch"
+          },
+          "repeated_read": {
+            "$ref": "#/components/schemas/RepeatedReadPatch"
+          },
+          "second_guessing": {
+            "$ref": "#/components/schemas/SecondGuessingPatch"
+          },
+          "step_budget": {
+            "$ref": "#/components/schemas/StepBudgetPatch"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "MonitorEvent": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "callId": {
+            "type": "string"
+          },
+          "callIndex": {
+            "type": "integer"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "estSavedTokens": {
+            "type": "integer"
+          },
+          "estSavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/MonitorEvidence"
+          },
+          "feedback": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "callId",
+          "callIndex",
+          "ts",
+          "monitor",
+          "mode",
+          "action",
+          "evidence",
+          "estSavedTokens",
+          "estSavedUsd",
+          "confidence",
+          "feedback"
+        ],
+        "type": "object"
+      },
+      "MonitorEvidence": {
+        "properties": {
+          "argsHash": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "matchedCalls": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "pathHash": {
+            "type": "string"
+          },
+          "phrases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "threshold": {
+            "type": "integer"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "MonitorFeedbackRequest": {
+        "properties": {
+          "feedback": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "feedback"
+        ],
+        "type": "object"
+      },
+      "MonitorStats": {
+        "properties": {
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "monitors": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorStatsRow"
+            },
+            "type": "array"
+          },
+          "range": {
+            "type": "string"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range",
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldSaveUsd",
+          "monitors"
+        ],
+        "type": "object"
+      },
+      "MonitorStatsRow": {
+        "properties": {
+          "blocked": {
+            "type": "integer"
+          },
+          "estSavedTokens": {
+            "type": "integer"
+          },
+          "falsePositiveRate": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feedbackCorrect": {
+            "type": "integer"
+          },
+          "feedbackWrong": {
+            "type": "integer"
+          },
+          "fires": {
+            "type": "integer"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "monitor": {
+            "type": "string"
+          },
+          "noted": {
+            "type": "integer"
+          },
+          "observed": {
+            "type": "integer"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "monitor",
+          "mode",
+          "fires",
+          "blocked",
+          "noted",
+          "observed",
+          "estSavedTokens",
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldSaveUsd",
+          "feedbackCorrect",
+          "feedbackWrong",
+          "falsePositiveRate"
+        ],
+        "type": "object"
+      },
+      "NoProgressConfig": {
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "similarityPct": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "similarityPct"
+        ],
+        "type": "object"
+      },
+      "NoProgressPatch": {
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "similarityPct": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "PermissionSnapshot": {
         "properties": {
           "admin": {
@@ -672,6 +1031,67 @@
         "required": [],
         "type": "object"
       },
+      "ReasoningLoopConfig": {
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "shingleTokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "shingleTokens"
+        ],
+        "type": "object"
+      },
+      "ReasoningLoopPatch": {
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "shingleTokens": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RepeatedReadConfig": {
+        "properties": {
+          "blockAfter": {
+            "type": "integer"
+          },
+          "minReads": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "minReads",
+          "blockAfter"
+        ],
+        "type": "object"
+      },
+      "RepeatedReadPatch": {
+        "properties": {
+          "blockAfter": {
+            "type": "integer"
+          },
+          "minReads": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "ReplaceGroupMembersRequest": {
         "properties": {
           "userIds": {
@@ -715,6 +1135,33 @@
           "proxyUrl",
           "previousGraceUntil"
         ],
+        "type": "object"
+      },
+      "SecondGuessingConfig": {
+        "properties": {
+          "minPhrases": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "minPhrases"
+        ],
+        "type": "object"
+      },
+      "SecondGuessingPatch": {
+        "properties": {
+          "minPhrases": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "Session": {
@@ -815,6 +1262,12 @@
             },
             "type": "array"
           },
+          "monitorEvents": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorEvent"
+            },
+            "type": "array"
+          },
           "session": {
             "$ref": "#/components/schemas/Session"
           },
@@ -825,7 +1278,8 @@
         "required": [
           "session",
           "calls",
-          "truncated"
+          "truncated",
+          "monitorEvents"
         ],
         "type": "object"
       },
@@ -947,6 +1401,16 @@
           "calls": {
             "type": "integer"
           },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
           "sessions": {
             "type": "integer"
           },
@@ -961,7 +1425,9 @@
           "calls",
           "sessions",
           "avgCallsPerSession",
-          "byDay"
+          "byDay",
+          "savedUsd",
+          "likelySavedUsd"
         ],
         "type": "object"
       },
@@ -988,6 +1454,33 @@
           "calls",
           "sessions"
         ],
+        "type": "object"
+      },
+      "StepBudgetConfig": {
+        "properties": {
+          "maxSteps": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "maxSteps"
+        ],
+        "type": "object"
+      },
+      "StepBudgetPatch": {
+        "properties": {
+          "maxSteps": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "SwitchWorkspaceResponse": {
@@ -2393,6 +2886,164 @@
         ],
         "summary": "Rename a workspace or change its settings",
         "x-permission": "workspace:write",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/monitor-events/{eventId}/feedback": {
+      "post": {
+        "operationId": "postApiWorkspacesIdMonitor-eventsEventIdFeedback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorEvent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mark a monitor event correct or wrong, or clear it with null; 404 when the event is not in the workspace",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/monitors": {
+      "get": {
+        "operationId": "getApiWorkspacesIdMonitors",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspace's monitor settings with defaults filled in",
+        "x-permission": "monitor_config:read",
+        "x-workspace-param": "id"
+      },
+      "patch": {
+        "operationId": "patchApiWorkspacesIdMonitors",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorConfigPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change any subset of the monitor settings; 422 names the field of a bad mode or threshold",
+        "x-permission": "monitor_config:write",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/monitors/stats": {
+      "get": {
+        "operationId": "getApiWorkspacesIdMonitorsStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Per-monitor fires, actions, saved, likely-saved and would-save for range=7d|30d (default 7d); saved and likely are never summed",
+        "x-permission": "savings:read",
         "x-workspace-param": "id"
       }
     },

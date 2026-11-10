@@ -37,7 +37,7 @@ export const INVITATION_STATUSES = ["pending", "accepted", "revoked", "expired"]
 
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
 
-export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace.delete", "workspace.url_reset", "workspace.url_retire_previous", "workspace.allowed_cidrs_update", "invitation.create", "invitation.resend", "invitation.revoke", "member.role_change", "member.remove", "group.create", "group.update", "group.delete", "group.permissions_update", "group.workspace_attach", "group.workspace_detach", "group.member_add", "group.member_remove", "group.members_update", "org.permissions_update"] as const;
+export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace.delete", "workspace.url_reset", "workspace.url_retire_previous", "workspace.allowed_cidrs_update", "invitation.create", "invitation.resend", "invitation.revoke", "member.role_change", "member.remove", "group.create", "group.update", "group.delete", "group.permissions_update", "group.workspace_attach", "group.workspace_detach", "group.member_add", "group.member_remove", "group.members_update", "org.permissions_update", "workspace.monitors_update", "monitor_event.feedback"] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -326,6 +326,7 @@ export interface SessionDetail {
   session: Session;
   calls: Call[];
   truncated: boolean;
+  monitorEvents: MonitorEvent[];
 }
 
 export interface StatsDay {
@@ -341,6 +342,149 @@ export interface Stats {
   sessions: number;
   avgCallsPerSession: number;
   byDay: StatsDay[];
+  savedUsd: string;
+  likelySavedUsd: string;
+}
+
+export interface MonitorEvidence {
+  matchedCalls?: number[];
+  tool?: string;
+  argsHash?: string;
+  pathHash?: string;
+  path?: string;
+  hash?: string;
+  phrases?: string[];
+  count?: number;
+  threshold?: number;
+}
+
+export interface MonitorConfig {
+  duplicate_tool_call: DuplicateToolCallConfig;
+  repeated_read: RepeatedReadConfig;
+  no_progress: NoProgressConfig;
+  step_budget: StepBudgetConfig;
+  reasoning_loop: ReasoningLoopConfig;
+  second_guessing: SecondGuessingConfig;
+}
+
+export interface DuplicateToolCallConfig {
+  mode: string;
+  maxRepeats: number;
+  lookBack: number;
+  fuzzyPct: number;
+  abab: boolean;
+}
+
+export interface RepeatedReadConfig {
+  mode: string;
+  minReads: number;
+  blockAfter: number;
+}
+
+export interface NoProgressConfig {
+  mode: string;
+  similarityPct: number;
+}
+
+export interface StepBudgetConfig {
+  mode: string;
+  maxSteps: number;
+}
+
+export interface ReasoningLoopConfig {
+  mode: string;
+  shingleTokens: number;
+}
+
+export interface SecondGuessingConfig {
+  mode: string;
+  minPhrases: number;
+}
+
+export interface MonitorConfigPatch {
+  duplicate_tool_call?: DuplicateToolCallPatch;
+  repeated_read?: RepeatedReadPatch;
+  no_progress?: NoProgressPatch;
+  step_budget?: StepBudgetPatch;
+  reasoning_loop?: ReasoningLoopPatch;
+  second_guessing?: SecondGuessingPatch;
+}
+
+export interface DuplicateToolCallPatch {
+  mode?: string;
+  maxRepeats?: number;
+  lookBack?: number;
+  fuzzyPct?: number;
+  abab?: boolean;
+}
+
+export interface RepeatedReadPatch {
+  mode?: string;
+  minReads?: number;
+  blockAfter?: number;
+}
+
+export interface NoProgressPatch {
+  mode?: string;
+  similarityPct?: number;
+}
+
+export interface StepBudgetPatch {
+  mode?: string;
+  maxSteps?: number;
+}
+
+export interface ReasoningLoopPatch {
+  mode?: string;
+  shingleTokens?: number;
+}
+
+export interface SecondGuessingPatch {
+  mode?: string;
+  minPhrases?: number;
+}
+
+export interface MonitorEvent {
+  id: string;
+  callId: string;
+  callIndex: number;
+  ts: string;
+  monitor: string;
+  mode: string;
+  action: string;
+  evidence: MonitorEvidence;
+  estSavedTokens: number;
+  estSavedUsd: string;
+  confidence: string;
+  feedback: string | null;
+}
+
+export interface MonitorFeedbackRequest {
+  feedback: string | null;
+}
+
+export interface MonitorStatsRow {
+  monitor: string;
+  mode: string;
+  fires: number;
+  blocked: number;
+  noted: number;
+  observed: number;
+  estSavedTokens: number;
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldSaveUsd: string;
+  feedbackCorrect: number;
+  feedbackWrong: number;
+  falsePositiveRate: number | null;
+}
+
+export interface MonitorStats {
+  range: string;
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldSaveUsd: string;
+  monitors: MonitorStatsRow[];
 }
 
 export interface RouteSpec {
@@ -389,6 +533,10 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "POST", pattern: "/api/workspaces", permission: "member", public: false },
   { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "workspace:manage", workspaceParam: "id", public: false },
   { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "workspace:write", workspaceParam: "id", public: false },
+  { method: "POST", pattern: "/api/workspaces/{id}/monitor-events/{eventId}/feedback", permission: "session:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/monitors", permission: "monitor_config:read", workspaceParam: "id", public: false },
+  { method: "PATCH", pattern: "/api/workspaces/{id}/monitors", permission: "monitor_config:write", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/monitors/stats", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/sessions", permission: "session:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/setup", permission: "workspace_url:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/stats", permission: "savings:read", workspaceParam: "id", public: false },
