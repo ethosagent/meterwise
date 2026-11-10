@@ -214,7 +214,7 @@ func (s *server) listInvitations(c Call, _ none) (contract.InvitationList, error
 	if err != nil {
 		return contract.InvitationList{}, err
 	}
-	now := time.Now()
+	now := s.now()
 	out := contract.InvitationList{Items: make([]contract.InvitationView, 0, len(list))}
 	for _, i := range list {
 		out.Items = append(out.Items, invitationView(i, now))
@@ -227,7 +227,7 @@ func (s *server) createInvitation(c Call, req contract.CreateInvitationRequest) 
 	if err != nil {
 		return contract.InvitationView{}, err
 	}
-	return invitationView(inv, time.Now()), nil
+	return invitationView(inv, s.now()), nil
 }
 
 func (s *server) resendInvitation(c Call, _ none) (contract.InvitationView, error) {
@@ -235,7 +235,7 @@ func (s *server) resendInvitation(c Call, _ none) (contract.InvitationView, erro
 	if err != nil {
 		return contract.InvitationView{}, err
 	}
-	return invitationView(inv, time.Now()), nil
+	return invitationView(inv, s.now()), nil
 }
 
 func (s *server) revokeInvitation(c Call, _ none) (none, error) {
@@ -249,7 +249,7 @@ func (s *server) revokeInvitation(c Call, _ none) (none, error) {
 // signature, a stale timestamp and a replay all answer the same 400.
 func (s *server) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.Webhooks == nil {
-		writeError(w, contract.NewError(contract.CodeNotAvailable, "the Clerk webhook is not configured"))
+		writeError(w, contract.Unavailable("the Clerk webhook", ""))
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBytes))

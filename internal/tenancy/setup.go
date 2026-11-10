@@ -22,7 +22,7 @@ func (s *Service) Setup(ctx context.Context, p contract.Principal, workspaceID s
 		last := contract.RFC3339(*ws.LastCallAt)
 		st.LastCallAt = &last
 	}
-	cs, err := s.st.CallStatus(ctx, ws.ID, s.cfg.Now().UTC().Truncate(24*time.Hour))
+	cs, err := s.st.CallStatus(ctx, ws.ID, contract.UTCDayStart(s.cfg.Now()))
 	if err != nil {
 		return contract.SetupState{}, err
 	}

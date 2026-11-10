@@ -38,7 +38,7 @@ type Deps struct {
 	Access          Access           // groups, group members and org defaults (access.Service)
 	Audit           AuditLog         // the audit log (audit.Sink)
 	Ledger          Ledger           // session and stats reads (*store.Store); nil answers those routes with not_available
-	Now             func() time.Time // the clock for the stats window; nil is time.Now
+	Now             func() time.Time // the clock of every handler (stats window, invitation expiry); nil is time.Now; read it through server.now
 	Webhooks        WebhookVerifier  // nil answers the Clerk webhook with not_available
 	Web             fs.FS            // built web app; nil serves a typed 404 at "/"
 	Tracer          trace.TracerProvider

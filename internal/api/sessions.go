@@ -25,7 +25,7 @@ func (s *server) registerLedger() {
 
 func (s *server) ledger() (Ledger, error) {
 	if s.Ledger == nil {
-		return nil, contract.NewError(contract.CodeNotAvailable, "the ledger is not configured")
+		return nil, contract.Unavailable("the ledger", "")
 	}
 	return s.Ledger, nil
 }
@@ -110,6 +110,35 @@ func callView(r contract.CallRecord) contract.CallView {
 // statsRanges are the accepted ?range= values and their length in UTC days.
 var statsRanges = map[string]int{"7d": 7, "30d": 30}
 
+// now is the server's clock (Options.Now in tests, time.Now otherwise): every handler reads time here.
+func (s *server) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// statsWindow is the [from, to) UTC-day window of a range of days ending with today.
+func statsWindow(now time.Time, days int) (from, to time.Time) {
+	today := contract.UTCDayStart(now)
+	return today.AddDate(0, 0, -(days - 1)), today.AddDate(0, 0, 1)
+}
+
+// fillDays turns the days that had calls into one entry per day of the window, zero-filled.
+func fillDays(from time.Time, days int, have []contract.StatsDay) []contract.StatsDayView {
+	byDay := make(map[string]contract.StatsDay, len(have))
+	for _, d := range have {
+		byDay[d.Day.UTC().Format(time.DateOnly)] = d
+	}
+	out := make([]contract.StatsDayView, 0, days)
+	for d := range days {
+		key := from.AddDate(0, 0, d).Format(time.DateOnly)
+		day := byDay[key]
+		out = append(out, contract.StatsDayView{Day: key, SpendUsd: day.Spend, Calls: day.Calls, Sessions: day.Sessions})
+	}
+	return out
+}
+
 func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
 	led, err := s.ledger()
 	if err != nil {
@@ -123,28 +152,14 @@ func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
 	if !ok {
 		return contract.StatsView{}, contract.Invalid("range", "must be 7d or 30d")
 	}
-	now := time.Now()
-	if s.Now != nil {
-		now = s.Now()
-	}
-	today := now.UTC().Truncate(24 * time.Hour)
-	from, to := today.AddDate(0, 0, -(days-1)), today.AddDate(0, 0, 1)
+	from, to := statsWindow(s.now(), days)
 	st, err := led.Stats(c.Ctx, c.Path("id"), from, to)
 	if err != nil {
 		return contract.StatsView{}, err
 	}
-	have := make(map[string]contract.StatsDay, len(st.ByDay))
-	for _, d := range st.ByDay {
-		have[d.Day.UTC().Format(time.DateOnly)] = d
-	}
-	out := contract.StatsView{SpendUsd: st.Spend, Calls: st.Calls, Sessions: st.Sessions, ByDay: make([]contract.StatsDayView, 0, days)}
+	out := contract.StatsView{SpendUsd: st.Spend, Calls: st.Calls, Sessions: st.Sessions, ByDay: fillDays(from, days, st.ByDay)}
 	if st.Sessions > 0 {
 		out.AvgCallsPerSession = float64(st.Calls) / float64(st.Sessions)
-	}
-	for d := range days {
-		key := from.AddDate(0, 0, d).Format(time.DateOnly)
-		day := have[key]
-		out.ByDay = append(out.ByDay, contract.StatsDayView{Day: key, SpendUsd: day.Spend, Calls: day.Calls, Sessions: day.Sessions})
 	}
 	return out, nil
 }

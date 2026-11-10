@@ -20,7 +20,7 @@ func (Disabled) Verify(context.Context, string) (contract.Identity, error) {
 
 // CreateInvitation is not available without Clerk.
 func (Disabled) CreateInvitation(context.Context, string) (string, error) {
-	return "", contract.NewError(contract.CodeNotAvailable, "Clerk is not configured, so no invitation email is sent")
+	return "", contract.Unavailable("Clerk", "no invitation email is sent")
 }
 
 // RevokeInvitation is a no-op without Clerk.
