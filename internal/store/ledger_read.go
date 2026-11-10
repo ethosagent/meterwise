@@ -38,12 +38,7 @@ func microPtr(v pgtype.Int8) *contract.MicroUSD {
 	return &m
 }
 
-// Session page sizes: DefaultSessionLimit unless the caller asks for fewer or more, never more than MaxSessionLimit.
-const (
-	DefaultSessionLimit = 50
-	MaxSessionLimit     = contract.MaxPageLimit
-	maxSessionCalls     = 5000
-)
+const maxSessionCalls = 5000
 
 var (
 	farPast   = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -53,12 +48,9 @@ var (
 // ListSessions returns one page of a workspace's sessions, newest first by (started_at, id). An invalid
 // cursor, workspace id or limit is a validation error. The query is scoped by workspace_id.
 func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (contract.SessionPage, error) {
-	limit := q.Limit
-	switch {
-	case limit == 0:
-		limit = DefaultSessionLimit
-	case limit < contract.MinPageLimit || limit > MaxSessionLimit:
-		return contract.SessionPage{}, contract.Invalid("limit", contract.LimitMessage)
+	limit, err := contract.ResolvePageLimit(q.Limit)
+	if err != nil {
+		return contract.SessionPage{}, err
 	}
 	if !validID(q.WorkspaceID) {
 		return contract.SessionPage{}, contract.Invalid("workspaceId", "must be a workspace id")

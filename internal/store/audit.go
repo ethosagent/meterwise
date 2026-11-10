@@ -10,10 +10,6 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-// DefaultAuditLimit is the page size when the caller does not ask; a page never holds more than
-// contract.MaxAuditLimit.
-const DefaultAuditLimit = 50
-
 // AppendAudit inserts one audit row. It is the only INSERT into audit_log (internal/audit calls it);
 // the table refuses updates and deletes, so nothing here can change a row once written.
 func (s *Store) AppendAudit(ctx context.Context, e contract.AuditEvent) error {
@@ -41,14 +37,11 @@ func nonNilMap(m map[string]any) map[string]any {
 }
 
 // ListAudit returns one page of the org's audit log, newest first by (created_at, id). An invalid
-// cursor, workspace id or limit is a validation error; the limit defaults to DefaultAuditLimit.
+// cursor, workspace id or limit is a validation error; the limit defaults to contract.DefaultPageLimit.
 func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQuery) (contract.AuditPage, error) {
-	limit := q.Limit
-	switch {
-	case limit == 0:
-		limit = DefaultAuditLimit
-	case limit < contract.MinPageLimit || limit > contract.MaxAuditLimit:
-		return contract.AuditPage{}, contract.Invalid("limit", contract.LimitMessage)
+	limit, err := contract.ResolvePageLimit(q.Limit)
+	if err != nil {
+		return contract.AuditPage{}, err
 	}
 	if q.WorkspaceID != "" && !validID(q.WorkspaceID) {
 		return contract.AuditPage{}, contract.Invalid("workspaceId", "must be a workspace id")
