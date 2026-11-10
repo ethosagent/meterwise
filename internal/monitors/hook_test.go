@@ -322,3 +322,60 @@ func TestWithoutAnEditorEveryNoteAndBlockDegradesToObserve(t *testing.T) {
 		})
 	}
 }
+
+func readEntry(idx int, path string) contract.CallSummary {
+	args := []byte(`{"path":"` + path + `"}`)
+	return contract.CallSummary{Index: idx, Tools: []string{"read_file"}, ArgsHashes: []uint64{contract.ToolArgsHash("read_file", args)},
+		ReadHashes: []uint64{contract.ToolSubject("read_file", args)}, Input: 1000, Output: 50, BodyBytes: 4000 * idx}
+}
+
+// pendingTurn is a pending turn that runs the tools in order: each is (name, path).
+func pendingTurn(idx int, tools ...[2]string) contract.CallSummary {
+	s := contract.CallSummary{Index: idx}
+	for _, tl := range tools {
+		args := []byte(`{"path":"` + tl[1] + `"}`)
+		s.Tools = append(s.Tools, tl[0])
+		s.ArgsHashes = append(s.ArgsHashes, contract.ToolArgsHash(tl[0], args))
+		switch contract.ClassifyTool(tl[0]) {
+		case contract.ToolRead:
+			s.ReadHashes = append(s.ReadHashes, contract.ToolSubject(tl[0], args))
+		case contract.ToolWrite:
+			s.WroteHashes = append(s.WroteHashes, contract.ToolSubject(tl[0], args))
+		}
+	}
+	return s
+}
+
+// M2 (the verifier's probe): the pending turn wrote main.go and then read it back (edit and verify). Its own
+// write breaks the pattern, so neither duplicate_tool_call nor repeated_read fires. A read before the
+// write in the same turn is still a repeat.
+func TestPendingTurnsOwnWriteBeforeAReadBreaksThePattern(t *testing.T) {
+	cfg := contract.DefaultMonitorConfig()
+	cases := []struct {
+		name string
+		cur  contract.CallSummary
+		want []contract.MonitorName
+	}{
+		{"write then read: edit and verify", pendingTurn(3, [2]string{"write_file", "main.go"}, [2]string{"read_file", "main.go"}), nil},
+		{"read then write: the read repeats", pendingTurn(3, [2]string{"read_file", "main.go"}, [2]string{"write_file", "main.go"}),
+			[]contract.MonitorName{contract.MonitorDuplicateToolCall, contract.MonitorRepeatedRead}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ring := fakeRing{readEntry(1, "main.go"), readEntry(2, "main.go"), tc.cur}
+			c := before(t, tollgate.WireOpenAIChat, ring, nil, 4, []tollgate.Message{user("x")})
+			var got []contract.MonitorName
+			for _, d := range monitors.Registry() {
+				if d.Stream {
+					continue
+				}
+				if v, ok := d.Detect(c, ring, cfg); ok {
+					got = append(got, v.Monitor)
+				}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("fired %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

@@ -33,6 +33,30 @@ func Registry() []Detector {
 
 func hasWrite(c contract.CallSummary) bool { return len(c.WroteHashes) > 0 }
 
+// writesBefore reports whether turn s runs a write before its tool at position ti. The pending turn's own
+// write changes what its later calls see, so it breaks a repeat just as an earlier turn's write does (M2).
+func writesBefore(s contract.CallSummary, ti int) bool {
+	for _, name := range s.Tools[:max(0, min(ti, len(s.Tools)))] {
+		if contract.ClassifyTool(name) == contract.ToolWrite {
+			return true
+		}
+	}
+	return false
+}
+
+// readAt is the tool position of the r-th read of turn s, -1 when there is none.
+func readAt(s contract.CallSummary, r int) int {
+	for i, name := range s.Tools {
+		if contract.ClassifyTool(name) == contract.ToolRead {
+			if r == 0 {
+				return i
+			}
+			r--
+		}
+	}
+	return -1
+}
+
 func newVerdict(name contract.MonitorName, mode contract.MonitorMode, ev contract.MonitorEvidence) contract.MonitorVerdict {
 	return contract.MonitorVerdict{Monitor: name, Mode: mode, Evidence: ev}
 }

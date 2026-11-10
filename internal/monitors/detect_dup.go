@@ -39,6 +39,9 @@ func exactDuplicate(c *tollgate.Call, calls []contract.CallSummary, k contract.D
 	cur := calls[n-1]
 	start := max(0, n-1-k.LookBack)
 	for ti, h := range cur.ArgsHashes {
+		if writesBefore(cur, ti) {
+			break // this turn wrote first: this call and every later one sees a new state
+		}
 		var matched []int
 		for i := n - 2; i >= start; i-- {
 			if hasWrite(calls[i]) { // its write runs after its results: it lies between that turn and the pending call

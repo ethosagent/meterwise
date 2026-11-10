@@ -19,7 +19,10 @@ func DetectRepeatedRead(c *tollgate.Call, r contract.RingView, cfg contract.Moni
 		return contract.MonitorVerdict{}, false
 	}
 	cur := calls[n-1]
-	for _, p := range cur.ReadHashes {
+	for ri, p := range cur.ReadHashes {
+		if writesBefore(cur, readAt(cur, ri)) {
+			break // this turn wrote first: this read and every later one sees a new state
+		}
 		var matched []int
 		for i := n - 2; i >= 0; i-- {
 			if hasWrite(calls[i]) { // its write runs after its results: it lies between that turn and the pending call
