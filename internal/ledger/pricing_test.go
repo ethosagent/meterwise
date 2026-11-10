@@ -72,3 +72,21 @@ func TestPriceLoaderRefreshesAndKeepsTheSnapshotOnFailure(t *testing.T) {
 		t.Fatal("the loader did not swap in the refreshed table")
 	}
 }
+
+// Run does not read the table before its first tick: the caller loaded it synchronously just before
+// (startLedger), so an immediate second read would only double the boot query.
+func TestPriceLoaderRunWaitsOneTickBeforeTheFirstReload(t *testing.T) {
+	src := &fakeSource{rows: []contract.PriceRow{{Provider: "openai", Model: "gpt-4o", InputPerM: 1, OutputPerM: 1, EffectiveFrom: epoch}}}
+	l := &ledger.PriceLoader{Source: src, Pricer: savings.NewTablePricer(nil), Every: time.Hour}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { l.Run(ctx); close(done) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+	src.mu.Lock()
+	defer src.mu.Unlock()
+	if src.n != 0 {
+		t.Fatalf("Run read the pricing table %d times before its first tick", src.n)
+	}
+}
