@@ -164,8 +164,8 @@ var routes = []Route{
 	{Method: "GET", Pattern: "/api/workspaces/{id}/sessions", Permission: PermSessionRead, WorkspaceParam: "id", Summary: "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200); filter by client (the stored family, e.g. opencode or openai-python; unknown means none) and outcome (completed|abandoned|open, else 422)", Response: "SessionList"},
 	{Method: "GET", Pattern: "/api/sessions/{id}", Permission: PermSessionRead, WorkspaceQuery: "workspaceId", Summary: "One session with its calls, monitor events and insight (repeated targets and a suggestion); workspaceId is required and authorizes the read; 404 when the session is not in that workspace", Response: "SessionDetail"},
 	{Method: "GET", Pattern: "/api/workspaces/{id}/stats", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "Spend, calls, sessions and the per-day series for range=7d|30d (default 7d)", Response: "Stats"},
-	{Method: "GET", Pattern: "/api/workspaces/{id}/savings/overview", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "The savings dashboard: hero, per-UTC-day series and per-monitor causes for range=7d|30d|custom (custom needs from and to, UTC days, at most 90); saved, likely and would-save are never summed", Response: "SavingsOverview"},
-	{Method: "GET", Pattern: "/api/workspaces/{id}/savings/causes", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "Where the savings came from: per-monitor causes, a per-client table and fixed-template prompt suggestions for the same ranges as overview", Response: "SavingsCauses"},
+	{Method: "GET", Pattern: "/api/workspaces/{id}/savings/overview", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "The savings dashboard: hero, per-UTC-day series and nine causes (six monitors, trim, router, memory) for range=7d|30d|custom (custom needs from and to, UTC days, at most 90); saved, likely and would-save are never summed", Response: "SavingsOverview"},
+	{Method: "GET", Pattern: "/api/workspaces/{id}/savings/causes", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "Where the savings came from: the nine causes, a per-client table and fixed-template prompt suggestions for the same ranges as overview", Response: "SavingsCauses"},
 	{Method: "GET", Pattern: "/api/workspaces/{id}/savings/saves", Permission: PermSavingsRead, WorkspaceParam: "id", Summary: "The biggest saves: acted events with a positive estimate, (estimate desc, id desc); same ranges as overview, page with the opaque cursor and limit (1-100, default 20)", Response: "SaveList"},
 	{Method: "GET", Pattern: "/api/workspaces/{id}/monitors", Permission: PermMonitorConfigRead, WorkspaceParam: "id", Summary: "The workspace's monitor settings with defaults filled in", Response: "MonitorConfig"},
 	{Method: "PATCH", Pattern: "/api/workspaces/{id}/monitors", Permission: PermMonitorConfigWrite, WorkspaceParam: "id", Summary: "Change any subset of the monitor settings; 422 names the field of a bad mode or threshold", Request: "MonitorConfigPatch", Response: "MonitorConfig", Audit: wsAuditSpec(AuditWorkspaceMonitors, monitorsUpdateMeta)},
@@ -212,9 +212,9 @@ func Routes() []Route {
 	return out
 }
 
-// allRoutes is the whole table; the trim, router and memory rows join it from their own files (step 9).
+// allRoutes is the whole table: the base rows plus the trim, router and memory rows from their own files.
 func allRoutes() []Route {
-	return slices.Clone(routes)
+	return slices.Concat(routes, trimRoutes(), routerRoutes(), memoryRoutes())
 }
 
 // PermissionFor returns the row for a method and pattern.

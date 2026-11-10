@@ -42,6 +42,10 @@ type instance struct {
 	svc    *tenancy.Service
 	proxy  *tollgate.Proxy
 	ledger *ledger.Hook // flushed after the proxy closes
+	// The control-plane ports of the three savers; nil until the feature's seam file returns one.
+	trim   api.TrimReader
+	router api.RouterReader
+	memory api.MemoryAPI
 	// stopPricing ends the price refresh loop.
 	stopPricing context.CancelFunc
 	sources     []contract.StatusSource // reported on /statusz
@@ -142,9 +146,26 @@ func (rt *instance) apiHandler(id identitySetup, tp trace.TracerProvider) (http.
 		principals = api.ClerkPrincipalResolver{Provider: id.provider, Sessions: rt.svc}
 	}
 	return api.New(api.Deps{
-		Log: rt.log, DB: rt.db, Principals: principals, Tenancy: rt.svc, Authz: access.NewAuthorizer(rt.db, rt.svc.Directory()), Access: access.NewService(rt.db, store.OrgID()), Audit: audit.New(rt.db, nil), Ledger: rt.db, Savings: rt.db, MonitorFeedback: ledger.NewFeedback(rt.db), Now: time.Now, Webhooks: id.webhooks,
-		Web: webFS(rt.cfg.WebDir, rt.log), Tracer: tp,
-		AppName: rt.cfg.AppName, ProxyPublicHost: rt.cfg.ProxyPublicHost, Version: contract.Version{Version: version, Commit: commit},
+		Log:             rt.log,
+		DB:              rt.db,
+		Principals:      principals,
+		Tenancy:         rt.svc,
+		Authz:           access.NewAuthorizer(rt.db, rt.svc.Directory()),
+		Access:          access.NewService(rt.db, store.OrgID()),
+		Audit:           audit.New(rt.db, nil),
+		Ledger:          rt.db,
+		Savings:         rt.db,
+		Trim:            rt.trim,
+		Router:          rt.router,
+		Memory:          rt.memory,
+		MonitorFeedback: ledger.NewFeedback(rt.db),
+		Now:             time.Now,
+		Webhooks:        id.webhooks,
+		Web:             webFS(rt.cfg.WebDir, rt.log),
+		Tracer:          tp,
+		AppName:         rt.cfg.AppName,
+		ProxyPublicHost: rt.cfg.ProxyPublicHost,
+		Version:         contract.Version{Version: version, Commit: commit},
 	})
 }
 

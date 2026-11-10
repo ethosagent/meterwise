@@ -39,6 +39,9 @@ type Deps struct {
 	Audit           AuditLog                 // the audit log (audit.Sink)
 	Ledger          Ledger                   // session and stats reads (*store.Store); nil answers those routes with not_available
 	Savings         Savings                  // the savings dashboard reads (*store.Store); nil answers those routes with not_available
+	Trim            TrimReader               // trim stats and previews (the trim feature's store); nil answers those routes with not_available
+	Router          RouterReader             // router pairs, stats and feedback (the router feature's store); nil answers with not_available and no pairs
+	Memory          MemoryAPI                // memory settings, stats, traces and feedback (the memory feature); nil answers with not_available and memory disabled
 	MonitorFeedback contract.MonitorFeedback // sets monitor event feedback (the ledger owns the write, H4); nil answers with not_available
 	Now             func() time.Time         // the clock of every handler (stats window, invitation expiry); nil is time.Now; read it through server.now
 	Webhooks        WebhookVerifier          // nil answers the Clerk webhook with not_available
@@ -78,6 +81,9 @@ func New(d Deps) (http.Handler, error) {
 	s.registerLedger()
 	s.registerMonitors()
 	s.registerSavings()
+	s.registerTrim()
+	s.registerRouter()
+	s.registerMemory()
 	for _, r := range contract.Routes() {
 		if !s.registered[r.Method+" "+r.Pattern] {
 			s.problems = append(s.problems, fmt.Errorf("api: route %s %s is in the contract table but has no handler", r.Method, r.Pattern))

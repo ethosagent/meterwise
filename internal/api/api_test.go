@@ -104,6 +104,13 @@ func decodeErr(t *testing.T, b []byte) contract.ErrorBody {
 	return e
 }
 
+// needsPort lists the GET routes whose handler reads through a feature port (trim, router, memory) that the
+// fixture leaves nil.
+var needsPort = map[string]bool{
+	"/api/workspaces/{id}/trim/stats": true, "/api/workspaces/{id}/calls/{callId}/trim": true, "/api/workspaces/{id}/router/stats": true,
+	"/api/workspaces/{id}/memory/stats": true, "/api/workspaces/{id}/traces": true, "/api/workspaces/{id}/traces/{traceId}": true,
+}
+
 func TestNewRequiresDependenciesAndMatchesTheRouteTable(t *testing.T) {
 	if _, err := api.New(api.Deps{}); err == nil {
 		t.Fatal("empty Deps accepted")
@@ -118,8 +125,12 @@ func TestNewRequiresDependenciesAndMatchesTheRouteTable(t *testing.T) {
 			path += "?" + r.WorkspaceQuery + "=ws-1"
 		}
 		resp, _ := f.do(t, r.Method, path, "")
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("%s %s: status %d", r.Method, r.Pattern, resp.StatusCode)
+		want := http.StatusOK
+		if needsPort[r.Pattern] { // the feature's port is not wired in this fixture: not_available
+			want = http.StatusNotImplemented
+		}
+		if resp.StatusCode != want {
+			t.Errorf("%s %s: status %d, want %d", r.Method, r.Pattern, resp.StatusCode, want)
 		}
 	}
 }

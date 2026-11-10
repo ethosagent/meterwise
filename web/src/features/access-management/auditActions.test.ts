@@ -28,10 +28,16 @@ const PLAN_04_ACTIONS = [
   "org.permissions_update",
   "workspace.monitors_update", // Plan 06
   "monitor_event.feedback", // Plan 06
+  "workspace.trim_update", // Plans 09-11 step 0
+  "workspace.router_update",
+  "workspace.memory_update",
+  "router.feedback",
+  "memory.forget",
+  "memory_hit.feedback",
 ];
 
 describe("audit action list", () => {
-  it("the generated list is the Plan 04 list plus the two Plan 06 actions", () => {
+  it("the generated list is the Plan 04 list plus the Plan 06 and 09-11 actions", () => {
     expect([...AUDIT_ACTIONS]).toEqual(PLAN_04_ACTIONS);
   });
   it("the filter offers exactly the generated actions", () => {

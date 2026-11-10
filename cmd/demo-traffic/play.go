@@ -25,10 +25,10 @@ type result struct {
 
 // play runs the demo for one tenant: a fake upstream, the proxy in front of it, rounds of sessions, then
 // it closes the sessions and flushes the ledger hook (which it takes over: it is closed on return).
-func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds int, stamp string) (result, error) {
+func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds int, stamp string, f features) (result, error) {
 	up := newUpstream()
 	defer up.Close()
-	p, srv, err := startProxy(ctx, up.URL, tenant, hook)
+	p, srv, err := startProxy(ctx, up.URL, tenant, hook, f.chain)
 	if err != nil {
 		return result{}, err
 	}
@@ -36,6 +36,11 @@ func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds
 	c := &client{srv: srv, hook: hook, stamp: stamp}
 	if err := c.replay(ctx, rounds); err != nil {
 		return result{}, err
+	}
+	for _, extra := range []func(context.Context, *client, config) error{trimRounds, routerRounds, memoryRounds} {
+		if err := extra(ctx, c, f.cfg); err != nil {
+			return result{}, err
+		}
 	}
 	srv.Close()
 	for _, id := range c.sessions {

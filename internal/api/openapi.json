@@ -4629,6 +4629,244 @@
         "x-workspace-param": "id"
       }
     },
+    "/api/workspaces/{id}/calls/{callId}/router-feedback": {
+      "post": {
+        "operationId": "postApiWorkspacesIdCallsCallIdRouter-feedback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouterFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouterFeedbackView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mark a routed call worse or fine, or clear it with null; 404 when the call is not in the workspace",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/calls/{callId}/trim": {
+      "get": {
+        "operationId": "getApiWorkspacesIdCallsCallIdTrim",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrimPreview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "What trimming did to one call: sizes and markers only, never message text; 404 when the call is not in the workspace",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/memory": {
+      "get": {
+        "operationId": "getApiWorkspacesIdMemory",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspace's memory settings and whether memory is enabled (and why not)",
+        "x-permission": "monitor_config:read",
+        "x-workspace-param": "id"
+      },
+      "patch": {
+        "operationId": "patchApiWorkspacesIdMemory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryConfigPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change any subset of the memory settings; 422 names the field of a bad mode, threshold or limit",
+        "x-permission": "monitor_config:write",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/memory-hits/{hitId}/feedback": {
+      "post": {
+        "operationId": "postApiWorkspacesIdMemory-hitsHitIdFeedback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryHitFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryHitView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mark a memory hint helpful or irrelevant, or clear it with null; 404 when the hit is not in the workspace",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/memory/stats": {
+      "get": {
+        "operationId": "getApiWorkspacesIdMemoryStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "What memory did over range=7d|30d|custom: traces, hinted sessions, hits, feedback and the likely saving, which is never part of a certain total",
+        "x-permission": "savings:read",
+        "x-workspace-param": "id"
+      }
+    },
     "/api/workspaces/{id}/monitor-events/{eventId}/feedback": {
       "post": {
         "operationId": "postApiWorkspacesIdMonitor-eventsEventIdFeedback",
@@ -4787,6 +5025,119 @@
         "x-workspace-param": "id"
       }
     },
+    "/api/workspaces/{id}/router": {
+      "get": {
+        "operationId": "getApiWorkspacesIdRouter",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouterSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspace's router settings with the default, suggested and effective model pairs",
+        "x-permission": "monitor_config:read",
+        "x-workspace-param": "id"
+      },
+      "patch": {
+        "operationId": "patchApiWorkspacesIdRouter",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouterConfigPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouterSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change any subset of the router settings; 422 names the field of a bad mode, threshold or pair",
+        "x-permission": "monitor_config:write",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/router/stats": {
+      "get": {
+        "operationId": "getApiWorkspacesIdRouterStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouterStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "What routing did over range=7d|30d|custom: routed and observed calls, saved and would-save money, guardrail and per-pair numbers; saved and would-save are never summed",
+        "x-permission": "savings:read",
+        "x-workspace-param": "id"
+      }
+    },
     "/api/workspaces/{id}/savings/causes": {
       "get": {
         "operationId": "getApiWorkspacesIdSavingsCauses",
@@ -4817,7 +5168,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Where the savings came from: per-monitor causes, a per-client table and fixed-template prompt suggestions for the same ranges as overview",
+        "summary": "Where the savings came from: the nine causes, a per-client table and fixed-template prompt suggestions for the same ranges as overview",
         "x-permission": "savings:read",
         "x-workspace-param": "id"
       }
@@ -4852,7 +5203,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "The savings dashboard: hero, per-UTC-day series and per-monitor causes for range=7d|30d|custom (custom needs from and to, UTC days, at most 90); saved, likely and would-save are never summed",
+        "summary": "The savings dashboard: hero, per-UTC-day series and nine causes (six monitors, trim, router, memory) for range=7d|30d|custom (custom needs from and to, UTC days, at most 90); saved, likely and would-save are never summed",
         "x-permission": "savings:read",
         "x-workspace-param": "id"
       }
@@ -5029,6 +5380,215 @@
         ],
         "summary": "Make a workspace the caller's active one",
         "x-permission": "workspace:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/traces": {
+      "delete": {
+        "operationId": "deleteApiWorkspacesIdTraces",
+        "responses": {
+          "204": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Forget every trace of the workspace; 204, audited with the number removed",
+        "x-permission": "workspace:manage",
+        "x-workspace-param": "id"
+      },
+      "get": {
+        "operationId": "getApiWorkspacesIdTraces",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspace's remembered traces, newest first, paged with the opaque cursor and limit (1-100)",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/traces/{traceId}": {
+      "get": {
+        "operationId": "getApiWorkspacesIdTracesTraceId",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One trace with its observations, signature and the sessions it helped; 404 when it is not in the workspace",
+        "x-permission": "session:read",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/trim": {
+      "get": {
+        "operationId": "getApiWorkspacesIdTrim",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrimConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspace's trim settings with defaults filled in",
+        "x-permission": "monitor_config:read",
+        "x-workspace-param": "id"
+      },
+      "patch": {
+        "operationId": "patchApiWorkspacesIdTrim",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrimConfigPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrimConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change any subset of the trim settings; 422 names the field of a bad mode, limit or stage",
+        "x-permission": "monitor_config:write",
+        "x-workspace-param": "id"
+      }
+    },
+    "/api/workspaces/{id}/trim/stats": {
+      "get": {
+        "operationId": "getApiWorkspacesIdTrimStats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrimStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "What trimming did over range=7d|30d|custom: calls, trimmed calls, tokens, saved and would-save money, per stage and per tool; saved, likely and would-save are never summed",
+        "x-permission": "savings:read",
         "x-workspace-param": "id"
       }
     },

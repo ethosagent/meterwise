@@ -105,13 +105,17 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 		d.Sources = append(d.Sources, adm)
 	}
 	d.Sources = append(d.Sources, dir)
-	led, err := rt.startLedger(ctx)
+	led, pricer, err := rt.startLedger(ctx)
 	if err != nil {
 		return d, err
 	}
 	d.Sources = append(d.Sources, led)
-	// Order is load-bearing (plan 06, R2); dataplane.HookChain owns it.
-	hooks, srcs := dataplane.HookChain(dataplane.ChainOptions{PrivacyMode: rt.cfg.PrivacyMode, HistoryMaxBytes: rt.cfg.HistoryMaxBytes}, d.Hooks, led)
+	opts := dataplane.ChainOptions{PrivacyMode: rt.cfg.PrivacyMode, HistoryMaxBytes: rt.cfg.HistoryMaxBytes}
+	if err := rt.buildFeatures(ctx, pricer, &opts, &d); err != nil {
+		return d, err
+	}
+	// Order is load-bearing (plan 06 R2, plan 09-11 R4); dataplane.HookChain owns it.
+	hooks, srcs := dataplane.HookChain(opts, d.Hooks, led)
 	d.Sources = append(d.Sources, srcs...)
 	d.Hooks = hooks
 	rt.sources = d.Sources
@@ -122,7 +126,7 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 // ledger hook that turns every finished call into rows. The hook's batcher stops in close, after the
 // proxy, so every queued call is flushed. A missing or empty pricing table is logged, not fatal: calls
 // are then recorded with a null cost until the next refresh finds prices.
-func (rt *instance) startLedger(ctx context.Context) (*ledger.Hook, error) {
+func (rt *instance) startLedger(ctx context.Context) (*ledger.Hook, contract.Pricer, error) {
 	pricer := savings.NewTablePricer(nil)
 	loader := &ledger.PriceLoader{Source: rt.db, Pricer: pricer, Log: rt.log}
 	if err := loader.Load(ctx); err != nil {
@@ -134,10 +138,31 @@ func (rt *instance) startLedger(ctx context.Context) (*ledger.Hook, error) {
 	rt.db.SetLogger(rt.log)
 	hook, err := ledger.New(ctx, ledger.Options{Writer: rt.db, Pricer: pricer, Estimator: savings.Estimate, PrivacyMode: &rt.cfg.PrivacyMode, Log: rt.log})
 	if err != nil {
-		return nil, fmt.Errorf("ledger: %w", err)
+		return nil, nil, fmt.Errorf("ledger: %w", err)
 	}
 	rt.ledger = hook
-	return hook, nil
+	return hook, pricer, nil
+}
+
+// buildFeatures asks the trim, router and memory seams for what they add: the router tables and the memory hook for
+// the chain options, the memory status source for /statusz, and the control-plane ports the API serves through. A
+// seam that returns nothing leaves its feature off.
+func (rt *instance) buildFeatures(ctx context.Context, pricer contract.Pricer, opts *dataplane.ChainOptions, d *dataplane.Deps) error {
+	rt.trim = trimFeature(rt)
+	tables, router, err := routerFeature(ctx, rt, pricer)
+	if err != nil {
+		return fmt.Errorf("router: %w", err)
+	}
+	opts.Router, rt.router = tables, router
+	hook, memory, src, err := memoryFeature(ctx, rt)
+	if err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
+	opts.Memory, rt.memory = hook, memory
+	if src != nil {
+		d.Sources = append(d.Sources, src)
+	}
+	return nil
 }
 
 // devTenant is the tenant a bare /{provider}/ path serves in dev: the org's default workspace as

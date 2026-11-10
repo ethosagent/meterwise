@@ -59,7 +59,7 @@ func playOffline(t *testing.T, mode contract.MonitorMode, rounds int) (result, [
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := play(context.Background(), tenant, hook, rounds, "t")
+	res, err := play(context.Background(), tenant, hook, rounds, "t", features{})
 	if err != nil {
 		t.Fatal(err)
 	}

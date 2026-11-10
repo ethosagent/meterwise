@@ -36,13 +36,14 @@ func providersAt(base *url.URL) map[string]tollgate.Provider {
 // startProxy builds the proxy exactly as serve does (dataplane.New over dataplane.HookChain: wsauth,
 // history, monitors, ledger) in front of the fake upstream. The resolver is the workspace resolver in
 // dev mode, so the bare /openai and /anthropic paths work.
-func startProxy(ctx context.Context, upstreamURL string, tenant tollgate.Tenant, led *ledger.Hook) (*tollgate.Proxy, *httptest.Server, error) {
+func startProxy(ctx context.Context, upstreamURL string, tenant tollgate.Tenant, led *ledger.Hook, chain dataplane.ChainOptions) (*tollgate.Proxy, *httptest.Server, error) {
 	base, err := url.Parse(upstreamURL)
 	if err != nil {
 		return nil, nil, err
 	}
 	cfg := appconfig.Config{PrivacyMode: true, HistoryMaxBytes: appconfig.DefaultHistoryMaxBytes}
-	hooks, _ := dataplane.HookChain(dataplane.ChainOptions{PrivacyMode: cfg.PrivacyMode, HistoryMaxBytes: cfg.HistoryMaxBytes}, nil, led)
+	chain.PrivacyMode, chain.HistoryMaxBytes = cfg.PrivacyMode, cfg.HistoryMaxBytes
+	hooks, _ := dataplane.HookChain(chain, nil, led)
 	p, err := dataplane.New(cfg, dataplane.Deps{
 		Auth:     tenantAuth{tenant},
 		Resolver: dataplane.NewWorkspaceResolver(providersAt(base), true),

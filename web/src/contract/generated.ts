@@ -37,7 +37,7 @@ export const INVITATION_STATUSES = ["pending", "accepted", "revoked", "expired"]
 
 export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
 
-export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace.delete", "workspace.url_reset", "workspace.url_retire_previous", "workspace.allowed_cidrs_update", "invitation.create", "invitation.resend", "invitation.revoke", "member.role_change", "member.remove", "group.create", "group.update", "group.delete", "group.permissions_update", "group.workspace_attach", "group.workspace_detach", "group.member_add", "group.member_remove", "group.members_update", "org.permissions_update", "workspace.monitors_update", "monitor_event.feedback"] as const;
+export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace.delete", "workspace.url_reset", "workspace.url_retire_previous", "workspace.allowed_cidrs_update", "invitation.create", "invitation.resend", "invitation.revoke", "member.role_change", "member.remove", "group.create", "group.update", "group.delete", "group.permissions_update", "group.workspace_attach", "group.workspace_detach", "group.member_add", "group.member_remove", "group.members_update", "org.permissions_update", "workspace.monitors_update", "monitor_event.feedback", "workspace.trim_update", "workspace.router_update", "workspace.memory_update", "router.feedback", "memory.forget", "memory_hit.feedback"] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -936,10 +936,19 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "POST", pattern: "/api/workspaces", permission: "member", public: false },
   { method: "DELETE", pattern: "/api/workspaces/{id}", permission: "workspace:manage", workspaceParam: "id", public: false },
   { method: "PATCH", pattern: "/api/workspaces/{id}", permission: "workspace:write", workspaceParam: "id", public: false },
+  { method: "POST", pattern: "/api/workspaces/{id}/calls/{callId}/router-feedback", permission: "session:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/calls/{callId}/trim", permission: "session:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/memory", permission: "monitor_config:read", workspaceParam: "id", public: false },
+  { method: "PATCH", pattern: "/api/workspaces/{id}/memory", permission: "monitor_config:write", workspaceParam: "id", public: false },
+  { method: "POST", pattern: "/api/workspaces/{id}/memory-hits/{hitId}/feedback", permission: "session:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/memory/stats", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/monitor-events/{eventId}/feedback", permission: "session:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/monitors", permission: "monitor_config:read", workspaceParam: "id", public: false },
   { method: "PATCH", pattern: "/api/workspaces/{id}/monitors", permission: "monitor_config:write", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/monitors/stats", permission: "savings:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/router", permission: "monitor_config:read", workspaceParam: "id", public: false },
+  { method: "PATCH", pattern: "/api/workspaces/{id}/router", permission: "monitor_config:write", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/router/stats", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/savings/causes", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/savings/overview", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/savings/saves", permission: "savings:read", workspaceParam: "id", public: false },
@@ -947,6 +956,12 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: "GET", pattern: "/api/workspaces/{id}/setup", permission: "workspace_url:read", workspaceParam: "id", public: false },
   { method: "GET", pattern: "/api/workspaces/{id}/stats", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/switch", permission: "workspace:read", workspaceParam: "id", public: false },
+  { method: "DELETE", pattern: "/api/workspaces/{id}/traces", permission: "workspace:manage", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/traces", permission: "session:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/traces/{traceId}", permission: "session:read", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/trim", permission: "monitor_config:read", workspaceParam: "id", public: false },
+  { method: "PATCH", pattern: "/api/workspaces/{id}/trim", permission: "monitor_config:write", workspaceParam: "id", public: false },
+  { method: "GET", pattern: "/api/workspaces/{id}/trim/stats", permission: "savings:read", workspaceParam: "id", public: false },
   { method: "PUT", pattern: "/api/workspaces/{id}/url/allowed-cidrs", permission: "workspace_url:manage", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/url/reset", permission: "workspace_url:manage", workspaceParam: "id", public: false },
   { method: "POST", pattern: "/api/workspaces/{id}/url/retire-previous", permission: "workspace_url:manage", workspaceParam: "id", public: false },

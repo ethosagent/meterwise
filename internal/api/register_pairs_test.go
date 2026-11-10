@@ -18,6 +18,9 @@ func registeredPairs(t *testing.T) []routePair {
 	s.registerWorkspaceURL()
 	s.registerLedger()
 	s.registerMonitors()
+	s.registerTrim()
+	s.registerRouter()
+	s.registerMemory()
 	if len(s.problems) > 0 {
 		t.Fatalf("register problems: %v", s.problems)
 	}

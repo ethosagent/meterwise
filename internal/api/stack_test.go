@@ -35,7 +35,10 @@ type stack struct {
 
 const maxWorkspacesInTests = 3
 
-func newStack(t *testing.T) *stack {
+func newStack(t *testing.T) *stack { return newStackWith(t, nil) }
+
+// newStackWith is newStack with edit applied to the Deps before the control plane is built (a test wires its fake ports here).
+func newStackWith(t *testing.T, edit func(*api.Deps)) *stack {
 	t.Helper()
 	dsn := pgtest.NewDatabase(t)
 	if _, err := store.Migrate(context.Background(), dsn); err != nil {
@@ -64,11 +67,15 @@ func newStack(t *testing.T) *stack {
 		t.Fatal(err)
 	}
 	logs := &bytes.Buffer{}
-	h, err := api.New(api.Deps{
+	deps := api.Deps{
 		Log: slog.New(slog.NewJSONHandler(logs, nil)), DB: db,
 		Principals: api.ClerkPrincipalResolver{Provider: idp, Sessions: svc}, Tenancy: svc, Authz: access.NewAuthorizer(db, svc.Directory()), Access: access.NewService(db, store.OrgID()), Audit: audit.New(db, nil), Ledger: db, Savings: db, MonitorFeedback: db, Webhooks: wh,
 		AppName: "Acme", ProxyPublicHost: "proxy.test", Version: contract.Version{Version: "t"},
-	})
+	}
+	if edit != nil {
+		edit(&deps)
+	}
+	h, err := api.New(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

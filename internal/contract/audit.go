@@ -31,6 +31,12 @@ const (
 	AuditOrgPermissionsUpdate   AuditAction = "org.permissions_update"
 	AuditWorkspaceMonitors      AuditAction = "workspace.monitors_update"
 	AuditMonitorEventFeedback   AuditAction = "monitor_event.feedback"
+	AuditWorkspaceTrim          AuditAction = "workspace.trim_update"
+	AuditWorkspaceRouter        AuditAction = "workspace.router_update"
+	AuditWorkspaceMemory        AuditAction = "workspace.memory_update"
+	AuditRouterFeedback         AuditAction = "router.feedback"
+	AuditMemoryForget           AuditAction = "memory.forget"
+	AuditMemoryHitFeedback      AuditAction = "memory_hit.feedback"
 )
 
 // AuditActions lists every action in a fixed order.
@@ -41,6 +47,7 @@ func AuditActions() []AuditAction {
 		AuditMemberRemove, AuditGroupCreate, AuditGroupUpdate, AuditGroupDelete, AuditGroupPermissionsUpdate,
 		AuditGroupWorkspaceAttach, AuditGroupWorkspaceDetach, AuditGroupMemberAdd, AuditGroupMemberRemove,
 		AuditGroupMembersUpdate, AuditOrgPermissionsUpdate, AuditWorkspaceMonitors, AuditMonitorEventFeedback,
+		AuditWorkspaceTrim, AuditWorkspaceRouter, AuditWorkspaceMemory, AuditRouterFeedback, AuditMemoryForget, AuditMemoryHitFeedback,
 	}
 }
 
