@@ -64,16 +64,16 @@ export ANTHROPIC_BASE_URL="<proxy URL from Setup>"      # real agent, your own k
 
 Dev without a workspace URL: the proxy accepts one tenant at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`).
 
-## 5. Read it back (routes arrive with Plan 05; 404 before it merges)
+## 5. Read it back
 
 ```sh
 API=http://127.0.0.1:8081; WS=<workspace id>
 # Docker: mint a token (native needs no header at all)
 TOKEN=$(curl -s "http://127.0.0.1:9444/mint?email=admin@meterwise.local" | jq -r .token); H="Authorization: Bearer $TOKEN"
 curl -s -H "$H" "$API/api/workspaces" | jq '.items[0].id'                       # the workspace id
-curl -s -H "$H" "$API/api/workspaces/$WS/sessions" | jq                          # session list     (Plan 05)
-curl -s -H "$H" "$API/api/sessions/<sessionId>?workspaceId=$WS" | jq             # one session      (Plan 05)
-curl -s -H "$H" "$API/api/workspaces/$WS/stats" | jq                             # totals           (Plan 05)
+curl -s -H "$H" "$API/api/workspaces/$WS/sessions" | jq                          # session list
+curl -s -H "$H" "$API/api/sessions/<sessionId>?workspaceId=$WS" | jq             # one session
+curl -s -H "$H" "$API/api/workspaces/$WS/stats" | jq                             # totals (spend, calls, sessions, by day)
 ```
 
 ## Troubleshooting
