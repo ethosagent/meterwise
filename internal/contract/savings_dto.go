@@ -164,22 +164,20 @@ type SavingsRange struct {
 	From, To time.Time
 }
 
-const dayLayout = "2006-01-02"
-
 // Days is the number of UTC days in the window, both ends included.
 func (r SavingsRange) Days() int { return int(r.To.Sub(r.From)/(24*time.Hour)) + 1 }
 
 // FromDay renders the first day as YYYY-MM-DD.
-func (r SavingsRange) FromDay() string { return r.From.Format(dayLayout) }
+func (r SavingsRange) FromDay() string { return r.From.Format(time.DateOnly) }
 
 // ToDay renders the last day as YYYY-MM-DD.
-func (r SavingsRange) ToDay() string { return r.To.Format(dayLayout) }
+func (r SavingsRange) ToDay() string { return r.To.Format(time.DateOnly) }
 
 // ParseSavingsRange validates the range, from and to query values against now (ruling S5). "" means 7d.
 // 7d and 30d end today (UTC) and take no from/to. custom needs both, as UTC days, from <= to <= today,
 // at most MaxSavingsRangeDays. Errors are 422 validation_failed naming the field (range, from, to).
 func ParseSavingsRange(rng, from, to string, now time.Time) (SavingsRange, error) {
-	today := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	today := UTCDayStart(now)
 	switch rng {
 	case "", "7d", "30d":
 		if rng == "" {
@@ -228,7 +226,7 @@ func parseDay(field, v string) (time.Time, error) {
 	if v == "" {
 		return time.Time{}, Invalid(field, "required with range=custom")
 	}
-	d, err := time.Parse(dayLayout, v)
+	d, err := time.Parse(time.DateOnly, v)
 	if err != nil {
 		return time.Time{}, Invalid(field, "must be a YYYY-MM-DD date")
 	}
