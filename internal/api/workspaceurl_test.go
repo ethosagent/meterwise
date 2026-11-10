@@ -3,6 +3,8 @@ package api_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -228,5 +230,28 @@ func TestManageWithoutReadNeverReceivesTheURL(t *testing.T) {
 		`{"grants":[{"resourceType":"workspace","action":"read","workspaceId":null},{"resourceType":"workspace_url","action":"read","workspaceId":null},{"resourceType":"workspace_url","action":"manage","workspaceId":null}]}`, 200)
 	if r := decodeAs[contract.ResetURLResponse](t, s.must(t, m.tok, "POST", "/api/workspaces/"+id+"/url/reset", `{}`, 200)); r.ProxyURL == nil {
 		t.Fatal("manage plus read must return the URL")
+	}
+}
+
+// L3: the "/w/" URL shape is built in exactly one place, so every DTO that carries a proxy URL goes
+// through the mapper that applies the workspace_url:read rule.
+func TestOnlyOneProxyURLBuilderExists(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil || len(files) == 0 {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n += strings.Count(string(b), `/w/"`)
+	}
+	if n != 1 {
+		t.Fatalf("the proxy URL prefix appears %d times in api sources, want exactly 1 (proxyPrefix)", n)
 	}
 }

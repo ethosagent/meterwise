@@ -54,8 +54,8 @@ func (m *memTenancy) ListWorkspaces(context.Context, contract.Principal) ([]cont
 	return nil, nil
 }
 
-func (m *memTenancy) Setup(context.Context, contract.Principal, string, string) (contract.Setup, error) {
-	return contract.Setup{}, nil
+func (m *memTenancy) Setup(context.Context, contract.Principal, string) (contract.SetupState, error) {
+	return contract.SetupState{PublicID: "AAAAAAAAAAAAAAAAAAAAAA"}, nil
 }
 
 func (m *memTenancy) ListMembers(context.Context, contract.Principal) ([]contract.Member, error) {

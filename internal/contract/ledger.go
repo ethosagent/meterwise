@@ -98,6 +98,13 @@ type Stats struct {
 	ByDay    []StatsDay
 }
 
+// SetupState is what the tenancy service knows about a workspace's setup: its current public id and
+// the connection status. The API turns the public id into a URL through its one URL builder.
+type SetupState struct {
+	PublicID string
+	Status   SetupStatus
+}
+
 // CallStatus is what Setup.status needs from the calls table.
 type CallStatus struct {
 	FirstCallAt *time.Time

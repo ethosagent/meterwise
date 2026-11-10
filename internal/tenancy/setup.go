@@ -7,22 +7,31 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-// Setup returns what the setup page shows: the URL, the snippets rendered for it and the status.
-// proxyPrefix is "https://<host>/w/" (the caller owns the public host); the workspace's current
-// public id is appended to it. Status reads workspaces.last_call_at;
-// the first-call time and the daily count stay null/0 until the ledger records calls (Plan 05).
-func (s *Service) Setup(ctx context.Context, p contract.Principal, workspaceID, proxyPrefix string) (contract.Setup, error) {
+// Setup returns what the setup page needs besides the URL: the workspace's current public id and the
+// connection status. The API builds the URL from the id through its one builder and renders the
+// snippets with RenderSnippets. Status comes from the ledger: firstCallAt is the earliest call,
+// lastCallAt is workspaces.last_call_at (the coalesced touch the ledger writes), callsToday counts
+// the UTC day.
+func (s *Service) Setup(ctx context.Context, p contract.Principal, workspaceID string) (contract.SetupState, error) {
 	ws, err := s.st.Workspace(ctx, p.OrgID, workspaceID)
 	if err != nil {
-		return contract.Setup{}, err
+		return contract.SetupState{}, err
 	}
-	proxyURL := proxyPrefix + ws.PublicID
 	st := contract.SetupStatus{}
 	if ws.LastCallAt != nil {
 		last := ws.LastCallAt.UTC().Format(time.RFC3339)
 		st.LastCallAt = &last
 	}
-	return contract.Setup{ProxyURL: proxyURL, Snippets: SnippetRenderer{}.Render(proxyURL), Status: st}, nil
+	cs, err := s.st.CallStatus(ctx, ws.ID, s.cfg.Now().UTC().Truncate(24*time.Hour))
+	if err != nil {
+		return contract.SetupState{}, err
+	}
+	if cs.FirstCallAt != nil {
+		first := cs.FirstCallAt.UTC().Format(time.RFC3339)
+		st.FirstCallAt = &first
+	}
+	st.CallsToday = cs.CallsToday
+	return contract.SetupState{PublicID: ws.PublicID, Status: st}, nil
 }
 
 // SetAllowedCIDRs replaces the workspace's allowed source networks ([] clears) and busts the
