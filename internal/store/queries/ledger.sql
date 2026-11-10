@@ -10,7 +10,7 @@ SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'se
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'provider', r.j->>'model', r.j->>'wire',
        (r.j->>'stream')::bool, (r.j->>'status')::int, r.j->>'finish', (r.j->>'input')::bigint, (r.j->>'output')::bigint,
        (r.j->>'cached')::bigint, (r.j->>'reasoning')::bigint, (r.j->>'cost')::numeric / 1000000, (r.j->>'ttfbMs')::int,
-       (r.j->>'durationMs')::int, r.j->'toolCalls', (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
+       (r.j->>'durationMs')::int, COALESCE(r.j->'toolCalls', '[]'::jsonb), (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
 FROM jsonb_array_elements(sqlc.arg(calls_json)::jsonb) AS r(j)
 ON CONFLICT (id) DO NOTHING
 RETURNING id;

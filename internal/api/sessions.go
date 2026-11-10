@@ -100,15 +100,11 @@ func sessionView(r contract.SessionRecord) contract.SessionView {
 }
 
 func callView(r contract.CallRecord) contract.CallView {
-	tools := r.ToolCalls
-	if tools == nil {
-		tools = []string{}
-	}
 	return contract.CallView{
 		ID: r.ID, CallIndex: r.CallIndex, StartedAt: contract.RFC3339(r.StartedAt), Provider: r.Provider, Model: r.Model, Wire: r.Wire,
 		Stream: r.Stream, Status: r.Status, Finish: r.Finish, InputTokens: r.Usage.Input, OutputTokens: r.Usage.Output,
 		CachedTokens: r.Usage.Cached, ReasoningTokens: r.Usage.Reasoning, CostUsd: r.Cost, TtfbMs: r.TTFBMs, DurationMs: r.DurationMs,
-		ToolCalls: tools, Blocked: r.Blocked, NotesInjected: r.NotesInjected,
+		ToolCalls: r.ToolCalls, Blocked: r.Blocked, NotesInjected: r.NotesInjected,
 	}
 }
 

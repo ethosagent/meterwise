@@ -69,3 +69,18 @@ func TestUnreadableToolCallsAreCountedAndLoggedOnce(t *testing.T) {
 		t.Fatalf("the store wrote to slog.Default: %s", global.String())
 	}
 }
+
+// A call with no tool calls reads back as an empty list, never nil (which would marshal as null).
+func TestSessionCallsNeverHaveNilToolCalls(t *testing.T) {
+	s, ctx := openMigrated(t), context.Background()
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	r := rec(ws, "c1", "s1", 1, base, "ok", true, nil)
+	r.ToolCalls = nil
+	if _, err := s.WriteCalls(ctx, []contract.CallRecord{r}); err != nil {
+		t.Fatal(err)
+	}
+	_, calls, err := s.Session(ctx, ws, "s1")
+	if err != nil || len(calls) != 1 || calls[0].ToolCalls == nil || len(calls[0].ToolCalls) != 0 {
+		t.Fatalf("calls = %+v, %v; want one call with a non-nil empty ToolCalls", calls, err)
+	}
+}

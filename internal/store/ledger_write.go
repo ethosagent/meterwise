@@ -92,7 +92,7 @@ type callJSON struct {
 	Cost          *int64   `json:"cost,omitempty"`
 	TTFBMs        int32    `json:"ttfbMs"`
 	DurationMs    int32    `json:"durationMs"`
-	ToolCalls     []string `json:"toolCalls"`
+	ToolCalls     []string `json:"toolCalls,omitempty"`
 	Blocked       bool     `json:"blocked"`
 	NotesInjected int32    `json:"notesInjected"`
 	Client        string   `json:"client"`
@@ -101,10 +101,6 @@ type callJSON struct {
 func callJSONs(recs []contract.CallRecord) []callJSON {
 	out := make([]callJSON, len(recs))
 	for i, r := range recs {
-		tools := r.ToolCalls
-		if tools == nil {
-			tools = []string{}
-		}
 		var cost *int64
 		if r.Cost != nil {
 			c := int64(*r.Cost)
@@ -114,7 +110,7 @@ func callJSONs(recs []contract.CallRecord) []callJSON {
 			ID: r.ID, OrgID: r.OrgID, WorkspaceID: r.WorkspaceID, SessionID: r.SessionID, CallIndex: clampInt32(int64(r.CallIndex)),
 			StartedUs: r.StartedAt.UnixMicro(), Provider: r.Provider, Model: r.Model, Wire: r.Wire, Stream: r.Stream,
 			Status: clampInt32(int64(r.Status)), Finish: r.Finish, Input: r.Usage.Input, Output: r.Usage.Output, Cached: r.Usage.Cached,
-			Reasoning: r.Usage.Reasoning, Cost: cost, TTFBMs: clampInt32(r.TTFBMs), DurationMs: clampInt32(r.DurationMs), ToolCalls: tools,
+			Reasoning: r.Usage.Reasoning, Cost: cost, TTFBMs: clampInt32(r.TTFBMs), DurationMs: clampInt32(r.DurationMs), ToolCalls: r.ToolCalls,
 			Blocked: r.Blocked, NotesInjected: clampInt32(int64(r.NotesInjected)), Client: r.Client,
 		}
 	}
