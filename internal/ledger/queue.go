@@ -265,7 +265,7 @@ func (q *queue) again(ctx context.Context, attempt int, deadline time.Time, err 
 		return false
 	}
 	var d time.Duration
-	if store.ClassOf(err) == store.ClassUnreachable {
+	if store.IsTransient(err) {
 		d = q.o.RetryBackoff
 		for i := 1; i < attempt && d < q.o.RetryBackoffMax; i++ {
 			d *= 2
@@ -296,7 +296,7 @@ func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, fin
 		q.ok()
 		return
 	}
-	if len(calls) > 1 && store.ClassOf(err) != store.ClassUnreachable && ctx.Err() == nil {
+	if len(calls) > 1 && !store.IsTransient(err) && ctx.Err() == nil {
 		for _, c := range calls { // isolate the record the database refuses
 			if q.tryWrite(ctx, []contract.CallRecord{c}, final, deadline) != nil {
 				q.lost.Add(1)

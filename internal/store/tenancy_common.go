@@ -46,7 +46,9 @@ func queryErr(err error) error {
 	}
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) {
-		return fail(ClassPool, "store: query failed (SQLSTATE "+pg.Code+")")
+		e := fail(ClassPool, "store: query failed (SQLSTATE "+pg.Code+")")
+		e.transient = transientCode(pg.Code, pg.Message)
+		return e
 	}
 	return fail(ClassUnreachable, "store: database unreachable")
 }

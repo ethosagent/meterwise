@@ -20,6 +20,8 @@ const (
 type Error struct {
 	Class   Class
 	Message string
+
+	transient bool // a server error that means the database is briefly away (see IsTransient)
 }
 
 // Error implements error with the fixed message.
