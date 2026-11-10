@@ -96,7 +96,8 @@ func run(ctx context.Context, cfg config, out io.Writer) error {
 	if err := (&ledger.PriceLoader{Source: st, Pricer: pricer}).Load(ctx); err != nil {
 		return fmt.Errorf("load pricing: %w", err)
 	}
-	hook, err := ledger.New(ctx, ledger.Options{Writer: st, Pricer: pricer, PrivacyMode: true})
+	privacyOn := true
+	hook, err := ledger.New(ctx, ledger.Options{Writer: st, Pricer: pricer, PrivacyMode: &privacyOn})
 	if err != nil {
 		return err
 	}

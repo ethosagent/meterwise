@@ -41,7 +41,7 @@ func TestPreviewOnlyWhenCaptureOnAndPrivacyModeOff(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &fakeWriter{}
-			h := newHook(t, w, func(o *ledger.Options) { o.PrivacyMode = tc.global })
+			h := newHook(t, w, func(o *ledger.Options) { o.PrivacyMode = &tc.global })
 			complete(t, h, directCall("p1", long, tc.policy, tc.calls))
 			if err := h.Close(context.Background()); err != nil {
 				t.Fatal(err)

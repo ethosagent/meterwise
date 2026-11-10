@@ -13,6 +13,7 @@ import (
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/store"
 )
 
 // Meta keys the hook stamps on a call (scratch space shared by extensions for that call).
@@ -88,7 +89,7 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 // did not switch it on for itself. The strictest of the three wins.
 func (h *Hook) mayCapture(c *tollgate.Call) bool {
 	p := c.Tenant.Policy
-	if p == nil || !p.Capture || h.opt.PrivacyMode {
+	if p == nil || !p.Capture || *h.opt.PrivacyMode {
 		return false
 	}
 	return p.PrivacyMode == nil || !*p.PrivacyMode
@@ -121,6 +122,12 @@ func (h *Hook) OnEvent(_ context.Context, c *tollgate.Call, e tollgate.Event) {
 
 // After enqueues one record and returns at once; a full queue drops it and counts the drop.
 func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
+	// Single org: a row filed under any other org could never be read back, and its workspace's
+	// last_call_at would silently not move. Refuse and count it instead.
+	if org := c.Tenant.Attrs["org_id"]; uuidRe.MatchString(org) && org != store.OrgID() {
+		h.q.wrongOrg.Add(1)
+		return
+	}
 	rec, ok := h.record(ctx, c, m)
 	if !ok {
 		h.q.skipped.Add(1)
@@ -152,6 +159,7 @@ func (h *Hook) record(ctx context.Context, c *tollgate.Call, m tollgate.Metric) 
 	if !uuidRe.MatchString(ws) || !uuidRe.MatchString(org) || m.CallID == "" {
 		return contract.CallRecord{}, false
 	}
+
 	start := m.Start
 	if start.IsZero() {
 		if t, ok := c.Meta[MetaStart].(time.Time); ok {

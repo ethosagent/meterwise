@@ -116,7 +116,7 @@ func TestNoMessageTextIsPersistedUnlessCaptureOnAndPrivacyOff(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, ws := pgStore(t)
-			h := newHook(t, s, func(o *ledger.Options) { o.PrivacyMode = tc.global })
+			h := newHook(t, s, func(o *ledger.Options) { o.PrivacyMode = &tc.global })
 			c := directCall("priv-1", userSentinel, tc.policy, 1)
 			c.Tenant.ID = ws
 			c.Session.TenantID = ws

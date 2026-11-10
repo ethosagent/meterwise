@@ -20,9 +20,11 @@ type Writer interface {
 
 // Options configures the hook. Zero values take the documented defaults.
 type Options struct {
-	Writer        Writer
-	Pricer        contract.Pricer
-	PrivacyMode   bool          // the global PRIVACY_MODE; true means no message text is ever stored
+	Writer Writer
+	Pricer contract.Pricer
+	// PrivacyMode is the global PRIVACY_MODE. nil means ON (fail safe): message text is stored only when
+	// the caller passes a pointer to false, and then only for workspaces that opt in.
+	PrivacyMode   *bool
 	QueueSize     int           // default 10000
 	BatchSize     int           // default 500
 	FlushInterval time.Duration // default 250 ms
@@ -35,6 +37,10 @@ type Options struct {
 func (o Options) withDefaults() (Options, error) {
 	if o.Writer == nil || o.Pricer == nil {
 		return o, errors.New("ledger: Writer and Pricer are required")
+	}
+	if o.PrivacyMode == nil {
+		on := true
+		o.PrivacyMode = &on
 	}
 	if o.QueueSize <= 0 {
 		o.QueueSize = 10_000
@@ -77,7 +83,7 @@ type queue struct {
 	stop   chan struct{}
 	done   chan struct{}
 
-	enqueued, dropped, flushed, duplicates, lost, skipped, unpriced, sessionsClosed, flushErrors atomic.Int64
+	enqueued, dropped, flushed, duplicates, lost, lostCloses, skipped, wrongOrg, unpriced, sessionsClosed, flushErrors atomic.Int64
 
 	errMu     sync.Mutex
 	lastErr   string
@@ -188,12 +194,29 @@ func (q *queue) flush(parent context.Context, buf []item, final bool) {
 		if it.call != nil {
 			continue
 		}
-		if ok, err := q.o.Writer.CloseSession(ctx, it.closeWS, it.closeID, it.closeAt); err != nil {
-			q.fail(ctx, err)
-		} else if ok {
-			q.sessionsClosed.Add(1)
-		}
+		q.closeSession(ctx, it, final)
 	}
+}
+
+// closeSession applies one session close with the retry policy of a call batch. A close that still
+// fails is counted in lost_closes: the session stays open until a later call or close touches it.
+func (q *queue) closeSession(ctx context.Context, it item, final bool) {
+	for attempt := 1; attempt <= q.o.Retries; attempt++ {
+		ok, err := q.o.Writer.CloseSession(ctx, it.closeWS, it.closeID, it.closeAt)
+		if err == nil {
+			if ok {
+				q.sessionsClosed.Add(1)
+			}
+			q.ok()
+			return
+		}
+		q.fail(ctx, err)
+		if final || attempt == q.o.Retries {
+			break
+		}
+		time.Sleep(time.Duration(attempt) * q.o.RetryBackoff)
+	}
+	q.lostCloses.Add(1)
 }
 
 func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, final bool) {
@@ -254,6 +277,8 @@ func (q *queue) status() map[string]any {
 		"flushed":              q.flushed.Load(),
 		"duplicates":           q.duplicates.Load(),
 		"lost":                 q.lost.Load(),
+		"lost_closes":          q.lostCloses.Load(),
+		"skipped_wrong_org":    q.wrongOrg.Load(),
 		"skipped_unattributed": q.skipped.Load(),
 		"unpriced_calls":       q.unpriced.Load(),
 		"sessions_closed":      q.sessionsClosed.Load(),
