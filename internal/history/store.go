@@ -216,10 +216,10 @@ func merge(old, s contract.CallSummary, fill bool) contract.CallSummary {
 	case fill && !emptyTurn(old):
 		return old
 	case fill:
-		s.Input, s.Output, s.BodyBytes = old.Input, old.Output, old.BodyBytes
+		s.Input, s.Output, s.BodyBytes, s.UsageKnown = old.Input, old.Output, old.BodyBytes, old.UsageKnown
 		return s
 	case emptyTurn(s) && !emptyTurn(old):
-		old.Input, old.Output, old.BodyBytes = s.Input, s.Output, s.BodyBytes
+		old.Input, old.Output, old.BodyBytes, old.UsageKnown = s.Input, s.Output, s.BodyBytes, s.UsageKnown
 		return old
 	}
 	return s

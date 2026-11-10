@@ -183,28 +183,42 @@ func (h *Hook) detect(c *tollgate.Call, ring contract.RingView, cfg contract.Mon
 }
 
 // basisOf is what the estimator needs to price a verdict: the previous call's input tokens, how much
-// the body grew since, and the session's median output.
+// the body grew since, and the session's median output. It is a lower bound of the basis the real numbers
+// would give (ADR 0024): an entry whose usage is unknown (caught up or rebuilt from a request) counts as 0
+// for the first two, and the output part is the largest value the median provably reaches.
 func basisOf(c *tollgate.Call, calls []contract.CallSummary) contract.EstBasis {
 	var b contract.EstBasis
+	if n := len(calls); n > 0 && calls[n-1].UsageKnown {
+		last := calls[n-1]
+		b.PriorInputTokens = last.Input
+		b.BodyDeltaBytes = max(0, int64(len(c.Body)-last.BodyBytes))
+	}
+	b.MedianOutputTokens = outputFloor(calls)
+	return b
+}
+
+// outputFloor is a lower bound of the median over the calls with output, whatever the unknown entries held.
+// With kp known positive outputs (sorted K) and u unknown entries, the exact median sits at position
+// (kp+k)/2 of kp+k values for some k <= u of them positive. At least one known value at or below it is
+// K[(kp+k)/2-k], so K[(kp+u)/2-u] bounds it for every k; below index 0 nothing is known and the floor is 0.
+// With no unknown entry this is the plain median.
+func outputFloor(calls []contract.CallSummary) int64 {
 	var outs []int64
+	unknown := 0
 	for _, s := range calls {
-		if s.Output > 0 {
+		switch {
+		case !s.UsageKnown:
+			unknown++
+		case s.Output > 0:
 			outs = append(outs, s.Output)
 		}
 	}
-	if n := len(calls); n > 0 {
-		b.PriorInputTokens = calls[n-1].Input
-		// A caught-up entry (ADR 0024) has no body size: the growth since it is unknown, so it counts as 0 and the
-		// estimate stays a lower bound instead of pricing the whole body as new.
-		if last := calls[n-1]; last.BodyBytes > 0 {
-			b.BodyDeltaBytes = max(0, int64(len(c.Body)-last.BodyBytes))
-		}
+	i := (len(outs)+unknown)/2 - unknown
+	if i < 0 || i >= len(outs) {
+		return 0
 	}
-	if len(outs) > 0 {
-		slices.Sort(outs)
-		b.MedianOutputTokens = outs[len(outs)/2]
-	}
-	return b
+	slices.Sort(outs)
+	return outs[i]
 }
 
 func (h *Hook) mayCapture(c *tollgate.Call) bool {

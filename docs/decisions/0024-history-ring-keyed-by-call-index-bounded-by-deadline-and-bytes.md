@@ -50,6 +50,12 @@ sessions.
    on `/statusz`). `MaxSessions` (tollgate's limit) still caps the count. The charge per ring is an
    estimate (struct sizes, hash slices, tool names, key), not a heap count; the verifier measured about
    13 KB of heap for a full 50-entry ring.
+4. **Unknown usage is explicit, and the certain estimate is a lower bound (M2, I7).** A summary read back from
+   a request (catch-up or rebuild) has `CallSummary.UsageKnown == false`; only an `After` sets it. `monitors.basisOf`
+   prices the block estimate from known entries only: the prior input and the body growth need a known last entry
+   (else 0), and the output part is the largest value the median provably reaches given the unknown entries
+   (0 when too few are known), so the estimate never exceeds the one from the real numbers
+   (`TestBlockEstimateIsALowerBoundForAnyMixOfKnownAndUnknownEntries`).
 
 ## Consequences
 

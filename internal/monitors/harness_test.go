@@ -115,9 +115,9 @@ func (f fakeRing) Calls() []contract.CallSummary { return f }
 // dupRing is a ring whose newest call repeats an earlier get_weather call (calls 1 and 3).
 func dupRing() fakeRing {
 	return fakeRing{
-		{Index: 1, Tools: []string{"get_weather"}, ArgsHashes: []uint64{parisHash}, Input: 100, Output: 10, BodyBytes: 40},
-		{Index: 2, Tools: []string{"grep"}, ArgsHashes: []uint64{12}, Input: 150, Output: 30, BodyBytes: 80},
-		{Index: 3, Tools: []string{"get_weather"}, ArgsHashes: []uint64{parisHash}, Input: 200, Output: 20, BodyBytes: 100},
+		{Index: 1, Tools: []string{"get_weather"}, ArgsHashes: []uint64{parisHash}, Input: 100, Output: 10, BodyBytes: 40, UsageKnown: true},
+		{Index: 2, Tools: []string{"grep"}, ArgsHashes: []uint64{12}, Input: 150, Output: 30, BodyBytes: 80, UsageKnown: true},
+		{Index: 3, Tools: []string{"get_weather"}, ArgsHashes: []uint64{parisHash}, Input: 200, Output: 20, BodyBytes: 100, UsageKnown: true},
 	}
 }
 

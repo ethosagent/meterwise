@@ -326,7 +326,7 @@ func TestWithoutAnEditorEveryNoteAndBlockDegradesToObserve(t *testing.T) {
 func readEntry(idx int, path string) contract.CallSummary {
 	args := []byte(`{"path":"` + path + `"}`)
 	return contract.CallSummary{Index: idx, Tools: []string{"read_file"}, ArgsHashes: []uint64{contract.ToolArgsHash("read_file", args)},
-		ReadHashes: []uint64{contract.ToolSubject("read_file", args)}, Input: 1000, Output: 50, BodyBytes: 4000 * idx}
+		ReadHashes: []uint64{contract.ToolSubject("read_file", args)}, Input: 1000, Output: 50, BodyBytes: 4000 * idx, UsageKnown: true}
 }
 
 // pendingTurn is a pending turn that runs the tools in order: each is (name, path).

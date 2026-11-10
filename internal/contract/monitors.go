@@ -141,6 +141,9 @@ type CallSummary struct {
 	Input       int64
 	Output      int64
 	BodyBytes   int
+	// UsageKnown is true when Input, Output and BodyBytes are the call's real numbers (set by its After). A
+	// summary read back from a request (catch-up, rebuild) leaves them 0 and this false: zero is then "unknown".
+	UsageKnown bool
 }
 
 // RingView is an immutable snapshot of a session's recent calls, newest last, at most 50.

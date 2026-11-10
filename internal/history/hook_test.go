@@ -70,7 +70,7 @@ func TestAfterAppendsTheStreamedTurn(t *testing.T) {
 		ReadHashes:  []uint64{contract.HashString("/a.go")},
 		WroteHashes: []uint64{contract.HashString("/b.go")},
 		TextHash:    contract.NormalizedHash("let me look at the file"),
-		Input:       100, Output: 7, BodyBytes: len(c.Body),
+		Input:       100, Output: 7, BodyBytes: len(c.Body), UsageKnown: true,
 	}
 	s.Shingles = nil
 	if !reflect.DeepEqual(s, want) {
@@ -140,7 +140,7 @@ func TestRebuildFromMessagesMatchesTheLiveRing(t *testing.T) {
 	fresh.Before(bg, b)
 	got, want := ringOf(t, b), ringOf(t, a)
 	for i := range want { // token counts and sizes are unknown after a rebuild
-		want[i].Input, want[i].Output, want[i].BodyBytes = 0, 0, 0
+		want[i].Input, want[i].Output, want[i].BodyBytes, want[i].UsageKnown = 0, 0, 0, false
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("rebuilt ring differs from the live one\n got  %+v\n want %+v", got, want)

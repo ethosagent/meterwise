@@ -277,7 +277,7 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 	s.Index = l.index
 	s.Input = m.Usage.InputTokens + m.Usage.CachedInputTokens
 	s.Output = m.Usage.OutputTokens
-	s.BodyBytes = len(c.Body)
+	s.BodyBytes, s.UsageKnown = len(c.Body), true
 	h.st.update(k, func(r ring) ring {
 		r.top = max(r.top, l.index)
 		return r.with([]contract.CallSummary{s}, false)
