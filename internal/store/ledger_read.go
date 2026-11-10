@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -116,8 +115,7 @@ func (s *Store) Session(ctx context.Context, workspaceID, id string) (sess contr
 // SessionDetail reads a session, its calls and its monitor events from one REPEATABLE READ, read-only
 // snapshot, so a call that lands between the reads can never show up in the events without its call row.
 func (s *Store) SessionDetail(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, events []contract.MonitorEventRecord, err error) {
-	err = pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
-		q := s.q.WithTx(tx)
+	err = s.readSnapshot(ctx, func(q *sqlc.Queries) error {
 		var err error
 		if sess, calls, truncated, err = s.sessionWith(ctx, q, workspaceID, id); err != nil {
 			return err
@@ -126,7 +124,7 @@ func (s *Store) SessionDetail(ctx context.Context, workspaceID, id string) (sess
 		return err
 	})
 	if err != nil {
-		return sess, nil, false, nil, queryErr(err) // a typed error from the reads passes through unchanged
+		return sess, nil, false, nil, err // readSnapshot passes a typed error from the reads through unchanged
 	}
 	return sess, calls, truncated, events, nil
 }
