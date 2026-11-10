@@ -8,18 +8,6 @@ import { type RangeSel, rangeBounds, rangeKey } from "./range";
 export const SESSION_OUTCOMES = ["completed", "abandoned", "open"] as const;
 export type SessionOutcome = (typeof SESSION_OUTCOMES)[number];
 
-/** The client families the proxy names (ruling S8); the session filter is an exact match on one of them. */
-export const CLIENT_FAMILIES = [
-  "opencode",
-  "claude-code",
-  "codex",
-  "openai-python",
-  "openai-node",
-  "anthropic-python",
-  "anthropic-node",
-  "curl",
-] as const;
-
 export interface SessionFilters {
   client: string;
   outcome: string;

@@ -1,7 +1,9 @@
 import { Flex, Select, theme } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { useRangeParams } from "../../api/range";
-import { CLIENT_FAMILIES, SESSION_OUTCOMES, type SessionFilters } from "../../api/sessions";
+import { SESSION_OUTCOMES, type SessionFilters } from "../../api/sessions";
+// Generated from contract.ClientFamilies: the filter options can never drift from what the ledger stores.
+import { CLIENT_FAMILIES } from "../../contract/generated";
 import { RangeControl } from "../../shell/RangeControl";
 
 /** The session filters as URL search params (`?client=&outcome=` next to the range), so a reload keeps the view. */
