@@ -45,6 +45,18 @@ export const CLIENT_FAMILIES = ["opencode", "claude-code", "codex", "openai-pyth
 
 export type ClientFamily = (typeof CLIENT_FAMILIES)[number];
 
+export const SAVINGS_CAUSES = ["duplicate_tool_call", "repeated_read", "no_progress", "step_budget", "reasoning_loop", "second_guessing", "trim", "router", "memory"] as const;
+
+export type SavingsCause = (typeof SAVINGS_CAUSES)[number];
+
+export const CAUSE_KINDS = ["monitor", "trim", "router", "memory"] as const;
+
+export type CauseKind = (typeof CAUSE_KINDS)[number];
+
+export const STEP_EVENT_KINDS = ["monitor_fire", "trim", "route", "memory_hint"] as const;
+
+export type StepEventKind = (typeof STEP_EVENT_KINDS)[number];
+
 export const GRACE_MINUTES_DEFAULT = 10;
 export const GRACE_MINUTES_MAX = 1440;
 export const ALLOWED_CIDRS_MAX = 32;
@@ -297,6 +309,9 @@ export interface Session {
   likelySavedUsd: string;
   outcome: string;
   client: string | null;
+  trimTokens: number;
+  routedCalls: number;
+  hints: number;
 }
 
 export interface Call {
@@ -319,6 +334,16 @@ export interface Call {
   toolCalls: string[];
   blocked: boolean;
   notesInjected: number;
+  trimAction: string | null;
+  trimConfidence: string | null;
+  trimTokens: number;
+  savedUsdTrim: string;
+  routerAction: string | null;
+  routedFrom: string | null;
+  routedTo: string | null;
+  routerScoreBp: number | null;
+  savedUsdRouter: string;
+  hintInjected: boolean;
 }
 
 export interface SessionList {
@@ -332,6 +357,7 @@ export interface SessionDetail {
   truncated: boolean;
   monitorEvents: MonitorEvent[];
   insight: SessionInsight;
+  memoryHits: MemoryHitView[];
 }
 
 export interface StatsDay {
@@ -518,7 +544,22 @@ export interface SavingsDay {
 }
 
 export interface CauseView {
-  monitor: string;
+  cause: SavingsCause;
+  kind: CauseKind;
+  mode: string;
+  confidence: string;
+  fires: number;
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldSaveUsd: string;
+  savedTokens: number;
+  likelySavedTokens: number;
+  wouldSaveTokens: number;
+}
+
+export interface CauseCard {
+  cause: SavingsCause;
+  kind: CauseKind;
   mode: string;
   confidence: string;
   fires: number;
@@ -536,7 +577,7 @@ export interface CauseView {
 }
 
 export interface UpsellView {
-  monitor: string;
+  cause: SavingsCause;
   wouldSaveUsd: string;
   wouldSaveTokens: number;
   fires: number;
@@ -582,7 +623,7 @@ export interface SavingsCauses {
   from: string;
   to: string;
   timezone: string;
-  causes: CauseView[];
+  causes: CauseCard[];
   clients: ClientRow[];
   suggestions: Suggestion[];
 }
@@ -610,6 +651,243 @@ export interface SaveList {
 export interface SessionInsight {
   repeats: Suggestion[];
   suggestion: string | null;
+}
+
+export interface TrimConfig {
+  mode: string;
+  neverTrimTools: string[];
+  maxFoldPct: number;
+  minGainPct: number;
+  stages: Record<string, boolean>;
+}
+
+export interface TrimConfigPatch {
+  mode?: string;
+  neverTrimTools?: string[];
+  maxFoldPct?: number;
+  minGainPct?: number;
+  stages?: Record<string, boolean>;
+}
+
+export interface TrimStats {
+  range: string;
+  from: string;
+  to: string;
+  mode: string;
+  calls: number;
+  trimmedCalls: number;
+  savedUsd: string;
+  likelySavedUsd: string;
+  wouldSaveUsd: string;
+  trimTokens: number;
+  wouldTrimTokens: number;
+  byStage: TrimStageStat[];
+  byTool: TrimToolStat[];
+}
+
+export interface TrimStageStat {
+  stage: string;
+  fires: number;
+  reverted: number;
+  tokens: number;
+  bytesSaved: number;
+}
+
+export interface TrimToolStat {
+  tool: string;
+  fires: number;
+  tokens: number;
+}
+
+export interface TrimPreview {
+  callId: string;
+  action: string | null;
+  bodyBefore: number;
+  bodyAfter: number;
+  stages: TrimStageView[];
+}
+
+export interface TrimStageView {
+  stage: string;
+  tool: string | null;
+  regions: number;
+  bytesBefore: number;
+  bytesAfter: number;
+  estTokens: number;
+  reverted: boolean;
+  marker: string;
+}
+
+export interface RoutePair {
+  provider: string;
+  from: string;
+  to: string;
+}
+
+export interface RouterConfig {
+  mode: string;
+  thresholdBp: number | null;
+  map: RoutePair[];
+}
+
+export interface RouterConfigPatch {
+  mode?: string;
+  thresholdBp?: number;
+  map?: RoutePair[];
+  resetMap?: boolean;
+}
+
+export interface RouterSettings {
+  config: RouterConfig;
+  defaults: RoutePair[];
+  suggestions: RoutePair[];
+  effective: RoutePair[];
+}
+
+export interface RouterStats {
+  range: string;
+  from: string;
+  to: string;
+  mode: string;
+  calls: number;
+  routedCalls: number;
+  observedCalls: number;
+  unavailable: number;
+  worseFeedback: number;
+  routedBp: number | null;
+  savedUsd: string;
+  wouldSaveUsd: string;
+  guardrail: RouterGuardrail;
+  byPair: RouterPairStat[];
+}
+
+export interface RouterGuardrail {
+  cheapCalls: number;
+  strongCalls: number;
+  cheapFireBp: number | null;
+  strongFireBp: number | null;
+  cheapCompletedBp: number | null;
+  strongCompletedBp: number | null;
+  warn: boolean;
+}
+
+export interface RouterPairStat {
+  provider: string;
+  from: string;
+  to: string;
+  calls: number;
+  savedUsd: string;
+}
+
+export interface RouterFeedbackRequest {
+  verdict: string | null;
+}
+
+export interface RouterFeedbackView {
+  callId: string;
+  verdict: string | null;
+}
+
+export interface MemoryConfig {
+  mode: string;
+  thresholdBp: number;
+  maxHintsPerSession: number;
+  model: string;
+  embedModel: string;
+}
+
+export interface MemoryConfigPatch {
+  mode?: string;
+  thresholdBp?: number;
+  maxHintsPerSession?: number;
+  model?: string;
+  embedModel?: string;
+}
+
+export interface MemorySettings {
+  config: MemoryConfig;
+  enabled: boolean;
+  disabledReason: string | null;
+}
+
+export interface MemoryStats {
+  range: string;
+  from: string;
+  to: string;
+  mode: string;
+  traces: number;
+  hintedSessions: number;
+  hits: number;
+  observedHits: number;
+  helpful: number;
+  irrelevant: number;
+  likelySavedUsd: string;
+  selfUsageUsdMonth: string;
+  budgetPaused: boolean;
+}
+
+export interface TraceSummary {
+  id: string;
+  sessionId: string;
+  taskSummary: string;
+  files: string[];
+  uses: number;
+  upvotes: number;
+  downvotes: number;
+  confidenceBp: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface TraceList {
+  items: TraceSummary[];
+  nextCursor: string | null;
+}
+
+export interface TraceSignature {
+  repo: string | null;
+  files: string[];
+  errors: string[];
+  tools: string[];
+}
+
+export interface TraceDetail {
+  id: string;
+  sessionId: string;
+  taskSummary: string;
+  files: string[];
+  uses: number;
+  upvotes: number;
+  downvotes: number;
+  confidenceBp: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+  observations: string[];
+  approach: string;
+  fix: string;
+  signature: TraceSignature;
+  helpedSessions: string[];
+}
+
+export interface MemoryHitFeedbackRequest {
+  feedback: string | null;
+}
+
+export interface MemoryHitView {
+  id: string;
+  callId: string;
+  traceId: string;
+  sourceSessionId: string;
+  similarityBp: number;
+  mode: string;
+  injected: boolean;
+  hint: string;
+  feedback: string | null;
+  estSavedUsd: string;
+}
+
+export interface ForgetResult {
+  count: number;
 }
 
 export interface RouteSpec {

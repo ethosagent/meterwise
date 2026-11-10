@@ -1,6 +1,9 @@
 package contract
 
-import "reflect"
+import (
+	"reflect"
+	"slices"
+)
 
 // DTO is a named API type; the generators walk its fields by reflection.
 type DTO struct {
@@ -11,7 +14,7 @@ type DTO struct {
 // DTOs lists every API type exported to the web twin and openapi.json, in a
 // fixed order. A new DTO is added here, nowhere else.
 func DTOs() []DTO {
-	return append(append(coreDTOs(), monitorDTOs()...), savingsDTOs()...)
+	return slices.Concat(coreDTOs(), monitorDTOs(), savingsDTOs(), trimDTOs(), routerDTOs(), memoryDTOs())
 }
 
 // coreDTOs are the Plan 01-05 types.

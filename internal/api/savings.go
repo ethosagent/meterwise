@@ -57,7 +57,9 @@ func (s *server) savingsOverview(c Call, _ none) (contract.SavingsOverview, erro
 	if err != nil {
 		return contract.SavingsOverview{}, err
 	}
-	fillCauses(cfg, out.ByCause)
+	for i := range out.ByCause {
+		fillCause(cfg, &out.ByCause[i])
+	}
 	out.Upsell = upsellOf(out.ByCause)
 	return out, nil
 }
@@ -79,7 +81,9 @@ func (s *server) savingsCauses(c Call, _ none) (contract.SavingsCauses, error) {
 	if err != nil {
 		return contract.SavingsCauses{}, err
 	}
-	fillCauses(cfg, out.Causes)
+	for i := range out.Causes {
+		fillCause(cfg, &out.Causes[i].CauseView)
+	}
 	out.Suggestions = savings.Explain(targets)
 	return out, nil
 }
@@ -103,14 +107,16 @@ func (s *server) savingsSaves(c Call, _ none) (contract.SaveList, error) {
 	return sv.Saves(c.Ctx, c.Path("id"), r, c.Query("cursor"), limit)
 }
 
-// fillCauses sets each row's configured Mode and the class the estimator gives that monitor in that mode
+// fillCause sets a monitor row's configured Mode and the class the estimator gives that monitor in that mode
 // (savings.Estimate with an empty basis: only the confidence is read).
-func fillCauses(cfg contract.MonitorConfig, rows []contract.CauseView) {
-	for i := range rows {
-		m := cfg.ModeOf(rows[i].Monitor)
-		_, conf := savings.Estimate(contract.MonitorVerdict{Monitor: rows[i].Monitor, Mode: m, Action: m})
-		rows[i].Mode, rows[i].Confidence = m, conf
+func fillCause(cfg contract.MonitorConfig, row *contract.CauseView) {
+	name, ok := row.Cause.Monitor()
+	if !ok {
+		return
 	}
+	m := cfg.ModeOf(name)
+	_, conf := savings.Estimate(contract.MonitorVerdict{Monitor: name, Mode: m, Action: m})
+	row.Mode, row.Confidence = string(m), conf
 }
 
 // upsellOf lists the monitors that are in observe mode and would have saved something, biggest first. Likely
@@ -118,8 +124,8 @@ func fillCauses(cfg contract.MonitorConfig, rows []contract.CauseView) {
 func upsellOf(rows []contract.CauseView) []contract.UpsellView {
 	out := []contract.UpsellView{}
 	for _, r := range rows {
-		if r.Mode == contract.ModeObserve && r.WouldSaveUsd > 0 {
-			out = append(out, contract.UpsellView{Monitor: r.Monitor, WouldSaveUsd: r.WouldSaveUsd, WouldSaveTokens: r.WouldSaveTokens, Fires: r.Fires})
+		if r.Mode == string(contract.ModeObserve) && r.WouldSaveUsd > 0 {
+			out = append(out, contract.UpsellView{Cause: r.Cause, WouldSaveUsd: r.WouldSaveUsd, WouldSaveTokens: r.WouldSaveTokens, Fires: r.Fires})
 		}
 	}
 	slices.SortStableFunc(out, func(a, b contract.UpsellView) int {

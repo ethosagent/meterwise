@@ -141,44 +141,6 @@ func (s *snapshot) find(provider, model string, at time.Time) (PriceRow, bool) {
 	return row, found
 }
 
-// matches reports whether model is the pricing-table name itself or that name plus a version
-// suffix: a date (-20250514 or -2024-07-18), -latest, or a ':'/'@' qualifier. Anything else is a
-// different model (claude-opus-4-5 is not claude-opus-4) and stays unpriced rather than mispriced.
-func matches(name, model string) bool {
-	if !strings.HasPrefix(model, name) {
-		return false
-	}
-	rest := model[len(name):]
-	switch {
-	case rest == "", rest == "-latest", rest[0] == ':', rest[0] == '@':
-		return true
-	}
-	return isDate(rest)
-}
-
-func isDate(rest string) bool {
-	d := strings.TrimPrefix(rest, "-")
-	if len(d) == len(rest) {
-		return false
-	}
-	switch len(d) {
-	case 8:
-		return allDigits(d)
-	case 10:
-		return allDigits(d[:4]) && d[4] == '-' && allDigits(d[5:7]) && d[7] == '-' && allDigits(d[8:])
-	}
-	return false
-}
-
-func allDigits(s string) bool {
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return s != ""
-}
-
 // seriesIndex is the index in list of the series that prices model (the longest matching name), or -1.
 func (s *snapshot) seriesIndex(list []series, provider, model string) int {
 	k := memoKey{provider, model}
@@ -187,7 +149,7 @@ func (s *snapshot) seriesIndex(list []series, provider, model string) int {
 	}
 	best := -1
 	for i, sr := range list {
-		if matches(sr.model, model) && (best < 0 || len(sr.model) > len(list[best].model)) {
+		if contract.ModelMatches(sr.model, model) && (best < 0 || len(sr.model) > len(list[best].model)) {
 			best = i
 		}
 	}

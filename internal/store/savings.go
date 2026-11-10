@@ -76,7 +76,9 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		out.FirstCallAt = new(contract.RFC3339(*t))
 	}
 	out.Days, out.Hero = daysAndHero(r, spend, events)
-	out.ByCause = causesOf(stats, tops)
+	for _, card := range causesOf(stats, tops) {
+		out.ByCause = append(out.ByCause, card.CauseView)
+	}
 	return out, nil
 }
 
@@ -151,7 +153,7 @@ func basisPoints(part, whole contract.MicroUSD) *int {
 }
 
 // causesOf builds the six CauseView rows in MonitorNames order from the monitor stats and the per-monitor tops.
-func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) []contract.CauseView {
+func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) []contract.CauseCard {
 	type top struct {
 		client, tool, path, hash string
 		repeats, toolN           int64
@@ -171,12 +173,12 @@ func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) 
 			by[m].path, by[m].hash, by[m].repeats = t.Val, t.Val2, t.N
 		}
 	}
-	out := make([]contract.CauseView, len(stats))
+	out := make([]contract.CauseCard, len(stats))
 	for i, st := range stats {
-		c := contract.CauseView{
-			Monitor: st.Monitor, Fires: st.Fires, SavedUsd: st.Saved, LikelySavedUsd: st.Likely, WouldSaveUsd: st.WouldSave,
-			SavedTokens: st.SavedTokens, LikelySavedTokens: st.LikelySavedTokens, WouldSaveTokens: st.WouldSaveTokens,
-		}
+		c := contract.CauseCard{CauseView: contract.CauseView{
+			Cause: contract.SavingsCause(st.Monitor), Kind: contract.KindMonitor, Fires: st.Fires, SavedUsd: st.Saved, LikelySavedUsd: st.Likely,
+			WouldSaveUsd: st.WouldSave, SavedTokens: st.SavedTokens, LikelySavedTokens: st.LikelySavedTokens, WouldSaveTokens: st.WouldSaveTokens,
+		}}
 		if t := by[st.Monitor]; t != nil {
 			c.TopClient, c.TopTool = textPtr(t.client), textPtr(t.tool)
 			c.TopRepeatCount = max(t.repeats, t.toolN)

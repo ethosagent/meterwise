@@ -37,8 +37,9 @@ func TestSavingsDTOJSONShape(t *testing.T) {
 	}{
 		{"hero", contract.SavingsHero{}, []string{"likelySavedTokens", "likelySavedUsd", "paidUsd", "savedBp", "savedTokens", "savedUsd", "unpricedCalls", "wouldHavePaidUsd", "wouldSaveTokens", "wouldSaveUsd"}},
 		{"day", contract.SavingsDay{}, []string{"calls", "day", "likelySavedUsd", "paidUsd", "savedUsd", "sessions", "wouldHavePaidUsd"}},
-		{"cause", contract.CauseView{}, []string{"confidence", "fires", "likelySavedTokens", "likelySavedUsd", "mode", "monitor", "savedTokens", "savedUsd", "topClient", "topPath", "topPathHash", "topRepeatCount", "topTool", "wouldSaveTokens", "wouldSaveUsd"}},
-		{"upsell", contract.UpsellView{}, []string{"fires", "monitor", "wouldSaveTokens", "wouldSaveUsd"}},
+		{"cause", contract.CauseView{}, []string{"cause", "confidence", "fires", "kind", "likelySavedTokens", "likelySavedUsd", "mode", "savedTokens", "savedUsd", "wouldSaveTokens", "wouldSaveUsd"}},
+		{"causeCard", contract.CauseCard{}, []string{"cause", "confidence", "fires", "kind", "likelySavedTokens", "likelySavedUsd", "mode", "savedTokens", "savedUsd", "topClient", "topPath", "topPathHash", "topRepeatCount", "topTool", "wouldSaveTokens", "wouldSaveUsd"}},
+		{"upsell", contract.UpsellView{}, []string{"cause", "fires", "wouldSaveTokens", "wouldSaveUsd"}},
 		{"overview", contract.SavingsOverview{}, []string{"byCause", "days", "firstCallAt", "from", "hero", "range", "state", "timezone", "to", "upsell"}},
 		{"client", contract.ClientRow{}, []string{"avgCallsPerSession", "blocked", "calls", "client", "likelySavedUsd", "prevAvgCallsPerSession", "savedBp", "savedUsd", "sessions", "spentUsd"}},
 		{"suggestion", contract.Suggestion{}, []string{"count", "monitor", "path", "pathHash", "text", "tool"}},
@@ -76,9 +77,10 @@ func TestSavingsMoneyIsDecimalString(t *testing.T) {
 // and none is a total; the only combined money is wouldHavePaid (paid + certain).
 func TestSavingsNoSummedField(t *testing.T) {
 	allowed := regexpSet("savedusd", "likelysavedusd", "wouldsaveusd", "savedtokens", "likelysavedtokens", "wouldsavetokens",
-		"estsavedusd", "esttokens", "estsavedtokens", "savedbp")
+		"estsavedusd", "esttokens", "estsavedtokens", "savedbp", "savedusdtrim", "savedusdrouter")
 	for _, v := range []any{contract.SavingsHero{}, contract.SavingsDay{}, contract.CauseView{}, contract.UpsellView{},
-		contract.ClientRow{}, contract.SaveRow{}, contract.SavingsOverview{}, contract.SavingsCauses{}} {
+		contract.ClientRow{}, contract.SaveRow{}, contract.SavingsOverview{}, contract.SavingsCauses{}, contract.CauseCard{},
+		contract.TrimStats{}, contract.RouterStats{}, contract.MemoryStats{}, contract.CallView{}, contract.SessionView{}} {
 		for _, k := range jsonKeys(t, v) {
 			lk := strings.ToLower(k)
 			if !strings.Contains(lk, "sav") {

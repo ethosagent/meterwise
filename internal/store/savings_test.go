@@ -107,8 +107,8 @@ func checkCauses(t *testing.T, by []contract.CauseView, h contract.SavingsHero) 
 	}
 	var saved, likely, would contract.MicroUSD
 	for i, c := range by {
-		if c.Monitor != names[i] {
-			t.Errorf("row %d is %s, want %s", i, c.Monitor, names[i])
+		if c.Cause != contract.SavingsCause(names[i]) {
+			t.Errorf("row %d is %s, want %s", i, c.Cause, names[i])
 		}
 		saved, likely, would = saved+c.SavedUsd, likely+c.LikelySavedUsd, would+c.WouldSaveUsd
 	}
@@ -119,11 +119,10 @@ func checkCauses(t *testing.T, by []contract.CauseView, h contract.SavingsHero) 
 	if dup.Fires != 1 || dup.SavedUsd != 1_000_000 || dup.LikelySavedUsd != 0 || dup.WouldSaveUsd != 0 {
 		t.Errorf("duplicate = %+v", dup)
 	}
-	if rr.Fires != 2 || rr.LikelySavedUsd != 600_000 || rr.SavedUsd != 0 || rr.TopPath == nil || *rr.TopPath != "src/b.go" || rr.TopRepeatCount != 2 ||
-		rr.TopTool == nil || *rr.TopTool != "read" || rr.TopClient == nil || *rr.TopClient != "opencode" || rr.TopPathHash != nil {
+	if rr.Fires != 2 || rr.LikelySavedUsd != 600_000 || rr.SavedUsd != 0 {
 		t.Errorf("repeated_read = %+v", rr)
 	}
-	if np.Fires != 1 || np.WouldSaveUsd != 200_000 || np.SavedUsd != 0 || np.LikelySavedUsd != 0 || np.TopClient != nil || np.TopPath != nil {
+	if np.Fires != 1 || np.WouldSaveUsd != 200_000 || np.SavedUsd != 0 || np.LikelySavedUsd != 0 {
 		t.Errorf("no_progress (observe moves only would-save) = %+v", np)
 	}
 }
@@ -154,6 +153,19 @@ func TestOverviewStates(t *testing.T) {
 	}
 }
 
+// The Top* detail lives on the Causes cards only (R17): the overview no longer reads it.
+func checkCauseTops(t *testing.T, cards []contract.CauseCard) {
+	t.Helper()
+	rr, np := cards[1], cards[2]
+	if rr.TopPath == nil || *rr.TopPath != "src/b.go" || rr.TopRepeatCount != 2 ||
+		rr.TopTool == nil || *rr.TopTool != "read" || rr.TopClient == nil || *rr.TopClient != "opencode" || rr.TopPathHash != nil {
+		t.Errorf("repeated_read tops = %+v", rr)
+	}
+	if np.TopClient != nil || np.TopPath != nil {
+		t.Errorf("no_progress tops = %+v", np)
+	}
+}
+
 func TestCausesClientsAndRepeats(t *testing.T) {
 	s, ctx := openMigrated(t), context.Background()
 	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
@@ -165,6 +177,7 @@ func TestCausesClientsAndRepeats(t *testing.T) {
 	if got.Range != "custom" || got.Timezone != "UTC" || len(got.Causes) != 6 || len(got.Clients) != 2 {
 		t.Fatalf("causes = %+v", got)
 	}
+	checkCauseTops(t, got.Causes)
 	op, un := got.Clients[0], got.Clients[1]
 	if op.Client != "opencode" || op.Calls != 3 || op.Sessions != 1 || op.Blocked != 1 || op.SpentUsd != 8_000_000 || op.SavedUsd != 1_000_000 || op.LikelySavedUsd != 600_000 ||
 		op.SavedBp == nil || *op.SavedBp != 1111 || op.AvgCallsPerSession != 3 {

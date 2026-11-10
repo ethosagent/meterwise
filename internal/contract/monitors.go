@@ -129,6 +129,14 @@ func (c *CallVerdicts) Seal() ([]MonitorVerdict, int) {
 	return append([]MonitorVerdict(nil), c.list...), c.notes
 }
 
+// Snapshot returns a copy of the verdicts added so far, in Add order, without sealing: the router reads the
+// previous call's verdicts while later hooks may still add to the collection.
+func (c *CallVerdicts) Snapshot() []MonitorVerdict {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]MonitorVerdict(nil), c.list...)
+}
+
 // CallSummary is one call as the history ring keeps it: indexes, hashes and token counts, never text.
 type CallSummary struct {
 	Index       int

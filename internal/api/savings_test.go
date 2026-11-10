@@ -131,13 +131,13 @@ func checkOverviewInvariants(t *testing.T, s *stack, tok, ws string, ov contract
 		t.Errorf("SUM(sessions.savedUsd) = %v, hero = %v", fromSessions, ov.Hero.SavedUsd)
 	}
 	// observe moves only would-save and the upsell, never saved or likely
-	if ov.ByCause[2].Monitor != contract.MonitorNoProgress || ov.ByCause[2].SavedUsd != 0 || ov.ByCause[2].LikelySavedUsd != 0 || ov.ByCause[2].WouldSaveUsd != 200_000 || ov.ByCause[2].Mode != contract.ModeObserve {
+	if ov.ByCause[2].Cause != contract.SavingsCause(contract.MonitorNoProgress) || ov.ByCause[2].SavedUsd != 0 || ov.ByCause[2].LikelySavedUsd != 0 || ov.ByCause[2].WouldSaveUsd != 200_000 || ov.ByCause[2].Mode != string(contract.ModeObserve) {
 		t.Errorf("no_progress = %+v", ov.ByCause[2])
 	}
-	if len(ov.Upsell) != 2 || ov.Upsell[0].Monitor != contract.MonitorNoProgress || ov.Upsell[0].WouldSaveUsd != 200_000 || ov.Upsell[1].Monitor != contract.MonitorRepeatedRead || ov.Upsell[1].WouldSaveUsd != 100_000 {
+	if len(ov.Upsell) != 2 || ov.Upsell[0].Cause != contract.SavingsCause(contract.MonitorNoProgress) || ov.Upsell[0].WouldSaveUsd != 200_000 || ov.Upsell[1].Cause != contract.SavingsCause(contract.MonitorRepeatedRead) || ov.Upsell[1].WouldSaveUsd != 100_000 {
 		t.Errorf("upsell = %+v", ov.Upsell)
 	}
-	if rr := ov.ByCause[1]; rr.Confidence != contract.ConfidenceLikely || rr.Mode != contract.ModeObserve || ov.ByCause[0].Confidence != contract.ConfidenceLikely || ov.ByCause[3].Confidence != contract.ConfidenceNone {
+	if rr := ov.ByCause[1]; rr.Confidence != contract.ConfidenceLikely || rr.Mode != string(contract.ModeObserve) || ov.ByCause[0].Confidence != contract.ConfidenceLikely || ov.ByCause[3].Confidence != contract.ConfidenceNone {
 		t.Errorf("modes and classes = %+v", ov.ByCause)
 	}
 }

@@ -39,6 +39,12 @@ func schemaFor(t reflect.Type) (map[string]any, error) {
 		return enumSchema(codes), nil
 	}
 	switch t.Kind() {
+	case reflect.Map:
+		el, err := schemaFor(t.Elem())
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"type": "object", "additionalProperties": el}, nil
 	case reflect.Pointer:
 		return schemaFor(t.Elem())
 	case reflect.String:
@@ -64,8 +70,7 @@ func schemaFor(t reflect.Type) (map[string]any, error) {
 func objectSchema(d contract.DTO) (map[string]any, error) {
 	props := map[string]any{}
 	required := []string{}
-	for i := range d.Type.NumField() {
-		f := d.Type.Field(i)
+	for _, f := range jsonFields(d.Type) {
 		name, optional, skip := fieldInfo(f)
 		if skip {
 			continue
@@ -91,7 +96,7 @@ func operation(r contract.Route) map[string]any {
 		status = strconv.Itoa(r.Status)
 	}
 	success := map[string]any{"description": "OK"}
-	if r.Response != "" {
+	if r.Response != "" && status != "204" { // a 204 sends no body; its Response only feeds the audit row
 		success["content"] = jsonContent(r.Response)
 	}
 	op := map[string]any{

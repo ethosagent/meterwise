@@ -197,6 +197,9 @@
           "finish": {
             "type": "string"
           },
+          "hintInjected": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -218,6 +221,56 @@
           "reasoningTokens": {
             "type": "integer"
           },
+          "routedFrom": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routedTo": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routerAction": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routerScoreBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savedUsdRouter": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "savedUsdTrim": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
           "startedAt": {
             "type": "string"
           },
@@ -232,6 +285,29 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "trimAction": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trimConfidence": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trimTokens": {
+            "type": "integer"
           },
           "ttfbMs": {
             "type": "integer"
@@ -259,17 +335,33 @@
           "durationMs",
           "toolCalls",
           "blocked",
-          "notesInjected"
+          "notesInjected",
+          "trimAction",
+          "trimConfidence",
+          "trimTokens",
+          "savedUsdTrim",
+          "routerAction",
+          "routedFrom",
+          "routedTo",
+          "routerScoreBp",
+          "savedUsdRouter",
+          "hintInjected"
         ],
         "type": "object"
       },
-      "CauseView": {
+      "CauseCard": {
         "properties": {
+          "cause": {
+            "type": "string"
+          },
           "confidence": {
             "type": "string"
           },
           "fires": {
             "type": "integer"
+          },
+          "kind": {
+            "type": "string"
           },
           "likelySavedTokens": {
             "type": "integer"
@@ -280,9 +372,6 @@
             "type": "string"
           },
           "mode": {
-            "type": "string"
-          },
-          "monitor": {
             "type": "string"
           },
           "savedTokens": {
@@ -346,7 +435,8 @@
           }
         },
         "required": [
-          "monitor",
+          "cause",
+          "kind",
           "mode",
           "confidence",
           "fires",
@@ -361,6 +451,63 @@
           "topPath",
           "topPathHash",
           "topRepeatCount"
+        ],
+        "type": "object"
+      },
+      "CauseView": {
+        "properties": {
+          "cause": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "fires": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "likelySavedTokens": {
+            "type": "integer"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "savedTokens": {
+            "type": "integer"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "wouldSaveTokens": {
+            "type": "integer"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cause",
+          "kind",
+          "mode",
+          "confidence",
+          "fires",
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldSaveUsd",
+          "savedTokens",
+          "likelySavedTokens",
+          "wouldSaveTokens"
         ],
         "type": "object"
       },
@@ -548,6 +695,17 @@
           "code",
           "message",
           "details"
+        ],
+        "type": "object"
+      },
+      "ForgetResult": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
         ],
         "type": "object"
       },
@@ -830,6 +988,217 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "MemoryConfig": {
+        "properties": {
+          "embedModel": {
+            "type": "string"
+          },
+          "maxHintsPerSession": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "thresholdBp": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "thresholdBp",
+          "maxHintsPerSession",
+          "model",
+          "embedModel"
+        ],
+        "type": "object"
+      },
+      "MemoryConfigPatch": {
+        "properties": {
+          "embedModel": {
+            "type": "string"
+          },
+          "maxHintsPerSession": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "thresholdBp": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "MemoryHitFeedbackRequest": {
+        "properties": {
+          "feedback": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "feedback"
+        ],
+        "type": "object"
+      },
+      "MemoryHitView": {
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "estSavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "feedback": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "injected": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "similarityBp": {
+            "type": "integer"
+          },
+          "sourceSessionId": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "callId",
+          "traceId",
+          "sourceSessionId",
+          "similarityBp",
+          "mode",
+          "injected",
+          "hint",
+          "feedback",
+          "estSavedUsd"
+        ],
+        "type": "object"
+      },
+      "MemorySettings": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/MemoryConfig"
+          },
+          "disabledReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "config",
+          "enabled",
+          "disabledReason"
+        ],
+        "type": "object"
+      },
+      "MemoryStats": {
+        "properties": {
+          "budgetPaused": {
+            "type": "boolean"
+          },
+          "from": {
+            "type": "string"
+          },
+          "helpful": {
+            "type": "integer"
+          },
+          "hintedSessions": {
+            "type": "integer"
+          },
+          "hits": {
+            "type": "integer"
+          },
+          "irrelevant": {
+            "type": "integer"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "observedHits": {
+            "type": "integer"
+          },
+          "range": {
+            "type": "string"
+          },
+          "selfUsageUsdMonth": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "traces": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "mode",
+          "traces",
+          "hintedSessions",
+          "hits",
+          "observedHits",
+          "helpful",
+          "irrelevant",
+          "likelySavedUsd",
+          "selfUsageUsdMonth",
+          "budgetPaused"
         ],
         "type": "object"
       },
@@ -1313,6 +1682,316 @@
         ],
         "type": "object"
       },
+      "RoutePair": {
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "RouterConfig": {
+        "properties": {
+          "map": {
+            "items": {
+              "$ref": "#/components/schemas/RoutePair"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "thresholdBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "mode",
+          "thresholdBp",
+          "map"
+        ],
+        "type": "object"
+      },
+      "RouterConfigPatch": {
+        "properties": {
+          "map": {
+            "items": {
+              "$ref": "#/components/schemas/RoutePair"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "resetMap": {
+            "type": "boolean"
+          },
+          "thresholdBp": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RouterFeedbackRequest": {
+        "properties": {
+          "verdict": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "RouterFeedbackView": {
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "verdict": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "callId",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "RouterGuardrail": {
+        "properties": {
+          "cheapCalls": {
+            "type": "integer"
+          },
+          "cheapCompletedBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cheapFireBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strongCalls": {
+            "type": "integer"
+          },
+          "strongCompletedBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strongFireBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cheapCalls",
+          "strongCalls",
+          "cheapFireBp",
+          "strongFireBp",
+          "cheapCompletedBp",
+          "strongCompletedBp",
+          "warn"
+        ],
+        "type": "object"
+      },
+      "RouterPairStat": {
+        "properties": {
+          "calls": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "from",
+          "to",
+          "calls",
+          "savedUsd"
+        ],
+        "type": "object"
+      },
+      "RouterSettings": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/RouterConfig"
+          },
+          "defaults": {
+            "items": {
+              "$ref": "#/components/schemas/RoutePair"
+            },
+            "type": "array"
+          },
+          "effective": {
+            "items": {
+              "$ref": "#/components/schemas/RoutePair"
+            },
+            "type": "array"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/RoutePair"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "config",
+          "defaults",
+          "suggestions",
+          "effective"
+        ],
+        "type": "object"
+      },
+      "RouterStats": {
+        "properties": {
+          "byPair": {
+            "items": {
+              "$ref": "#/components/schemas/RouterPairStat"
+            },
+            "type": "array"
+          },
+          "calls": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "guardrail": {
+            "$ref": "#/components/schemas/RouterGuardrail"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "observedCalls": {
+            "type": "integer"
+          },
+          "range": {
+            "type": "string"
+          },
+          "routedBp": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "routedCalls": {
+            "type": "integer"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "unavailable": {
+            "type": "integer"
+          },
+          "worseFeedback": {
+            "type": "integer"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "mode",
+          "calls",
+          "routedCalls",
+          "observedCalls",
+          "unavailable",
+          "worseFeedback",
+          "routedBp",
+          "savedUsd",
+          "wouldSaveUsd",
+          "guardrail",
+          "byPair"
+        ],
+        "type": "object"
+      },
       "SaveList": {
         "properties": {
           "items": {
@@ -1406,7 +2085,7 @@
         "properties": {
           "causes": {
             "items": {
-              "$ref": "#/components/schemas/CauseView"
+              "$ref": "#/components/schemas/CauseCard"
             },
             "type": "array"
           },
@@ -1680,6 +2359,9 @@
               }
             ]
           },
+          "hints": {
+            "type": "integer"
+          },
           "id": {
             "type": "string"
           },
@@ -1700,6 +2382,9 @@
           "outputTokens": {
             "type": "integer"
           },
+          "routedCalls": {
+            "type": "integer"
+          },
           "savedUsd": {
             "description": "decimal USD, six places",
             "pattern": "^-?\\d+\\.\\d{6}$",
@@ -1710,6 +2395,9 @@
           },
           "startedAt": {
             "type": "string"
+          },
+          "trimTokens": {
+            "type": "integer"
           },
           "workspaceId": {
             "type": "string"
@@ -1729,7 +2417,10 @@
           "savedUsd",
           "likelySavedUsd",
           "outcome",
-          "client"
+          "client",
+          "trimTokens",
+          "routedCalls",
+          "hints"
         ],
         "type": "object"
       },
@@ -1743,6 +2434,12 @@
           },
           "insight": {
             "$ref": "#/components/schemas/SessionInsight"
+          },
+          "memoryHits": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryHitView"
+            },
+            "type": "array"
           },
           "monitorEvents": {
             "items": {
@@ -1762,7 +2459,8 @@
           "calls",
           "truncated",
           "monitorEvents",
-          "insight"
+          "insight",
+          "memoryHits"
         ],
         "type": "object"
       },
@@ -2047,6 +2745,470 @@
         ],
         "type": "object"
       },
+      "TraceDetail": {
+        "properties": {
+          "approach": {
+            "type": "string"
+          },
+          "confidenceBp": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "downvotes": {
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "helpedSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/TraceSignature"
+          },
+          "taskSummary": {
+            "type": "string"
+          },
+          "upvotes": {
+            "type": "integer"
+          },
+          "uses": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "taskSummary",
+          "files",
+          "uses",
+          "upvotes",
+          "downvotes",
+          "confidenceBp",
+          "lastUsedAt",
+          "createdAt",
+          "observations",
+          "approach",
+          "fix",
+          "signature",
+          "helpedSessions"
+        ],
+        "type": "object"
+      },
+      "TraceList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "TraceSignature": {
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "repo": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "repo",
+          "files",
+          "errors",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "TraceSummary": {
+        "properties": {
+          "confidenceBp": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "downvotes": {
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "taskSummary": {
+            "type": "string"
+          },
+          "upvotes": {
+            "type": "integer"
+          },
+          "uses": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "taskSummary",
+          "files",
+          "uses",
+          "upvotes",
+          "downvotes",
+          "confidenceBp",
+          "lastUsedAt",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "TrimConfig": {
+        "properties": {
+          "maxFoldPct": {
+            "type": "integer"
+          },
+          "minGainPct": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "neverTrimTools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stages": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "mode",
+          "neverTrimTools",
+          "maxFoldPct",
+          "minGainPct",
+          "stages"
+        ],
+        "type": "object"
+      },
+      "TrimConfigPatch": {
+        "properties": {
+          "maxFoldPct": {
+            "type": "integer"
+          },
+          "minGainPct": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "neverTrimTools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stages": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "TrimPreview": {
+        "properties": {
+          "action": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bodyAfter": {
+            "type": "integer"
+          },
+          "bodyBefore": {
+            "type": "integer"
+          },
+          "callId": {
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/TrimStageView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "callId",
+          "action",
+          "bodyBefore",
+          "bodyAfter",
+          "stages"
+        ],
+        "type": "object"
+      },
+      "TrimStageStat": {
+        "properties": {
+          "bytesSaved": {
+            "type": "integer"
+          },
+          "fires": {
+            "type": "integer"
+          },
+          "reverted": {
+            "type": "integer"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "tokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stage",
+          "fires",
+          "reverted",
+          "tokens",
+          "bytesSaved"
+        ],
+        "type": "object"
+      },
+      "TrimStageView": {
+        "properties": {
+          "bytesAfter": {
+            "type": "integer"
+          },
+          "bytesBefore": {
+            "type": "integer"
+          },
+          "estTokens": {
+            "type": "integer"
+          },
+          "marker": {
+            "type": "string"
+          },
+          "regions": {
+            "type": "integer"
+          },
+          "reverted": {
+            "type": "boolean"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "tool": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "stage",
+          "tool",
+          "regions",
+          "bytesBefore",
+          "bytesAfter",
+          "estTokens",
+          "reverted",
+          "marker"
+        ],
+        "type": "object"
+      },
+      "TrimStats": {
+        "properties": {
+          "byStage": {
+            "items": {
+              "$ref": "#/components/schemas/TrimStageStat"
+            },
+            "type": "array"
+          },
+          "byTool": {
+            "items": {
+              "$ref": "#/components/schemas/TrimToolStat"
+            },
+            "type": "array"
+          },
+          "calls": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "likelySavedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          },
+          "savedUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "trimTokens": {
+            "type": "integer"
+          },
+          "trimmedCalls": {
+            "type": "integer"
+          },
+          "wouldSaveUsd": {
+            "description": "decimal USD, six places",
+            "pattern": "^-?\\d+\\.\\d{6}$",
+            "type": "string"
+          },
+          "wouldTrimTokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "mode",
+          "calls",
+          "trimmedCalls",
+          "savedUsd",
+          "likelySavedUsd",
+          "wouldSaveUsd",
+          "trimTokens",
+          "wouldTrimTokens",
+          "byStage",
+          "byTool"
+        ],
+        "type": "object"
+      },
+      "TrimToolStat": {
+        "properties": {
+          "fires": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "fires",
+          "tokens"
+        ],
+        "type": "object"
+      },
       "UpdateMemberRequest": {
         "properties": {
           "role": {
@@ -2077,11 +3239,11 @@
       },
       "UpsellView": {
         "properties": {
+          "cause": {
+            "type": "string"
+          },
           "fires": {
             "type": "integer"
-          },
-          "monitor": {
-            "type": "string"
           },
           "wouldSaveTokens": {
             "type": "integer"
@@ -2093,7 +3255,7 @@
           }
         },
         "required": [
-          "monitor",
+          "cause",
           "wouldSaveUsd",
           "wouldSaveTokens",
           "fires"

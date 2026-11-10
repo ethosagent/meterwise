@@ -26,10 +26,23 @@ func tsType(t reflect.Type) (string, error) {
 		return "InvitationStatus", nil
 	case reflect.TypeFor[contract.AuditAction]():
 		return "AuditAction", nil
+	case reflect.TypeFor[contract.SavingsCause]():
+		return "SavingsCause", nil
+	case reflect.TypeFor[contract.CauseKind]():
+		return "CauseKind", nil
 	case reflect.TypeFor[map[string]any]():
 		return "Record<string, unknown>", nil
 	}
 	switch t.Kind() {
+	case reflect.Map:
+		if t.Key().Kind() != reflect.String {
+			return "", fmt.Errorf("gen: map key of %s is not a string", t)
+		}
+		el, err := tsType(t.Elem())
+		if err != nil {
+			return "", err
+		}
+		return "Record<string, " + el + ">", nil
 	case reflect.Pointer:
 		return tsType(t.Elem())
 	case reflect.String:
@@ -73,11 +86,25 @@ func fieldInfo(f reflect.StructField) (name string, optional, skip bool) {
 	return name, strings.Contains(opts, "omitempty"), false
 }
 
+// jsonFields lists the fields encoding/json would emit for t, flattening embedded structs without a json tag
+// the way the encoder does, so CauseCard (an embedded CauseView plus extras) is one flat object in the twin.
+func jsonFields(t reflect.Type) []reflect.StructField {
+	var out []reflect.StructField
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Anonymous && f.Type.Kind() == reflect.Struct && f.Tag.Get("json") == "" {
+			out = append(out, jsonFields(f.Type)...)
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 func tsInterface(d contract.DTO) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "export interface %s {\n", d.Name)
-	for i := range d.Type.NumField() {
-		f := d.Type.Field(i)
+	for _, f := range jsonFields(d.Type) {
 		name, optional, skip := fieldInfo(f)
 		if skip {
 			continue
@@ -125,6 +152,9 @@ func genContractTS() ([]byte, error) {
 	tsConstTuple(&b, "INVITATION_STATUSES", "InvitationStatus", contract.InvitationStatuses())
 	tsConstTuple(&b, "AUDIT_ACTIONS", "AuditAction", contract.AuditActions())
 	tsConstTuple(&b, "CLIENT_FAMILIES", "ClientFamily", contract.ClientFamilies())
+	tsConstTuple(&b, "SAVINGS_CAUSES", "SavingsCause", contract.AllSavingsCauses())
+	tsConstTuple(&b, "CAUSE_KINDS", "CauseKind", contract.CauseKinds())
+	tsConstTuple(&b, "STEP_EVENT_KINDS", "StepEventKind", contract.StepEventKinds())
 	for _, l := range contract.Limits() {
 		fmt.Fprintf(&b, "export const %s = %d;\n", l.Name, l.Value)
 	}

@@ -33,35 +33,6 @@ type SavingsDay struct {
 	Sessions         int64    `json:"sessions"`
 }
 
-// CauseView is one monitor's contribution over the range. Confidence is the class the estimator gives
-// the monitor. The Top* fields name the most frequent client, tool and path (null when none); TopPath is
-// set only when a path was stored (rule R7), else TopPathHash holds the 8-hex prefix.
-type CauseView struct {
-	Monitor           MonitorName `json:"monitor"`
-	Mode              MonitorMode `json:"mode"`
-	Confidence        Confidence  `json:"confidence"`
-	Fires             int64       `json:"fires"`
-	SavedUsd          MicroUSD    `json:"savedUsd"`
-	LikelySavedUsd    MicroUSD    `json:"likelySavedUsd"`
-	WouldSaveUsd      MicroUSD    `json:"wouldSaveUsd"`
-	SavedTokens       int64       `json:"savedTokens"`
-	LikelySavedTokens int64       `json:"likelySavedTokens"`
-	WouldSaveTokens   int64       `json:"wouldSaveTokens"`
-	TopClient         *string     `json:"topClient"`
-	TopTool           *string     `json:"topTool"`
-	TopPath           *string     `json:"topPath"`
-	TopPathHash       *string     `json:"topPathHash"`
-	TopRepeatCount    int64       `json:"topRepeatCount"`
-}
-
-// UpsellView is an observe-mode monitor with would-save > 0, ordered by would-save descending.
-type UpsellView struct {
-	Monitor         MonitorName `json:"monitor"`
-	WouldSaveUsd    MicroUSD    `json:"wouldSaveUsd"`
-	WouldSaveTokens int64       `json:"wouldSaveTokens"`
-	Fires           int64       `json:"fires"`
-}
-
 // Savings overview states.
 const (
 	SavingsNoCalls    = "no_calls"
@@ -71,7 +42,7 @@ const (
 
 // SavingsOverview is GET /api/workspaces/{id}/savings/overview. Range is "7d", "30d" or "custom";
 // From and To are inclusive UTC days (YYYY-MM-DD); Timezone is always "UTC"; State is one of the
-// Savings* constants. ByCause has six rows in MonitorNames order.
+// Savings* constants. ByCause has nine rows in AllSavingsCauses order.
 type SavingsOverview struct {
 	Range       string       `json:"range"`
 	From        string       `json:"from"`
@@ -117,7 +88,7 @@ type SavingsCauses struct {
 	From        string       `json:"from"`
 	To          string       `json:"to"`
 	Timezone    string       `json:"timezone"`
-	Causes      []CauseView  `json:"causes"`
+	Causes      []CauseCard  `json:"causes"`
 	Clients     []ClientRow  `json:"clients"`
 	Suggestions []Suggestion `json:"suggestions"`
 }
@@ -153,6 +124,18 @@ type SessionInsight struct {
 // ValidSessionOutcome reports whether o is "" (any) or a known outcome.
 func ValidSessionOutcome(o string) bool {
 	return o == "" || o == OutcomeCompleted || o == OutcomeAbandoned || o == OutcomeOpen
+}
+
+// Session tags: the sessions list filter (SessionQuery.Tag) for sessions a saver touched.
+const (
+	SessionTagTrimmed    = "trimmed"
+	SessionTagRouted     = "routed"
+	SessionTagRemembered = "remembered"
+)
+
+// ValidSessionTag reports whether t is "" (any) or a known tag.
+func ValidSessionTag(t string) bool {
+	return t == "" || t == SessionTagTrimmed || t == SessionTagRouted || t == SessionTagRemembered
 }
 
 // MaxSavingsRangeDays is the longest custom range, in days, both ends included.
@@ -239,6 +222,7 @@ func savingsDTOs() []DTO {
 		{"SavingsHero", reflect.TypeFor[SavingsHero]()},
 		{"SavingsDay", reflect.TypeFor[SavingsDay]()},
 		{"CauseView", reflect.TypeFor[CauseView]()},
+		{"CauseCard", reflect.TypeFor[CauseCard]()},
 		{"UpsellView", reflect.TypeFor[UpsellView]()},
 		{"SavingsOverview", reflect.TypeFor[SavingsOverview]()},
 		{"ClientRow", reflect.TypeFor[ClientRow]()},

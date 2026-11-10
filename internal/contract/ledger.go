@@ -5,7 +5,7 @@ import "time"
 // LedgerTables are the append-only ledger tables. Only the features that own them
 // (internal/ledger and internal/audit) may write them: archtest rule H4 and the
 // migration lint in cmd/gen both build from this one list.
-var LedgerTables = []string{"calls", "sessions", "monitor_events", "audit_log"}
+var LedgerTables = []string{"calls", "sessions", "monitor_events", "audit_log", "trim_events"}
 
 // Session sources and outcomes as stored in sessions.source and sessions.outcome.
 const (
@@ -44,6 +44,21 @@ type CallRecord struct {
 	// in the same transaction as the call. Blocked and NotesInjected above are derived from them.
 	Verdicts []PricedVerdict
 
+	// Trim, router and memory facts of the call (plans 09-11), derived by the ledger from Meta[trim], Meta[router]
+	// and Meta[memory]. Nil actions mean the feature did not touch the call. TrimEvents are the non-reverted stages,
+	// one trim_events row each.
+	TrimAction     *TrimAction
+	TrimConfidence *Confidence
+	TrimTokens     int64
+	SavedUSDTrim   MicroUSD
+	TrimEvents     []TrimEventRecord
+	RouterAction   *RouteAction
+	RoutedFrom     string
+	RoutedTo       string
+	RouterScoreBp  *int
+	SavedUSDRouter MicroUSD
+	HintInjected   bool
+
 	// Session facts the ledger carries to the sessions upsert; not stored on the call row.
 	SessionSource string // header|predicted
 	SessionStart  time.Time
@@ -75,6 +90,9 @@ type SessionRecord struct {
 	Outcome       string
 	Client        string
 	FirstUserPrev string
+	TrimTokens    int64
+	RoutedCalls   int
+	Hints         int
 }
 
 // SessionQuery selects one page of a workspace's sessions, newest first by (started_at, id).
@@ -86,6 +104,7 @@ type SessionQuery struct {
 	Limit       int
 	Client      string // exact match on the client family; "" = any
 	Outcome     string // completed|abandoned|open; "" = any
+	Tag         string // trimmed|routed|remembered (SessionTags); "" = any
 }
 
 // SessionPage is one page of sessions; NextCursor is "" on the last page.

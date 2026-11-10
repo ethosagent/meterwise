@@ -17,6 +17,9 @@ type SessionView struct {
 	LikelySavedUsd MicroUSD  `json:"likelySavedUsd"`
 	Outcome        string    `json:"outcome"` // completed|abandoned|open
 	Client         *string   `json:"client"`
+	TrimTokens     int64     `json:"trimTokens"`
+	RoutedCalls    int       `json:"routedCalls"`
+	Hints          int       `json:"hints"`
 }
 
 // CallView is one call of a session as the API sends it. CostUsd is null for a model with no price.
@@ -40,6 +43,16 @@ type CallView struct {
 	ToolCalls       []string  `json:"toolCalls"`
 	Blocked         bool      `json:"blocked"`
 	NotesInjected   int       `json:"notesInjected"`
+	TrimAction      *string   `json:"trimAction"`
+	TrimConfidence  *string   `json:"trimConfidence"`
+	TrimTokens      int64     `json:"trimTokens"`
+	SavedUsdTrim    MicroUSD  `json:"savedUsdTrim"`
+	RouterAction    *string   `json:"routerAction"`
+	RoutedFrom      *string   `json:"routedFrom"`
+	RoutedTo        *string   `json:"routedTo"`
+	RouterScoreBp   *int      `json:"routerScoreBp"`
+	SavedUsdRouter  MicroUSD  `json:"savedUsdRouter"`
+	HintInjected    bool      `json:"hintInjected"`
 }
 
 // SessionList is GET /api/workspaces/{id}/sessions: newest first, NextCursor null on the last page.
@@ -56,6 +69,7 @@ type SessionDetail struct {
 	Truncated     bool               `json:"truncated"`
 	MonitorEvents []MonitorEventView `json:"monitorEvents"` // call order, at most MonitorEventCap
 	Insight       SessionInsight     `json:"insight"`
+	MemoryHits    []MemoryHitView    `json:"memoryHits"` // [] until memory records hits (wave 2)
 }
 
 // StatsDayView is one UTC day of the stats response; Day is YYYY-MM-DD.

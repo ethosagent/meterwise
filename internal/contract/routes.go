@@ -1,6 +1,9 @@
 package contract
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 // Permission names what a caller needs for a route. The empty Permission with
 // Public set means no credential is required; any other route must name one.
@@ -197,9 +200,9 @@ var routes = []Route{
 	{Method: "GET", Pattern: "/api/v1/version", Public: true, Summary: "Build version", Response: "Version"},
 }
 
-// Routes returns a copy of the table sorted by pattern then method.
+// Routes returns a copy of the whole table (base, trim, router, memory) sorted by pattern then method.
 func Routes() []Route {
-	out := append([]Route(nil), routes...)
+	out := allRoutes()
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Pattern != out[j].Pattern {
 			return out[i].Pattern < out[j].Pattern
@@ -209,9 +212,14 @@ func Routes() []Route {
 	return out
 }
 
+// allRoutes is the whole table; the trim, router and memory rows join it from their own files (step 9).
+func allRoutes() []Route {
+	return slices.Clone(routes)
+}
+
 // PermissionFor returns the row for a method and pattern.
 func PermissionFor(method, pattern string) (Route, bool) {
-	for _, r := range routes {
+	for _, r := range allRoutes() {
 		if r.Method == method && r.Pattern == pattern {
 			return r, true
 		}
