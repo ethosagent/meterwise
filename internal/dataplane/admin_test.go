@@ -67,3 +67,45 @@ func TestOptionsUseTheMeterwiseSessionHeaderAndMeasurePrediction(t *testing.T) {
 		t.Fatalf("session options: %+v measure=%v strategy=%v", o.Headers, o.MeasureSessionPrediction, o.Sessions)
 	}
 }
+
+func statusz(t *testing.T, admin http.Handler, sources ...contract.StatusSource) (int, map[string]any) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	dataplane.AdminHandler(admin, sources).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/statusz", nil))
+	var doc map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("statusz is not a JSON object: %v: %s", err, rec.Body.String())
+	}
+	return rec.Code, doc
+}
+
+func TestStatuszKeepsSourcesWithTheSameName(t *testing.T) {
+	admin := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"in_flight":0}`)) })
+	_, doc := statusz(t, admin, fakeSource{"ledger"}, fakeSource{"ledger"}, fakeSource{"ledger"})
+	src, _ := doc["sources"].(map[string]any)
+	for _, k := range []string{"ledger", "ledger#1", "ledger#2"} {
+		if _, ok := src[k]; !ok {
+			t.Fatalf("source %q missing (a duplicate name must not overwrite): %v", k, src)
+		}
+	}
+	if len(src) != 3 {
+		t.Fatalf("sources = %v", src)
+	}
+}
+
+func TestStatuszEmbedsANonJSONTollgateBodyInsteadOfFailing(t *testing.T) {
+	admin := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("in_flight 0\nqueue 2\n"))
+	})
+	code, doc := statusz(t, admin, fakeSource{"ledger"})
+	if code != http.StatusServiceUnavailable {
+		t.Fatalf("tollgate's status code must be kept: %d", code)
+	}
+	if doc["tollgate_raw"] != "in_flight 0\nqueue 2\n" {
+		t.Fatalf("raw body not embedded: %v", doc)
+	}
+	if src, _ := doc["sources"].(map[string]any); src["ledger"] == nil {
+		t.Fatalf("sources lost: %v", doc)
+	}
+}

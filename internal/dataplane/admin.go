@@ -16,6 +16,11 @@ type namer interface{ Name() string }
 // "sources" object with one entry per registered StatusSource (ledger queue depth, drops, last
 // flush error, directory cache, admission). /metrics and everything else pass through. Bind it to
 // the private listener only.
+//
+// Assumption: tollgate's /statusz writes one JSON object (true of v0.1.0). Only the body and the
+// status code are carried over; inner headers are not. Should a future tollgate answer something
+// else (text, an array), the raw body is embedded as a string under "tollgate_raw" with tollgate's
+// status code, so the sources still render and nothing becomes a 500.
 func AdminHandler(admin http.Handler, sources []contract.StatusSource) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", admin)
@@ -23,9 +28,8 @@ func AdminHandler(admin http.Handler, sources []contract.StatusSource) http.Hand
 		rec := httptest.NewRecorder()
 		admin.ServeHTTP(rec, r)
 		doc := map[string]any{}
-		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
-			http.Error(w, "statusz unavailable", http.StatusInternalServerError)
-			return
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil || doc == nil {
+			doc = map[string]any{"tollgate_raw": rec.Body.String()}
 		}
 		doc["sources"] = collect(sources)
 		w.Header().Set("Content-Type", "application/json")
@@ -41,6 +45,9 @@ func collect(sources []contract.StatusSource) map[string]any {
 		name := fmt.Sprintf("source%d", i)
 		if n, ok := s.(namer); ok && n.Name() != "" {
 			name = n.Name()
+		}
+		if _, dup := out[name]; dup {
+			name = fmt.Sprintf("%s#%d", name, i) // never overwrite another source's entry
 		}
 		out[name] = s.Status()
 	}
