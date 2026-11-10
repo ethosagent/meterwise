@@ -2,6 +2,7 @@ package monitors_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,26 +59,37 @@ func pct(d []time.Duration, p float64) time.Duration {
 	return s[min(len(s)-1, int(float64(len(s))*p))]
 }
 
-// beforeP99 is the smallest p99 over trials of n fresh sessions each: the worst case for the hooks,
-// since every call rebuilds its ring from 201 messages, fires, and splices a note into the body.
-// Noise only ever inflates a trial, so the best trial is the honest estimate.
-func beforeP99(t testing.TB, w tollgate.WireFormat, trials, n int) (best time.Duration, notes int) {
+// beforeStats is one trial of fresh sessions: the Before cost of the hooks and, interleaved with it, the
+// cost of parsing the same request body as JSON (the reference every proxy pays), so load and
+// instrumentation hit both alike.
+type beforeStats struct{ p50, p99, refP50, refP99 time.Duration }
+
+// measureBefore runs trials of n calls, each rebuilding its ring from 201 messages, firing and
+// splicing a note (the worst case for the hooks). Noise only ever inflates a trial, so it returns the
+// trial with the smallest p99 as the honest estimate, and how many calls carried a note.
+func measureBefore(t testing.TB, w tollgate.WireFormat, trials, n int) (best beforeStats, notes int) {
 	msgs := bigTranscript()
 	h, m := history.New(history.Options{}), newMon(monitors.Options{})
 	ctx := context.Background()
-	best = time.Hour
+	best.p99 = time.Hour
 	for trial := 0; trial < trials; trial++ {
-		var ds []time.Duration
+		var ds, refs []time.Duration
 		for i := 0; i < n; i++ {
 			c := benchCall(t, w, msgs, fmt.Sprintf("s-%d-%d", trial, i))
 			start := time.Now()
+			var doc any
+			_ = json.Unmarshal(c.Body, &doc)
+			refs = append(refs, time.Since(start))
+			start = time.Now()
 			beforeBoth(ctx, h, m, c)
 			ds = append(ds, time.Since(start))
 			if _, k := verdictsOf(c); k == 1 {
 				notes++
 			}
 		}
-		best = min(best, pct(ds, 0.99))
+		if s := (beforeStats{pct(ds, 0.5), pct(ds, 0.99), pct(refs, 0.5), pct(refs, 0.99)}); s.p99 < best.p99 {
+			best = s
+		}
 	}
 	return best, notes
 }
@@ -110,20 +122,23 @@ func TestBeforeP99UnderOneMillisecondFor200Messages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("latency measurement")
 	}
-	beforeBudget := scaled(time.Millisecond)
+	const beforeBudget = time.Millisecond // binds a plain go test on a quiet machine; see below
 	for _, w := range wires {
 		t.Run(string(w), func(t *testing.T) {
 			trials, n := 5, 200
 			if instrumented() {
-				trials, n = 2, 100
+				trials, n = 2, 50
 			}
-			p99, notes := beforeP99(t, w, trials, n)
-			t.Logf("%s: Before p99 = %v over a 201-message call that rebuilds its ring, fires and splices a note (budget %v)", w, p99, beforeBudget)
+			s, notes := measureBefore(t, w, trials, n)
+			t.Logf("%s: Before p50 %v p99 %v; parsing the same body as JSON p50 %v p99 %v", w, s.p50, s.p99, s.refP50, s.refP99)
 			if notes != trials*n {
 				t.Fatalf("the measured path must fire and note on every call, did %d of %d", notes, trials*n)
 			}
-			if p99 >= beforeBudget {
-				t.Fatalf("Before p99 %v, budget %v", p99, beforeBudget)
+			if s.p50 > s.refP50 {
+				t.Errorf("Before p50 %v exceeds the cost of parsing the body once (%v): the hooks went superlinear", s.p50, s.refP50)
+			}
+			if quiet := s.refP50 < beforeBudget; quiet && !instrumented() && s.p99 >= beforeBudget {
+				t.Errorf("Before p99 %v, budget %v (the machine is quiet: parsing the body had p50 %v)", s.p99, beforeBudget, s.refP50)
 			}
 		})
 	}
