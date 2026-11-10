@@ -1,8 +1,9 @@
-import { Alert, Button, Flex, Select, Table, Typography, theme } from "antd";
+import { Alert, Flex, Select, Table, Typography, theme } from "antd";
 import { useState } from "react";
 import { useWorkspaces } from "../../api/identity";
 import { useAuditLog } from "../../api/setup";
 import { AUDIT_ACTIONS, type AuditAction, type AuditEntry } from "../../contract/generated";
+import { LoadMore } from "../../shell/LoadMore";
 
 export const ACTION_OPTIONS = AUDIT_ACTIONS.map((a) => ({ value: a, label: a }));
 
@@ -72,13 +73,11 @@ export function AuditLogTab() {
           { title: "IP", dataIndex: "ip", render: (v: string | null) => v ?? "—" },
         ]}
       />
-      {log.hasNextPage ? (
-        <Flex justify="center" style={{ marginTop: token.marginMD }}>
-          <Button loading={log.isFetchingNextPage} onClick={() => log.fetchNextPage()}>
-            Load more
-          </Button>
-        </Flex>
-      ) : null}
+      <LoadMore
+        hasMore={log.hasNextPage}
+        loading={log.isFetchingNextPage}
+        onMore={() => void log.fetchNextPage()}
+      />
     </>
   );
 }
