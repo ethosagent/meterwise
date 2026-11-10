@@ -5,9 +5,16 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"reflect"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 )
+
+// routePair is the Req and Resp types a route was registered with, recorded at boot.
+type routePair struct {
+	method, pattern string
+	req, resp       reflect.Type
+}
 
 // none is the request type of a route without a body and the response type of one that answers
 // 204.
@@ -49,6 +56,7 @@ func register[Req, Resp any](s *server, method, pattern string, fn func(Call, Re
 		s.problems = append(s.problems, errNoRow(method, pattern))
 		return
 	}
+	s.pairs = append(s.pairs, routePair{method, pattern, reflect.TypeFor[Req](), reflect.TypeFor[Resp]()})
 	status := http.StatusOK
 	if row.Status != 0 {
 		status = row.Status

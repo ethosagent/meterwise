@@ -273,7 +273,13 @@ func TestWorkspaceSettingsRenderAsAnObjectNeverNull(t *testing.T) {
 	admin := s.admin(t, "user_admin")
 	s.defaultWorkspace(t, admin.tok)
 	raw := s.must(t, admin.tok, "GET", "/api/workspaces", "", 200)
-	if !strings.Contains(string(raw), `"settings":{`) {
-		t.Fatalf("settings is not an object: %s", raw)
+	list := decodeAs[contract.WorkspaceList](t, raw)
+	if len(list.Items) == 0 {
+		t.Fatalf("no workspace listed: %s", raw)
+	}
+	for _, w := range list.Items {
+		if w.Settings == nil {
+			t.Fatalf("workspace %s: settings decoded to nil (null on the wire?): %s", w.ID, raw)
+		}
 	}
 }

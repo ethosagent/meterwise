@@ -53,6 +53,7 @@ type server struct {
 	mux        *http.ServeMux
 	registered map[string]bool
 	problems   []error
+	pairs      []routePair // the (row, handler) type pairs register saw; the register-pairs test reads them
 }
 
 // New builds the control-plane handler. The chain is request id, logging,

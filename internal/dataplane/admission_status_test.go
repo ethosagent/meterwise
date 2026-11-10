@@ -116,3 +116,22 @@ func TestAcquireAndReleaseAllocationBudget(t *testing.T) {
 		t.Fatalf("%v allocs per Acquire+release, budget 6", n)
 	}
 }
+
+// BenchmarkAdmissionAcquireRelease is the per-call admission path: one Acquire and its release for a tenant
+// with a free slot (the limiter's grant, the in-flight gauge and the once-guarded release).
+func BenchmarkAdmissionAcquireRelease(b *testing.B) {
+	a, err := NewAdmission(4, time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx, ten := context.Background(), tollgate.Tenant{ID: "a"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		rel, err := a.Acquire(ctx, ten, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		rel()
+	}
+}
