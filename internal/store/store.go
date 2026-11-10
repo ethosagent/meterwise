@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"log/slog"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,11 +26,9 @@ type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
 
-	log             atomic.Pointer[slog.Logger]
-	badTools        atomic.Int64 // unreadable calls.tool_calls values seen by Session
-	badToolsOnce    sync.Once
-	badEvidence     atomic.Int64 // unreadable monitor_events.evidence values seen by the event reads
-	badEvidenceOnce sync.Once
+	log         atomic.Pointer[slog.Logger]
+	badTools    badData // unreadable calls.tool_calls values seen by Session
+	badEvidence badData // unreadable monitor_events.evidence values seen by the event reads
 }
 
 // Open parses dsn, opens a pool and pings it, so a bad URL or a down database
