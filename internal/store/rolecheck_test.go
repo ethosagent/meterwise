@@ -30,11 +30,11 @@ func adminExec(t *testing.T, dsn string, stmts ...string) {
 	}
 }
 
-func asRole(t *testing.T, dsn, role string) *store.Store {
+func asRole(ctx context.Context, t *testing.T, dsn, role string) *store.Store {
 	t.Helper()
 	u, _ := url.Parse(dsn)
 	u.User = url.UserPassword(role, "pw")
-	db, err := store.Open(context.Background(), u.String())
+	db, err := store.Open(ctx, u.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestCheckRoleSeesSuperusersAndOwnersOfTheAuditLog(t *testing.T) {
 	ctx := context.Background()
 
 	owned := func() store.RoleCheck {
-		rc, err := asRole(t, dsn, app).CheckRole(ctx)
+		rc, err := asRole(ctx, t, dsn, app).CheckRole(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

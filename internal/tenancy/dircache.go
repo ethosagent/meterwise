@@ -102,7 +102,10 @@ func (c *dirCache) put(k ckey, e *centry, seen uint64) bool {
 	if seen < c.floor || c.bustedAt[e.ws.ID].seq > seen {
 		return false
 	}
-	for len(c.m) >= c.cap && c.evictOldest() {
+	for len(c.m) >= c.cap {
+		if !c.evictOldest() {
+			break
+		}
 	}
 	c.tok++
 	e.tok = c.tok

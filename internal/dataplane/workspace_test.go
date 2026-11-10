@@ -121,7 +121,7 @@ func newRig(t *testing.T, o rigOpts) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := http.Handler(p.Handler())
+	h := p.Handler()
 	if !o.notFront {
 		h = wsauth.Front(h)
 	}

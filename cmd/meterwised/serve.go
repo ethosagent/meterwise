@@ -104,11 +104,7 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 		log.Error("database", "class", string(store.ClassOf(err)), "err", err.Error())
 		return nil, contract.NewError(contract.CodeUnavailable, "cannot connect to the database named by "+config.EnvDatabaseURL)
 	}
-	if rc, err := rt.db.CheckRole(ctx); err != nil {
-		rt.close(ctx)
-		log.Error("database role", "err", err.Error())
-		return nil, contract.NewError(contract.CodeUnavailable, "cannot read the database role")
-	} else if cerr := requireLeastPrivilegeRole(cfg.Env, rc); cerr != nil {
+	if cerr := rt.checkRole(ctx); cerr != nil {
 		rt.close(ctx)
 		return nil, cerr
 	}
@@ -118,17 +114,9 @@ func boot(ctx context.Context, cfg config.Config, log *slog.Logger, deps datapla
 		log.Error("default workspace", "err", err.Error())
 		return nil, contract.NewError(contract.CodeUnavailable, "cannot prepare the organization; run `meterwised migrate` first")
 	}
-	if deps.Logger == nil {
-		deps.Logger = log
-	}
-	if deps, err = rt.completeDeps(ctx, deps); err != nil {
+	if cerr := rt.buildPlane(ctx, deps); cerr != nil {
 		rt.close(ctx)
-		log.Error("data plane deps", "err", err.Error())
-		return nil, contract.NewError(contract.CodeInternal, "cannot prepare the data plane")
-	}
-	if rt.proxy, err = dataplane.New(cfg, deps); err != nil {
-		rt.close(ctx)
-		return nil, contract.NewError(contract.CodeInternal, "cannot build the data plane: "+err.Error())
+		return nil, cerr
 	}
 	apiHandler, err := rt.apiHandler(id, tp)
 	if err != nil {

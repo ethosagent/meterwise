@@ -33,8 +33,8 @@ func BenchmarkAuthenticateHit(b *testing.B) {
 
 // BenchmarkAuthenticateMiss builds the view and the lookup deadline on every call.
 func BenchmarkAuthenticateMiss(b *testing.B) {
-	a := wsauth.New(wsauth.Uncached(func(context.Context, string) (contract.Workspace, error) {
-		return (&dir{}).ByPublicID(context.Background(), cidrID)
+	a := wsauth.New(wsauth.Uncached(func(ctx context.Context, _ string) (contract.Workspace, error) {
+		return (&dir{}).ByPublicID(ctx, cidrID)
 	}), 0)
 	r := authReq("/w/"+cidrID+"/v1/chat/completions", "203.0.113.77:1")
 	ctx := context.Background()

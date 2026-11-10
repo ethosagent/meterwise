@@ -151,7 +151,7 @@ func (d *Directory) lookup(ctx context.Context, k ckey) (*centry, error) {
 	}
 	f, leader := d.join(k)
 	if leader {
-		go d.run(f, k)
+		go d.run(context.WithoutCancel(ctx), f, k)
 	} else {
 		d.coalesced.Add(1)
 	}
@@ -176,8 +176,8 @@ func (d *Directory) join(k ckey) (f *flight, leader bool) {
 }
 
 // run reads Postgres once for the flight, files the answer in the right cache and wakes the waiters.
-func (d *Directory) run(f *flight, k ckey) {
-	ctx, cancel := context.WithTimeout(context.Background(), loadCeiling)
+func (d *Directory) run(parent context.Context, f *flight, k ckey) {
+	ctx, cancel := context.WithTimeout(parent, loadCeiling)
 	defer cancel()
 	d.loads.Add(1)
 	var (

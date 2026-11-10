@@ -39,6 +39,32 @@ func requireLeastPrivilegeRole(appEnv string, rc store.RoleCheck) *contract.Erro
 		"see "+roleRunbook, config.EnvAppEnv+" other than dev enforces this")
 }
 
+// buildPlane completes the data-plane deps and builds the proxy.
+func (rt *instance) buildPlane(ctx context.Context, deps dataplane.Deps) *contract.Error {
+	if deps.Logger == nil {
+		deps.Logger = rt.log
+	}
+	deps, err := rt.completeDeps(ctx, deps)
+	if err != nil {
+		rt.log.Error("data plane deps", "err", err.Error())
+		return contract.NewError(contract.CodeInternal, "cannot prepare the data plane")
+	}
+	if rt.proxy, err = dataplane.New(rt.cfg, deps); err != nil {
+		return contract.NewError(contract.CodeInternal, "cannot build the data plane: "+err.Error())
+	}
+	return nil
+}
+
+// checkRole applies the least-privilege guard to the role the pool connected as.
+func (rt *instance) checkRole(ctx context.Context) *contract.Error {
+	rc, err := rt.db.CheckRole(ctx)
+	if err != nil {
+		rt.log.Error("database role", "err", err.Error())
+		return contract.NewError(contract.CodeUnavailable, "cannot read the database role")
+	}
+	return requireLeastPrivilegeRole(rt.cfg.Env, rc)
+}
+
 // completeDeps fills what the data plane needs from the process: the /w/{id} authenticator over
 // the cached directory, the workspace resolver, per-workspace admission and the wsauth hook (ahead
 // of the injected hooks). A field the caller set is kept, so tests and the integration build can

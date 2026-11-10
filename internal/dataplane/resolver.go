@@ -62,7 +62,7 @@ func NewWorkspaceResolver(providers map[string]tollgate.Provider, allowBare bool
 	return &WorkspaceResolver{providers: providers, allowBare: allowBare}
 }
 
-// InlineSafe: Resolve is a prefix strip and a map lookup.
+// InlineSafe marks Resolve as non-blocking: it is a prefix strip and a map lookup.
 func (*WorkspaceResolver) InlineSafe() {}
 
 // Resolve implements tollgate.ProviderResolver.
