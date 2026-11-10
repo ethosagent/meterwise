@@ -197,37 +197,49 @@ func (q *Queries) SavingsClientSaved(ctx context.Context, arg SavingsClientSaved
 }
 
 const savingsClients = `-- name: SavingsClients :many
-SELECT COALESCE(client, '')::text AS client, COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions,
-       COUNT(*) FILTER (WHERE blocked)::bigint AS blocked, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spent_micro
+SELECT COALESCE(client, '')::text AS client,
+       (COUNT(*) FILTER (WHERE started_at >= $1::timestamptz))::bigint AS calls,
+       (COUNT(DISTINCT session_id) FILTER (WHERE started_at >= $1::timestamptz))::bigint AS sessions,
+       (COUNT(*) FILTER (WHERE blocked AND started_at >= $1::timestamptz))::bigint AS blocked,
+       (COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= $1::timestamptz), 0) * 1000000)::bigint AS spent_micro,
+       (COUNT(*) FILTER (WHERE started_at < $1::timestamptz))::bigint AS prev_calls,
+       (COUNT(DISTINCT session_id) FILTER (WHERE started_at < $1::timestamptz))::bigint AS prev_sessions
 FROM calls
-WHERE workspace_id = $1::text::uuid
-  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
+WHERE workspace_id = $2::text::uuid
+  AND started_at >= $3::timestamptz AND started_at < $4::timestamptz
 GROUP BY 1
+HAVING COUNT(*) FILTER (WHERE started_at >= $1::timestamptz) > 0
 ORDER BY 2 DESC, 1
-LIMIT $4::int
+LIMIT $5::int
 `
 
 type SavingsClientsParams struct {
-	WorkspaceID string
 	FromTs      pgtype.Timestamptz
+	WorkspaceID string
+	PrevFromTs  pgtype.Timestamptz
 	ToTs        pgtype.Timestamptz
 	MaxRows     int32
 }
 
 type SavingsClientsRow struct {
-	Client     string
-	Calls      int64
-	Sessions   int64
-	Blocked    int64
-	SpentMicro int64
+	Client       string
+	Calls        int64
+	Sessions     int64
+	Blocked      int64
+	SpentMicro   int64
+	PrevCalls    int64
+	PrevSessions int64
 }
 
-// Per client (calls.client as stored; ” is NULL) over [from_ts, to_ts): calls, distinct sessions, blocked
-// calls and priced spend; the busiest max_rows clients.
+// Per client (calls.client as stored; ” is NULL), one scan of [prev_from_ts, to_ts): calls, distinct sessions,
+// blocked calls and priced spend over [from_ts, to_ts), the calls and sessions of the window before it
+// ([prev_from_ts, from_ts)), for the busiest max_rows clients of the current window only, so a previous window
+// with many distinct clients cannot push a current client out of the cap.
 func (q *Queries) SavingsClients(ctx context.Context, arg SavingsClientsParams) ([]SavingsClientsRow, error) {
 	rows, err := q.db.Query(ctx, savingsClients,
-		arg.WorkspaceID,
 		arg.FromTs,
+		arg.WorkspaceID,
+		arg.PrevFromTs,
 		arg.ToTs,
 		arg.MaxRows,
 	)
@@ -244,64 +256,8 @@ func (q *Queries) SavingsClients(ctx context.Context, arg SavingsClientsParams) 
 			&i.Sessions,
 			&i.Blocked,
 			&i.SpentMicro,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const savingsClientsFor = `-- name: SavingsClientsFor :many
-SELECT COALESCE(client, '')::text AS client, COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions,
-       COUNT(*) FILTER (WHERE blocked)::bigint AS blocked, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spent_micro
-FROM calls
-WHERE workspace_id = $1::text::uuid
-  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-  AND COALESCE(client, '') = ANY($4::text[])
-GROUP BY 1
-`
-
-type SavingsClientsForParams struct {
-	WorkspaceID string
-	FromTs      pgtype.Timestamptz
-	ToTs        pgtype.Timestamptz
-	Clients     []string
-}
-
-type SavingsClientsForRow struct {
-	Client     string
-	Calls      int64
-	Sessions   int64
-	Blocked    int64
-	SpentMicro int64
-}
-
-// The same per-client counts for exactly the named clients (” is NULL), so a previous window with many
-// distinct clients cannot push a current client out of a row cap.
-func (q *Queries) SavingsClientsFor(ctx context.Context, arg SavingsClientsForParams) ([]SavingsClientsForRow, error) {
-	rows, err := q.db.Query(ctx, savingsClientsFor,
-		arg.WorkspaceID,
-		arg.FromTs,
-		arg.ToTs,
-		arg.Clients,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SavingsClientsForRow
-	for rows.Next() {
-		var i SavingsClientsForRow
-		if err := rows.Scan(
-			&i.Client,
-			&i.Calls,
-			&i.Sessions,
-			&i.Blocked,
-			&i.SpentMicro,
+			&i.PrevCalls,
+			&i.PrevSessions,
 		); err != nil {
 			return nil, err
 		}

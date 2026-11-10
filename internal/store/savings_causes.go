@@ -34,7 +34,6 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 		tops    []sqlc.SavingsCauseTopsRow
 		repeats []sqlc.SavingsRepeatTargetsRow
 		cur     []sqlc.SavingsClientsRow
-		prev    []sqlc.SavingsClientsForRow
 		saved   []sqlc.SavingsClientSavedRow
 	)
 	err := s.readSnapshot(ctx, func(q *sqlc.Queries) (err error) {
@@ -47,14 +46,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 		if repeats, err = q.SavingsRepeatTargets(ctx, sqlc.SavingsRepeatTargetsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: maxRepeatTargets}); err != nil {
 			return err
 		}
-		if cur, err = q.SavingsClients(ctx, sqlc.SavingsClientsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: maxClients}); err != nil {
-			return err
-		}
-		names := make([]string, len(cur))
-		for i, c := range cur {
-			names[i] = c.Client
-		}
-		if prev, err = q.SavingsClientsFor(ctx, sqlc.SavingsClientsForParams{WorkspaceID: workspaceID, FromTs: pgts(prevFrom), ToTs: pgts(from), Clients: names}); err != nil {
+		if cur, err = q.SavingsClients(ctx, sqlc.SavingsClientsParams{WorkspaceID: workspaceID, PrevFromTs: pgts(prevFrom), FromTs: pgts(from), ToTs: pgts(to), MaxRows: maxClients}); err != nil {
 			return err
 		}
 		saved, err = q.SavingsClientSaved(ctx, sqlc.SavingsClientSavedParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
@@ -63,7 +55,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 	if err != nil {
 		return contract.SavingsCauses{}, nil, err
 	}
-	out := contract.SavingsCauses{Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", Causes: causesOf(stats, tops), Clients: clientRows(cur, prev, saved)}
+	out := contract.SavingsCauses{Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", Causes: causesOf(stats, tops), Clients: clientRows(cur, saved)}
 	targets := make([]contract.RepeatTarget, len(repeats))
 	for i, t := range repeats {
 		targets[i] = contract.RepeatTarget{Monitor: contract.MonitorName(t.Monitor), Tool: t.Tool, Path: t.Path, PathHash: t.PathHash, Count: t.N}
@@ -71,14 +63,8 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 	return out, targets, nil
 }
 
-// clientRows joins the current window's calls (already busiest first) with the saved money and the previous window's averages. NULL clients read "unknown".
-func clientRows(cur []sqlc.SavingsClientsRow, prev []sqlc.SavingsClientsForRow, saved []sqlc.SavingsClientSavedRow) []contract.ClientRow {
-	prevAvg := make(map[string]float64, len(prev))
-	for _, p := range prev {
-		if p.Sessions > 0 {
-			prevAvg[p.Client] = float64(p.Calls) / float64(p.Sessions)
-		}
-	}
+// clientRows joins the current window's calls (already busiest first, with the previous window's counts) with the saved money. NULL clients read "unknown".
+func clientRows(cur []sqlc.SavingsClientsRow, saved []sqlc.SavingsClientSavedRow) []contract.ClientRow {
 	sv := make(map[string]sqlc.SavingsClientSavedRow, len(saved))
 	for _, s := range saved {
 		sv[s.Client] = s
@@ -96,8 +82,8 @@ func clientRows(cur []sqlc.SavingsClientsRow, prev []sqlc.SavingsClientsForRow, 
 		if c.Sessions > 0 {
 			row.AvgCallsPerSession = float64(c.Calls) / float64(c.Sessions)
 		}
-		if p, ok := prevAvg[c.Client]; ok {
-			row.PrevAvgCallsPerSession = &p
+		if c.PrevSessions > 0 {
+			row.PrevAvgCallsPerSession = new(float64(c.PrevCalls) / float64(c.PrevSessions))
 		}
 		out = append(out, row)
 	}
