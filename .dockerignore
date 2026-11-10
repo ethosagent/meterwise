@@ -6,3 +6,7 @@ web/dist
 web/coverage
 plan
 .superpowers
+.dev
+.env
+.env.*
+!.env.example

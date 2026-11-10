@@ -30,3 +30,6 @@ web/coverage/
 
 # Any node_modules (a stray root one holds the vitest cache)
 node_modules/
+
+# Native dev runtime state (pids, logs)
+.dev/
