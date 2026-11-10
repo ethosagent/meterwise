@@ -119,7 +119,7 @@ func TestCloseSessionOutcomeHeuristic(t *testing.T) {
 			t.Fatal(err)
 		}
 		closedAt := base.Add(time.Hour)
-		if ok, err := closeOne(s, ctx, ws, tc.sess, closedAt); err != nil || !ok {
+		if ok, err := closeOne(ctx, s, ws, tc.sess, closedAt); err != nil || !ok {
 			t.Fatalf("%s: close = %v, %v", tc.sess, ok, err)
 		}
 		got, _, _, err := s.Session(ctx, ws, tc.sess)
@@ -127,10 +127,10 @@ func TestCloseSessionOutcomeHeuristic(t *testing.T) {
 			t.Errorf("%s: outcome %q closed %v, want %q (%v)", tc.sess, got.Outcome, got.ClosedAt, tc.want, err)
 		}
 	}
-	if ok, err := closeOne(s, ctx, ws, "done", base.Add(2*time.Hour)); err != nil || ok {
+	if ok, err := closeOne(ctx, s, ws, "done", base.Add(2*time.Hour)); err != nil || ok {
 		t.Fatalf("closing a closed session changed it: %v %v", ok, err)
 	}
-	if ok, err := closeOne(s, ctx, ws, "nope", base); err != nil || ok {
+	if ok, err := closeOne(ctx, s, ws, "nope", base); err != nil || ok {
 		t.Fatalf("closing an unknown session: %v %v", ok, err)
 	}
 	// a later call reopens a closed session
@@ -222,7 +222,7 @@ func TestPricingIsSeeded(t *testing.T) {
 }
 
 // closeOne closes a single session through the batch API and reports whether a row changed.
-func closeOne(s *store.Store, ctx context.Context, ws, id string, at time.Time) (bool, error) {
+func closeOne(ctx context.Context, s *store.Store, ws, id string, at time.Time) (bool, error) {
 	n, err := s.CloseSessions(ctx, []contract.SessionClose{{WorkspaceID: ws, SessionID: id, At: at}})
 	return n > 0, err
 }

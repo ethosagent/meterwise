@@ -1,6 +1,9 @@
 package contract
 
-import "strconv"
+import (
+	"reflect"
+	"strconv"
+)
 
 // Feedback values a user may put on a monitor event; anything else (or null) clears it.
 const (
@@ -242,5 +245,30 @@ func (r MonitorEventRecord) View() MonitorEventView {
 		ID: monitorEventID(r.ID), CallID: r.CallID, CallIndex: r.CallIndex, TS: RFC3339(r.TS), Monitor: r.Monitor, Mode: r.Mode,
 		Action: r.Action, Evidence: r.Evidence, EstSavedTokens: r.EstSavedToken, EstSavedUsd: r.EstSavedUSD, Confidence: r.Confidence,
 		Feedback: r.Feedback,
+	}
+}
+
+// monitorDTOs are the Plan 06 types (config, patch, events, stats), appended to DTOs in this order.
+func monitorDTOs() []DTO {
+	return []DTO{
+		{"MonitorEvidence", reflect.TypeFor[MonitorEvidence]()},
+		{"MonitorConfig", reflect.TypeFor[MonitorConfig]()},
+		{"DuplicateToolCallConfig", reflect.TypeFor[DuplicateToolCallConfig]()},
+		{"RepeatedReadConfig", reflect.TypeFor[RepeatedReadConfig]()},
+		{"NoProgressConfig", reflect.TypeFor[NoProgressConfig]()},
+		{"StepBudgetConfig", reflect.TypeFor[StepBudgetConfig]()},
+		{"ReasoningLoopConfig", reflect.TypeFor[ReasoningLoopConfig]()},
+		{"SecondGuessingConfig", reflect.TypeFor[SecondGuessingConfig]()},
+		{"MonitorConfigPatch", reflect.TypeFor[MonitorConfigPatch]()},
+		{"DuplicateToolCallPatch", reflect.TypeFor[DuplicateToolCallPatch]()},
+		{"RepeatedReadPatch", reflect.TypeFor[RepeatedReadPatch]()},
+		{"NoProgressPatch", reflect.TypeFor[NoProgressPatch]()},
+		{"StepBudgetPatch", reflect.TypeFor[StepBudgetPatch]()},
+		{"ReasoningLoopPatch", reflect.TypeFor[ReasoningLoopPatch]()},
+		{"SecondGuessingPatch", reflect.TypeFor[SecondGuessingPatch]()},
+		{"MonitorEvent", reflect.TypeFor[MonitorEventView]()},
+		{"MonitorFeedbackRequest", reflect.TypeFor[MonitorFeedbackRequest]()},
+		{"MonitorStatsRow", reflect.TypeFor[MonitorStatsRowView]()},
+		{"MonitorStats", reflect.TypeFor[MonitorStatsView]()},
 	}
 }

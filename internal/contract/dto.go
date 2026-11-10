@@ -305,6 +305,11 @@ type DTO struct {
 // DTOs lists every API type exported to the web twin and openapi.json, in a
 // fixed order. A new DTO is added here, nowhere else.
 func DTOs() []DTO {
+	return append(coreDTOs(), monitorDTOs()...)
+}
+
+// coreDTOs are the Plan 01-05 types.
+func coreDTOs() []DTO {
 	return []DTO{
 		{"Health", reflect.TypeFor[Health]()},
 		{"Version", reflect.TypeFor[Version]()},
@@ -349,24 +354,5 @@ func DTOs() []DTO {
 		{"SessionDetail", reflect.TypeFor[SessionDetail]()},
 		{"StatsDay", reflect.TypeFor[StatsDayView]()},
 		{"Stats", reflect.TypeFor[StatsView]()},
-		{"MonitorEvidence", reflect.TypeFor[MonitorEvidence]()},
-		{"MonitorConfig", reflect.TypeFor[MonitorConfig]()},
-		{"DuplicateToolCallConfig", reflect.TypeFor[DuplicateToolCallConfig]()},
-		{"RepeatedReadConfig", reflect.TypeFor[RepeatedReadConfig]()},
-		{"NoProgressConfig", reflect.TypeFor[NoProgressConfig]()},
-		{"StepBudgetConfig", reflect.TypeFor[StepBudgetConfig]()},
-		{"ReasoningLoopConfig", reflect.TypeFor[ReasoningLoopConfig]()},
-		{"SecondGuessingConfig", reflect.TypeFor[SecondGuessingConfig]()},
-		{"MonitorConfigPatch", reflect.TypeFor[MonitorConfigPatch]()},
-		{"DuplicateToolCallPatch", reflect.TypeFor[DuplicateToolCallPatch]()},
-		{"RepeatedReadPatch", reflect.TypeFor[RepeatedReadPatch]()},
-		{"NoProgressPatch", reflect.TypeFor[NoProgressPatch]()},
-		{"StepBudgetPatch", reflect.TypeFor[StepBudgetPatch]()},
-		{"ReasoningLoopPatch", reflect.TypeFor[ReasoningLoopPatch]()},
-		{"SecondGuessingPatch", reflect.TypeFor[SecondGuessingPatch]()},
-		{"MonitorEvent", reflect.TypeFor[MonitorEventView]()},
-		{"MonitorFeedbackRequest", reflect.TypeFor[MonitorFeedbackRequest]()},
-		{"MonitorStatsRow", reflect.TypeFor[MonitorStatsRowView]()},
-		{"MonitorStats", reflect.TypeFor[MonitorStatsView]()},
 	}
 }
