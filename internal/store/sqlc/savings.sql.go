@@ -255,6 +255,64 @@ func (q *Queries) SavingsClients(ctx context.Context, arg SavingsClientsParams) 
 	return items, nil
 }
 
+const savingsClientsFor = `-- name: SavingsClientsFor :many
+SELECT COALESCE(client, '')::text AS client, COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions,
+       COUNT(*) FILTER (WHERE blocked)::bigint AS blocked, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spent_micro
+FROM calls
+WHERE workspace_id = $1::text::uuid
+  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
+  AND COALESCE(client, '') = ANY($4::text[])
+GROUP BY 1
+`
+
+type SavingsClientsForParams struct {
+	WorkspaceID string
+	FromTs      pgtype.Timestamptz
+	ToTs        pgtype.Timestamptz
+	Clients     []string
+}
+
+type SavingsClientsForRow struct {
+	Client     string
+	Calls      int64
+	Sessions   int64
+	Blocked    int64
+	SpentMicro int64
+}
+
+// The same per-client counts for exactly the named clients (” is NULL), so a previous window with many
+// distinct clients cannot push a current client out of a row cap.
+func (q *Queries) SavingsClientsFor(ctx context.Context, arg SavingsClientsForParams) ([]SavingsClientsForRow, error) {
+	rows, err := q.db.Query(ctx, savingsClientsFor,
+		arg.WorkspaceID,
+		arg.FromTs,
+		arg.ToTs,
+		arg.Clients,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SavingsClientsForRow
+	for rows.Next() {
+		var i SavingsClientsForRow
+		if err := rows.Scan(
+			&i.Client,
+			&i.Calls,
+			&i.Sessions,
+			&i.Blocked,
+			&i.SpentMicro,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const savingsEventsByDay = `-- name: SavingsEventsByDay :many
 SELECT (ts AT TIME ZONE 'UTC')::date AS day,
        (COALESCE(SUM(est_saved_usd) FILTER (WHERE action <> 'observe' AND confidence = 'certain'), 0) * 1000000)::bigint AS saved_micro,

@@ -12,10 +12,9 @@ import (
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
 )
 
-// Row caps of the causes read: clients shown, previous-window clients matched, repeat targets returned.
+// Row caps of the causes read: clients shown and repeat targets returned.
 const (
 	maxClients       = 50
-	maxPrevClients   = 1000
 	maxRepeatTargets = 20
 	unknownClient    = "unknown"
 )
@@ -35,7 +34,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 		tops    []sqlc.SavingsCauseTopsRow
 		repeats []sqlc.SavingsRepeatTargetsRow
 		cur     []sqlc.SavingsClientsRow
-		prev    []sqlc.SavingsClientsRow
+		prev    []sqlc.SavingsClientsForRow
 		saved   []sqlc.SavingsClientSavedRow
 	)
 	err := s.readSnapshot(ctx, func(q *sqlc.Queries) (err error) {
@@ -51,7 +50,11 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 		if cur, err = q.SavingsClients(ctx, sqlc.SavingsClientsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: maxClients}); err != nil {
 			return err
 		}
-		if prev, err = q.SavingsClients(ctx, sqlc.SavingsClientsParams{WorkspaceID: workspaceID, FromTs: pgts(prevFrom), ToTs: pgts(from), MaxRows: maxPrevClients}); err != nil {
+		names := make([]string, len(cur))
+		for i, c := range cur {
+			names[i] = c.Client
+		}
+		if prev, err = q.SavingsClientsFor(ctx, sqlc.SavingsClientsForParams{WorkspaceID: workspaceID, FromTs: pgts(prevFrom), ToTs: pgts(from), Clients: names}); err != nil {
 			return err
 		}
 		saved, err = q.SavingsClientSaved(ctx, sqlc.SavingsClientSavedParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
@@ -69,7 +72,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 }
 
 // clientRows joins the current window's calls (already busiest first) with the saved money and the previous window's averages. NULL clients read "unknown".
-func clientRows(cur, prev []sqlc.SavingsClientsRow, saved []sqlc.SavingsClientSavedRow) []contract.ClientRow {
+func clientRows(cur []sqlc.SavingsClientsRow, prev []sqlc.SavingsClientsForRow, saved []sqlc.SavingsClientSavedRow) []contract.ClientRow {
 	prevAvg := make(map[string]float64, len(prev))
 	for _, p := range prev {
 		if p.Sessions > 0 {

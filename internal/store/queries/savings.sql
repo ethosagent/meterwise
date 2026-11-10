@@ -79,6 +79,17 @@ GROUP BY 1
 ORDER BY 2 DESC, 1
 LIMIT sqlc.arg(max_rows)::int;
 
+-- name: SavingsClientsFor :many
+-- The same per-client counts for exactly the named clients ('' is NULL), so a previous window with many
+-- distinct clients cannot push a current client out of a row cap.
+SELECT COALESCE(client, '')::text AS client, COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions,
+       COUNT(*) FILTER (WHERE blocked)::bigint AS blocked, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spent_micro
+FROM calls
+WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
+  AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
+  AND COALESCE(client, '') = ANY(sqlc.arg(clients)::text[])
+GROUP BY 1;
+
 -- name: SavingsClientSaved :many
 -- Saved and likely money per client of the call each acted event belongs to (ruling S2 filters).
 SELECT COALESCE(c.client, '')::text AS client,
