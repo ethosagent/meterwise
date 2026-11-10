@@ -1,4 +1,5 @@
 import { Typography, theme } from "antd";
+import { useMemo } from "react";
 import {
   Area,
   CartesianGrid,
@@ -41,7 +42,7 @@ function DayTip({ active, payload }: { active?: boolean; payload?: { payload: Ch
  */
 export default function SpendChartImpl({ days }: { days: readonly SavingsDay[] }) {
   const { token } = theme.useToken();
-  const data = chartSeries(days);
+  const data = useMemo(() => chartSeries(days), [days]);
   return (
     <ResponsiveContainer width="100%" height={token.controlHeightLG * 7}>
       <ComposedChart data={data}>

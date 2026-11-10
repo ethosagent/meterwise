@@ -1,7 +1,8 @@
-import { Button, Empty, Flex, Table, Tag, theme } from "antd";
+import { Button, Empty, Table, Tag } from "antd";
 import { Link } from "react-router-dom";
 import type { Session } from "../../contract/generated";
 import { formatTokens, formatUsd } from "../../lib/money";
+import { LoadMore } from "../../shell/LoadMore";
 
 /** The sessions list: one row per session, newest first, each linking to its drill-down. */
 export function SessionsTable({
@@ -17,7 +18,6 @@ export function SessionsTable({
   onMore: () => void;
   filtered: boolean;
 }) {
-  const { token } = theme.useToken();
   return (
     <>
       <Table<Session>
@@ -64,13 +64,7 @@ export function SessionsTable({
           { title: "Outcome", render: (_, r) => <Tag>{r.outcome}</Tag> },
         ]}
       />
-      {hasMore ? (
-        <Flex justify="center" style={{ marginTop: token.marginSM }}>
-          <Button onClick={onMore} loading={loadingMore}>
-            Load more
-          </Button>
-        </Flex>
-      ) : null}
+      <LoadMore hasMore={hasMore} loading={loadingMore} onMore={onMore} />
     </>
   );
 }

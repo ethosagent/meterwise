@@ -1,7 +1,8 @@
-import { Button, Card, Empty, Flex, Table, Tag, Typography, theme } from "antd";
+import { Card, Empty, Table, Tag, Typography } from "antd";
 import { Link } from "react-router-dom";
 import type { SaveRow } from "../../contract/generated";
 import { formatTokens, formatUsd } from "../../lib/money";
+import { LoadMore } from "../../shell/LoadMore";
 import { monitorLabel } from "../monitors/monitorMeta";
 import { ConfidenceTag } from "./ConfidenceTag";
 
@@ -17,7 +18,6 @@ interface Props {
  * by call index, which restarts), and the row is tagged certain or likely, never summed.
  */
 export function SavesTable({ rows, hasMore, loadingMore, onMore }: Props) {
-  const { token } = theme.useToken();
   return (
     <Card title="Biggest saves" aria-label="Biggest saves">
       <Table<SaveRow>
@@ -54,13 +54,7 @@ export function SavesTable({ rows, hasMore, loadingMore, onMore }: Props) {
           },
         ]}
       />
-      {hasMore ? (
-        <Flex justify="center" style={{ marginTop: token.marginSM }}>
-          <Button onClick={onMore} loading={loadingMore}>
-            Load more
-          </Button>
-        </Flex>
-      ) : null}
+      <LoadMore hasMore={hasMore} loading={loadingMore} onMore={onMore} />
     </Card>
   );
 }

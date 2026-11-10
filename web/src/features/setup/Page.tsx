@@ -1,11 +1,11 @@
-import { Alert, Button, Card, Skeleton, Tabs, Typography, theme } from "antd";
+import { Alert, Card, Skeleton, Tabs, Typography, theme } from "antd";
 import { useActiveWorkspace } from "../../api/identity";
 import { useSetup } from "../../api/setup";
 import { usePermission } from "../../auth/usePermission";
 import type { Setup } from "../../contract/generated";
-import { NoWorkspaceAccess } from "../../shell/NoWorkspaceAccess";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
+import { ActiveWorkspaceGate } from "../../shell/WorkspaceGuard";
 import { UrlHidden, WorkspaceUrl } from "../workspace/WorkspaceUrl";
 import { Snippet } from "./Snippet";
 import { Status } from "./Status";
@@ -30,49 +30,40 @@ export function SetupPage() {
   return (
     <section aria-labelledby="page-title">
       <PageHead page={pageByKey("setup")} />
-      {ws === null ? (
-        active.state === "missing" ? (
-          <Alert
-            type="error"
-            showIcon
-            title="Your active workspace could not be found"
-            action={<Button onClick={active.retry}>Try again</Button>}
-          />
-        ) : active.state === "none" ? (
-          <NoWorkspaceAccess />
-        ) : (
-          <Skeleton active />
-        )
-      ) : !visible ? (
-        <UrlHidden />
-      ) : (
-        <>
-          <Card title="Your proxy URL">
-            <WorkspaceUrl ws={ws} />
-          </Card>
-          <Card title="Point your agent at it" style={gap}>
-            <Typography.Paragraph>
-              Keep using your own provider key. The proxy never asks for it and never stores it.
-            </Typography.Paragraph>
-            {setup.data ? (
-              <Tabs
-                items={TABS.map((t) => ({
-                  key: t.key,
-                  label: t.label,
-                  children: <Snippet label={t.label} text={setup.data.snippets[t.key]} />,
-                }))}
-              />
-            ) : setup.isError ? (
-              <Alert type="error" showIcon title="Could not load the setup snippets." />
-            ) : (
-              <Skeleton active />
-            )}
-          </Card>
-          <Card title="Status" style={gap}>
-            {setup.data ? <Status status={setup.data.status} /> : <Skeleton.Input active />}
-          </Card>
-        </>
-      )}
+      <ActiveWorkspaceGate active={active}>
+        {(w) =>
+          !visible ? (
+            <UrlHidden />
+          ) : (
+            <>
+              <Card title="Your proxy URL">
+                <WorkspaceUrl ws={w} />
+              </Card>
+              <Card title="Point your agent at it" style={gap}>
+                <Typography.Paragraph>
+                  Keep using your own provider key. The proxy never asks for it and never stores it.
+                </Typography.Paragraph>
+                {setup.data ? (
+                  <Tabs
+                    items={TABS.map((t) => ({
+                      key: t.key,
+                      label: t.label,
+                      children: <Snippet label={t.label} text={setup.data.snippets[t.key]} />,
+                    }))}
+                  />
+                ) : setup.isError ? (
+                  <Alert type="error" showIcon title="Could not load the setup snippets." />
+                ) : (
+                  <Skeleton active />
+                )}
+              </Card>
+              <Card title="Status" style={gap}>
+                {setup.data ? <Status status={setup.data.status} /> : <Skeleton.Input active />}
+              </Card>
+            </>
+          )
+        }
+      </ActiveWorkspaceGate>
     </section>
   );
 }

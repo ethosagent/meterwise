@@ -11,6 +11,8 @@ export const savingsKey = (workspaceId: string, view: string, sel: RangeSel) =>
 
 /** How often an open Overview asks again while no call has been seen, so "waiting" flips to "collecting" by itself. */
 export const SAVINGS_POLL_MS = 15_000;
+/** Savings figures change slowly: a tab switch or remount within this window reuses the cache. */
+export const SAVINGS_STALE_MS = 30_000;
 /** Rows per page of the biggest-saves table. */
 export const SAVES_PAGE = 20;
 
@@ -22,6 +24,7 @@ export function useSavingsOverview(workspaceId: string | null, sel: RangeSel, en
   return useQuery({
     queryKey: savingsKey(workspaceId ?? "", "overview", sel),
     enabled: enabled && workspaceId !== null,
+    staleTime: SAVINGS_STALE_MS,
     refetchInterval: (query) => (query.state.data?.state === "no_calls" ? SAVINGS_POLL_MS : false),
     queryFn: () =>
       apiFetch<SavingsOverview>(`${base(workspaceId ?? "", "overview")}?${rangeQuery(sel)}`),
@@ -33,6 +36,7 @@ export function useSavingsCauses(workspaceId: string | null, sel: RangeSel, enab
   return useQuery({
     queryKey: savingsKey(workspaceId ?? "", "causes", sel),
     enabled: enabled && workspaceId !== null,
+    staleTime: SAVINGS_STALE_MS,
     queryFn: () =>
       apiFetch<SavingsCauses>(`${base(workspaceId ?? "", "causes")}?${rangeQuery(sel)}`),
   });
@@ -43,6 +47,7 @@ export function useSaves(workspaceId: string | null, sel: RangeSel, enabled: boo
   return useInfiniteQuery({
     queryKey: savingsKey(workspaceId ?? "", "saves", sel),
     enabled: enabled && workspaceId !== null,
+    staleTime: SAVINGS_STALE_MS,
     initialPageParam: null as string | null,
     getNextPageParam: (last: SaveList) => last.nextCursor,
     queryFn: ({ pageParam }) => {

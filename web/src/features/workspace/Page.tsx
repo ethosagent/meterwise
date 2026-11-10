@@ -1,22 +1,11 @@
-import {
-  Alert,
-  App,
-  Button,
-  Card,
-  Form,
-  Input,
-  Popconfirm,
-  Skeleton,
-  Space,
-  Typography,
-  theme,
-} from "antd";
+import { App, Button, Card, Form, Input, Popconfirm, Space, Typography, theme } from "antd";
 import { useEffect } from "react";
 import { useActiveWorkspace, useDeleteWorkspace, useRenameWorkspace } from "../../api/identity";
 import { usePermission } from "../../auth/usePermission";
 import type { Workspace } from "../../contract/generated";
 import { pageByKey } from "../../shell/nav";
 import { PageHead } from "../../shell/PageHead";
+import { ActiveWorkspaceGate } from "../../shell/WorkspaceGuard";
 import { WorkspaceUrl } from "./WorkspaceUrl";
 
 function General({ ws, canManage }: { ws: Workspace; canManage: boolean }) {
@@ -109,22 +98,17 @@ export function WorkspacePage() {
   return (
     <section aria-labelledby="page-title">
       <PageHead page={pageByKey("workspace")} />
-      {active.state === "ready" ? (
-        <>
-          <General ws={active.workspace} canManage={canRename} />
-          {canDelete ? <DangerZone ws={active.workspace} /> : null}
-        </>
-      ) : active.state === "missing" ? (
-        <Alert
-          type="error"
-          showIcon
-          title="Your active workspace could not be found"
-          description="It may have been deleted in another session. Nothing is shown here rather than the wrong workspace."
-          action={<Button onClick={active.retry}>Try again</Button>}
-        />
-      ) : (
-        <Skeleton active />
-      )}
+      <ActiveWorkspaceGate
+        active={active}
+        missingHint="It may have been deleted in another session. Nothing is shown here rather than the wrong workspace."
+      >
+        {(ws) => (
+          <>
+            <General ws={ws} canManage={canRename} />
+            {canDelete ? <DangerZone ws={ws} /> : null}
+          </>
+        )}
+      </ActiveWorkspaceGate>
     </section>
   );
 }
