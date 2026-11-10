@@ -68,7 +68,7 @@ func (q *Queries) InsertCalls(ctx context.Context, callsJson []byte) ([]string, 
 	return items, nil
 }
 
-const insertMonitorEvents = `-- name: InsertMonitorEvents :execrows
+const insertMonitorEvents = `-- name: InsertMonitorEvents :many
 INSERT INTO monitor_events (org_id, workspace_id, session_id, call_id, call_index, ts, monitor, mode, action, evidence,
                             est_saved_tokens, est_saved_usd, confidence)
 SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId', (r.j->>'callIndex')::int,
@@ -76,17 +76,36 @@ SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.
        r.j->'evidence', (r.j->>'estTokens')::bigint, (r.j->>'estMicro')::numeric / 1000000, r.j->>'confidence'
 FROM jsonb_array_elements($1::jsonb) AS r(j)
 ON CONFLICT (workspace_id, call_id, monitor) DO NOTHING
+RETURNING call_id, monitor
 `
+
+type InsertMonitorEventsRow struct {
+	CallID  string
+	Monitor string
+}
 
 // The only INSERT into monitor_events (H4): one statement for the verdicts of the calls a batch really inserted (a
 // JSON array of event objects), idempotent on (workspace_id, call_id, monitor). ts is the call's start;
-// "estMicro" is micro-USD, converted to numeric(14,6) here.
-func (q *Queries) InsertMonitorEvents(ctx context.Context, eventsJson []byte) (int64, error) {
-	result, err := q.db.Exec(ctx, insertMonitorEvents, eventsJson)
+// "estMicro" is micro-USD, converted to numeric(14,6) here. RETURNING names the rows really inserted: the
+// session sums count only those (a duplicate (call, monitor) is dropped here and so is never summed).
+func (q *Queries) InsertMonitorEvents(ctx context.Context, eventsJson []byte) ([]InsertMonitorEventsRow, error) {
+	rows, err := q.db.Query(ctx, insertMonitorEvents, eventsJson)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []InsertMonitorEventsRow
+	for rows.Next() {
+		var i InsertMonitorEventsRow
+		if err := rows.Scan(&i.CallID, &i.Monitor); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setMonitorEventFeedback = `-- name: SetMonitorEventFeedback :one

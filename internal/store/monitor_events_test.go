@@ -85,17 +85,25 @@ func TestWriteCallsWritesMonitorEventsAndSessionSums(t *testing.T) {
 }
 
 // Two verdicts of one monitor on one call (a bug upstream) cannot double-write: the unique key keeps one row.
+// The unique key is the backstop for a monitor that reports twice for one call: one event, and the session
+// sums count what was inserted (the RETURNING rows), so saved_usd keeps equalling SUM(monitor_events).
 func TestMonitorEventUniqueKeyIsTheBackstop(t *testing.T) {
 	s, ctx := openMigrated(t), context.Background()
 	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
 	c := rec(ws, "c1", "s1", 1, base, "ok", true, nil)
-	v := verdict(contract.MonitorRepeatedRead, contract.ModeNote, contract.ConfidenceLikely, 1, 1)
-	c.Verdicts = []contract.PricedVerdict{v, v}
+	certain := verdict(contract.MonitorDuplicateToolCall, contract.ModeBlock, contract.ConfidenceCertain, 1, 7)
+	likely := verdict(contract.MonitorRepeatedRead, contract.ModeNote, contract.ConfidenceLikely, 1, 3)
+	c.Verdicts = []contract.PricedVerdict{certain, certain, likely, likely}
 	if _, err := s.WriteCalls(ctx, []contract.CallRecord{c}); err != nil {
 		t.Fatal(err)
 	}
-	if n := count(t, s, `SELECT count(*) FROM monitor_events WHERE workspace_id = $1`, ws); n != 1 {
-		t.Fatalf("events = %d, want 1", n)
+	if n := count(t, s, `SELECT count(*) FROM monitor_events WHERE workspace_id = $1`, ws); n != 2 {
+		t.Fatalf("events = %d, want 2", n)
+	}
+	for col, want := range map[string]int{"saved_usd": 7, "likely_saved_usd": 3} {
+		if n := count(t, s, `SELECT (`+col+`*1000000)::int FROM sessions WHERE workspace_id = $1 AND id = 's1'`, ws); n != want {
+			t.Errorf("sessions.%s = %d micro-USD, want %d (a duplicate verdict must not move the sums)", col, n, want)
+		}
 	}
 }
 

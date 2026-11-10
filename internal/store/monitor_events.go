@@ -31,7 +31,7 @@ type eventJSON struct {
 // writeMonitorEvents inserts the verdicts of the calls a batch really inserted, in the batch's transaction.
 // Replayed calls are not in fresh, so their events are never written twice; the unique key
 // (workspace_id, call_id, monitor) is the backstop for a monitor that somehow reports twice.
-func writeMonitorEvents(ctx context.Context, q *sqlc.Queries, fresh []contract.CallRecord) error {
+func writeMonitorEvents(ctx context.Context, q *sqlc.Queries, fresh []contract.CallRecord) ([]contract.CallRecord, error) {
 	var events []eventJSON
 	for _, r := range fresh {
 		for _, v := range r.Verdicts {
@@ -43,14 +43,39 @@ func writeMonitorEvents(ctx context.Context, q *sqlc.Queries, fresh []contract.C
 		}
 	}
 	if len(events) == 0 {
-		return nil
+		return fresh, nil
 	}
 	body, err := json.Marshal(events)
 	if err != nil {
-		return fail(ClassPool, "store: monitor events are not JSON")
+		return nil, fail(ClassPool, "store: monitor events are not JSON")
 	}
-	_, err = q.InsertMonitorEvents(ctx, body)
-	return err
+	rows, err := q.InsertMonitorEvents(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	return countedVerdicts(fresh, rows), nil
+}
+
+// countedVerdicts returns fresh with only the verdicts whose monitor_events row was inserted (named by the
+// RETURNING rows), so the session sums can never include a verdict the table does not hold. The records
+// are copied; fresh is not modified.
+func countedVerdicts(fresh []contract.CallRecord, inserted []sqlc.InsertMonitorEventsRow) []contract.CallRecord {
+	got := make(map[[2]string]bool, len(inserted))
+	for _, r := range inserted {
+		got[[2]string{r.CallID, r.Monitor}] = true
+	}
+	out := make([]contract.CallRecord, len(fresh))
+	for i, r := range fresh {
+		out[i] = r
+		out[i].Verdicts = nil
+		for _, v := range r.Verdicts {
+			if k := [2]string{r.ID, string(v.Monitor)}; got[k] {
+				got[k] = false // a repeat of the same (call, monitor) in one record counts once
+				out[i].Verdicts = append(out[i].Verdicts, v)
+			}
+		}
+	}
+	return out
 }
 
 // SetFeedback sets (fb "correct" or "wrong") or clears (nil) the feedback of one monitor event of a

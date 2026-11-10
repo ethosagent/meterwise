@@ -64,10 +64,11 @@ func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (Wri
 			}
 		}
 		res = WriteResult{Inserted: len(fresh), Duplicates: len(recs) - len(fresh)}
-		if err := writeMonitorEvents(ctx, q, fresh); err != nil {
+		counted, err := writeMonitorEvents(ctx, q, fresh)
+		if err != nil {
 			return err
 		}
-		return s.writeSessions(ctx, q, fresh)
+		return s.writeSessions(ctx, q, counted)
 	})
 	if err != nil {
 		return WriteResult{}, queryErr(err)

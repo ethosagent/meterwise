@@ -67,17 +67,19 @@ FROM jsonb_array_elements(sqlc.arg(touches_json)::jsonb) AS t(j)
 WHERE w.id = (t.j->>'workspaceId')::uuid AND w.org_id = (t.j->>'orgId')::uuid
   AND (w.last_call_at IS NULL OR w.last_call_at < timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond');
 
--- name: InsertMonitorEvents :execrows
+-- name: InsertMonitorEvents :many
 -- The only INSERT into monitor_events (H4): one statement for the verdicts of the calls a batch really inserted (a
 -- JSON array of event objects), idempotent on (workspace_id, call_id, monitor). ts is the call's start;
--- "estMicro" is micro-USD, converted to numeric(14,6) here.
+-- "estMicro" is micro-USD, converted to numeric(14,6) here. RETURNING names the rows really inserted: the
+-- session sums count only those (a duplicate (call, monitor) is dropped here and so is never summed).
 INSERT INTO monitor_events (org_id, workspace_id, session_id, call_id, call_index, ts, monitor, mode, action, evidence,
                             est_saved_tokens, est_saved_usd, confidence)
 SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId', (r.j->>'callIndex')::int,
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'monitor', r.j->>'mode', r.j->>'action',
        r.j->'evidence', (r.j->>'estTokens')::bigint, (r.j->>'estMicro')::numeric / 1000000, r.j->>'confidence'
 FROM jsonb_array_elements(sqlc.arg(events_json)::jsonb) AS r(j)
-ON CONFLICT (workspace_id, call_id, monitor) DO NOTHING;
+ON CONFLICT (workspace_id, call_id, monitor) DO NOTHING
+RETURNING call_id, monitor;
 
 -- name: SetMonitorEventFeedback :one
 -- The only UPDATE of monitor_events (H4): feedback on one event of one workspace; a foreign or unknown id matches no
