@@ -74,7 +74,8 @@ describe("Shell navigation", () => {
 
   it("navigates when a menu item is clicked", async () => {
     mockApi();
-    renderApp("/overview");
+    // From Setup, not Overview: a real Overview page (chart module, tables) makes this click race the 15 s test limit under load.
+    renderApp("/setup");
     await userEvent.click(await screen.findByText("Sessions"));
     expect(await screen.findByRole("heading", { level: 2, name: "Sessions" })).toBeInTheDocument();
   });
