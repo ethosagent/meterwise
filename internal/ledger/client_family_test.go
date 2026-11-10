@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/ledger"
 )
 
@@ -40,5 +41,23 @@ func TestClientFamily(t *testing.T) {
 				t.Errorf("ClientFamily = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// Every family the dashboard names (contract.ClientFamilies) is one ClientFamily can produce, from the
+// user agent the tool sends (the SDKs split by language, the rest are the product token).
+func TestEveryNamedClientFamilyIsProducible(t *testing.T) {
+	uas := map[string]string{
+		"openai-python": "OpenAI/Python 1.2", "openai-node": "OpenAI/JS 4.0",
+		"anthropic-python": "Anthropic/Python 0.3", "anthropic-node": "Anthropic/JS 0.3",
+	}
+	for _, fam := range contract.ClientFamilies() {
+		ua := uas[fam]
+		if ua == "" {
+			ua = fam + "/1.0"
+		}
+		if got := ledger.ClientFamily(http.Header{"User-Agent": {ua}}); got != fam {
+			t.Errorf("User-Agent %q gives %q, want %q", ua, got, fam)
+		}
 	}
 }

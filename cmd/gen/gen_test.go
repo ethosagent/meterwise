@@ -374,3 +374,15 @@ func TestContractTSEmitsTheLimits(t *testing.T) {
 		t.Fatalf("limits = %v", contract.Limits())
 	}
 }
+
+// The client-family list has one source, Go; the web twin gets it as CLIENT_FAMILIES.
+func TestContractTSEmitsTheClientFamilies(t *testing.T) {
+	b, err := genContractTS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `export const CLIENT_FAMILIES = ["opencode", "claude-code", "codex", "openai-python", "openai-node", "anthropic-python", "anthropic-node", "curl"] as const;`
+	if !strings.Contains(string(b), want) {
+		t.Errorf("generated.ts lacks %q", want)
+	}
+}

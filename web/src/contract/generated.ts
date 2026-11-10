@@ -41,6 +41,10 @@ export const AUDIT_ACTIONS = ["workspace.create", "workspace.update", "workspace
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
+export const CLIENT_FAMILIES = ["opencode", "claude-code", "codex", "openai-python", "openai-node", "anthropic-python", "anthropic-node", "curl"] as const;
+
+export type ClientFamily = (typeof CLIENT_FAMILIES)[number];
+
 export const GRACE_MINUTES_DEFAULT = 10;
 export const GRACE_MINUTES_MAX = 1440;
 export const ALLOWED_CIDRS_MAX = 32;

@@ -124,6 +124,7 @@ func genContractTS() ([]byte, error) {
 	tsConstTuple(&b, "ROLES", "Role", contract.Roles())
 	tsConstTuple(&b, "INVITATION_STATUSES", "InvitationStatus", contract.InvitationStatuses())
 	tsConstTuple(&b, "AUDIT_ACTIONS", "AuditAction", contract.AuditActions())
+	tsConstTuple(&b, "CLIENT_FAMILIES", "ClientFamily", contract.ClientFamilies())
 	for _, l := range contract.Limits() {
 		fmt.Fprintf(&b, "export const %s = %d;\n", l.Name, l.Value)
 	}
