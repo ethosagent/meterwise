@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -52,13 +51,11 @@ func (s *server) listSessions(c Call, _ none) (contract.SessionList, error) {
 	if !q.From.IsZero() && !q.To.IsZero() && !q.From.Before(q.To) {
 		return contract.SessionList{}, contract.Invalid("from", "must be before to")
 	}
-	if raw := c.Query("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 {
-			return contract.SessionList{}, contract.Invalid("limit", "must be a whole number from 1 to 200")
-		}
-		q.Limit = n
+	limit, err := contract.ParsePageLimit(c.Query("limit"))
+	if err != nil {
+		return contract.SessionList{}, err
 	}
+	q.Limit = limit
 	page, err := led.ListSessions(c.Ctx, q)
 	if err != nil {
 		return contract.SessionList{}, err

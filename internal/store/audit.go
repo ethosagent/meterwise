@@ -17,7 +17,7 @@ import (
 // never more than MaxAuditLimit.
 const (
 	DefaultAuditLimit = 50
-	MaxAuditLimit     = 200
+	MaxAuditLimit     = contract.MaxPageLimit
 )
 
 // AppendAudit inserts one audit row. It is the only INSERT into audit_log (internal/audit calls it);
@@ -53,8 +53,8 @@ func (s *Store) ListAudit(ctx context.Context, orgID string, q contract.AuditQue
 	switch {
 	case limit == 0:
 		limit = DefaultAuditLimit
-	case limit < 0 || limit > MaxAuditLimit:
-		return contract.AuditPage{}, contract.Invalid("limit", "must be between 1 and "+strconv.Itoa(MaxAuditLimit))
+	case limit < contract.MinPageLimit || limit > MaxAuditLimit:
+		return contract.AuditPage{}, contract.Invalid("limit", contract.LimitMessage)
 	}
 	if q.WorkspaceID != "" && !validID(q.WorkspaceID) {
 		return contract.AuditPage{}, contract.Invalid("workspaceId", "must be a workspace id")

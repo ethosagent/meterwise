@@ -27,13 +27,11 @@ func (s *server) audit(c Call, action contract.AuditAction, resourceType, resour
 
 func (s *server) listAuditLog(c Call, _ none) (contract.AuditList, error) {
 	q := contract.AuditQuery{Action: contract.AuditAction(c.Query("action")), WorkspaceID: c.Query("workspaceId"), Cursor: c.Query("cursor")}
-	if raw := c.Query("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			return contract.AuditList{}, contract.Invalid("limit", "must be a whole number from 1 to 200")
-		}
-		q.Limit = n
+	limit, err := contract.ParsePageLimit(c.Query("limit"))
+	if err != nil {
+		return contract.AuditList{}, err
 	}
+	q.Limit = limit
 	page, err := s.Audit.List(c.Ctx, q)
 	if err != nil {
 		return contract.AuditList{}, err

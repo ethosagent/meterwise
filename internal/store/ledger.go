@@ -280,7 +280,7 @@ func microPtr(v pgtype.Int8) *contract.MicroUSD {
 // Session page sizes: DefaultSessionLimit unless the caller asks for fewer or more, never more than MaxSessionLimit.
 const (
 	DefaultSessionLimit = 50
-	MaxSessionLimit     = 200
+	MaxSessionLimit     = contract.MaxPageLimit
 	maxSessionCalls     = 5000
 )
 
@@ -296,8 +296,8 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 	switch {
 	case limit == 0:
 		limit = DefaultSessionLimit
-	case limit < 0 || limit > MaxSessionLimit:
-		return contract.SessionPage{}, contract.Invalid("limit", "must be between 1 and "+strconv.Itoa(MaxSessionLimit))
+	case limit < contract.MinPageLimit || limit > MaxSessionLimit:
+		return contract.SessionPage{}, contract.Invalid("limit", contract.LimitMessage)
 	}
 	if !validID(q.WorkspaceID) {
 		return contract.SessionPage{}, contract.Invalid("workspaceId", "must be a workspace id")
