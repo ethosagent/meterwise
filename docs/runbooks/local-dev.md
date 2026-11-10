@@ -1,58 +1,96 @@
 # Local development
 
-## Prerequisites
+One page for the owner: set up, run (native or Docker), sign in, create a workspace, send traffic. `make help` lists every target.
 
-Go (see `go.mod`), Node 22+ with npm, Docker (for Postgres 16), `psql`, `jq`. Dev tools are pinned: Go tools in
-`tools/go.mod` (run through `scripts/lib.sh` `gotool`), web tools in `web/package.json`. Nothing is assumed installed.
-
-## First run
+## 1. First-time setup
 
 ```sh
-scripts/install-hooks.sh                # git hooks for THIS clone or worktree only; never global config
-make db-up                              # Postgres 16 on 127.0.0.1:54329 (docker compose, project "meterwise")
-export TEST_DATABASE_URL='postgres://meterwise:meterwise@127.0.0.1:54329/meterwise?sslmode=disable'
-scripts/run-checks.sh                   # the full gate; CI runs exactly this
+make setup        # checks go/node/npm/docker, downloads deps, npm ci, installs git hooks, creates .env from .env.example
 ```
 
-`make db-down` stops Postgres. Set `METERWISE_PG_PORT` to move the host port. The `migrate` gate and database
-tests create and drop their own throwaway databases; they never touch the `meterwise` database's data.
+`make setup` is idempotent and says what is missing. `.env` is gitignored and holds dev-only values (ports, a mock Clerk
+key); never put a real provider or Clerk key in it. Two ways to run, pick one at a time (they share ports 8080/8081/9090;
+override with `APP_API_PORT=...` etc. in `.env`):
 
-## Run the binary
+| | Native (`make dev`) | Docker (`make up`) |
+|---|---|---|
+| Runs | Go binary + Vite hot reload; Postgres in Docker | Postgres, migrate, Clerk mock, meterwised in compose profile `app` |
+| Sign-in | seeded dev admin, no login screen | the mock login screen, real signed tokens |
+| Data | tmpfs Postgres: gone when it stops | named volume `appdb-data`: survives `make down` |
+
+## 2a. Native
 
 ```sh
-export DATABASE_URL="$TEST_DATABASE_URL"
-go run ./cmd/meterwised config check -json     # lists every configuration problem at once
-go run ./cmd/meterwised migrate                # goose baseline (0001_store) against DATABASE_URL
-export APP_ENV=dev
-go run ./cmd/meterwised serve                  # proxy :8080, API + web :8081, admin 127.0.0.1:9090
-curl -s 127.0.0.1:8081/healthz                 # {"status":"ok"} (pings Postgres)
-curl -s 127.0.0.1:8081/api/config              # {"appName":...,"proxyPublicHost":...}
-curl -s 127.0.0.1:8080/readyz                  # tollgate's own probe on the proxy listener
-curl -s 127.0.0.1:9090/statusz                 # tollgate admin; keep this listener private
+make infra-up     # Postgres 16 on 127.0.0.1:54329 (the shared test database; tmpfs)
+make dev          # build, migrate, serve (APP_ENV=dev) + Vite; prints the URLs
+make dev-logs     # follow logs; make dev-stop to stop; make infra-down when done
 ```
 
-Proxy dev mode (`tollgate.NoAuth`, one tenant): point an agent at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`)
-with its own provider key. The per-workspace `/w/{id}/...` URL arrives in Plan 05.
+Open the printed Vite URL (http://127.0.0.1:5173). With no `CLERK_*` set, `APP_ENV=dev` signs every request in as the seeded
+`dev-admin@meterwise.local`, so there is nothing to bootstrap. `make migrate`, `make migrate-status`, `make psql` work against
+`DATABASE_URL`. The real Clerk adapter cannot run natively against the twin: `CLERK_*` must be https and macOS Go ignores
+`SSL_CERT_FILE`, which is why the Docker stack exists.
 
-Identity in dev: with no `CLERK_*` variables and `APP_ENV=dev`, the control plane signs every request in as a seeded
-dev admin (`dev-admin@meterwise.local`, a real user and membership row) so the web app runs without a Clerk account.
-Set `CLERK_ISSUER` and `CLERK_JWKS_URL` and the real adapter takes over. `serve` creates the default workspace at boot
-and needs the schema, so run `meterwised migrate` first. See [`clerk.md`](clerk.md) for the Clerk setup, the
-invitation flow, `bootstrap-admin` and the webhook replay.
-
-Real identity end to end, no mock API: `cmd/clerkmock-serve` is the Clerk twin as a standalone issuer. It serves the JWKS
-and the invitations API over HTTPS (self-signed, written to `-ca-out`) and a token mint on a plain loopback port.
-`CLERK_*` URLs must be https, and macOS Go ignores `SSL_CERT_FILE`, so run the Linux build of `meterwised` in a container
-that trusts the twin's certificate (`SSL_CERT_FILE=/ca.pem`, Postgres and the twin reached as `host.docker.internal`).
-Build the web app with its dev-only adapter pointed at the mint, so it signs in with real signed tokens:
+## 2b. Docker
 
 ```sh
-go run ./cmd/clerkmock-serve -ca-out /tmp/ca.pem          # prints the CLERK_* values and MINT_URL as JSON
-cd web && VITE_MOCK_TOKEN_URL=http://127.0.0.1:9444/mint NODE_ENV=development npx vite build --mode development --outDir /tmp/dist
+make up           # builds the dev images, starts the stack, creates the first admin, prints the URL
+make logs         # SERVICE=meterwised to pick one; make ps; make down (keeps data); make docker-reset (destroys data)
 ```
 
-That bundle contains the mock on purpose; `npm run build:release` fails if `dist` does. The driver used for the Plan 02
-acceptance run is kept with its report (`reports/02-e2e/`).
+Open http://127.0.0.1:8081 and sign in with the mock using `DEV_ADMIN_EMAIL` (default `admin@meterwise.local`). Services:
+`appdb` (host 54330), `clerkmock` (HTTPS JWKS + invitations inside the network, token mint on 127.0.0.1:9444), `migrate`
+(one-shot), `meterwised` (proxy 8080, API + web 8081, admin 9090; all bound to 127.0.0.1). The web bundle is the dev build
+with the mock adapter pointed at the mint; the release image (`make docker-build`, needs `CLERK_PUBLISHABLE_KEY`) never
+contains it. `APP_ENV=dev` in the stack because outside dev `serve` needs live Clerk settings. After a rebuild or if the twin
+certificate (valid 48 h) expires, `make restart`. Tools: `make docker-migrate`, `docker-psql`, `docker-shell`,
+`docker-bootstrap-admin EMAIL=...`.
+
+## 3. First admin and a workspace
+
+Docker: `make up` already invited `DEV_ADMIN_EMAIL`; for another person `make docker-bootstrap-admin EMAIL=you@example.com`
+(refused while an admin is active: invite from Settings > Organization), then sign in with that email. Native has the seeded
+admin; `make bootstrap-admin EMAIL=...` only records an invitation. See [`clerk.md`](clerk.md) for the rest.
+
+In the web app: Settings > Workspaces > create one, then open its Setup page and copy the proxy URL (the same JSON is
+`GET /api/workspaces/{id}/setup`). Agents use that URL as their base URL; they keep their own provider key.
+
+## 4. Send traffic
+
+```sh
+make demo-traffic           # native DB          make docker-demo-traffic   # the Docker stack's DB
+export ANTHROPIC_BASE_URL="<proxy URL from Setup>"      # real agent, your own key; OpenAI: OPENAI_BASE_URL
+```
+
+Dev without a workspace URL: the proxy accepts one tenant at `http://127.0.0.1:8080/openai/v1` (or `/anthropic`).
+
+## 5. Read it back (routes arrive with Plan 05; 404 before it merges)
+
+```sh
+API=http://127.0.0.1:8081; WS=<workspace id>
+# Docker: mint a token (native needs no header at all)
+TOKEN=$(curl -s "http://127.0.0.1:9444/mint?email=admin@meterwise.local" | jq -r .token); H="Authorization: Bearer $TOKEN"
+curl -s -H "$H" "$API/api/workspaces" | jq '.items[0].id'                       # the workspace id
+curl -s -H "$H" "$API/api/workspaces/$WS/sessions" | jq                          # session list     (Plan 05)
+curl -s -H "$H" "$API/api/sessions/<sessionId>?workspaceId=$WS" | jq             # one session      (Plan 05)
+curl -s -H "$H" "$API/api/workspaces/$WS/stats" | jq                             # totals           (Plan 05)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `port is already allocated` / `invalid hostPort` | another stack or the native run holds it: `make dev-stop` / `make down`, or set `APP_*_PORT` in `.env` |
+| `make up` stalls on healthz | `make logs SERVICE=meterwised`; a TLS error to `clerkmock` means the twin restarted: `make restart` |
+| Mock login says not invited (403) | only `DEV_ADMIN_EMAIL` and invited emails sign in; `make docker-bootstrap-admin EMAIL=...` |
+| Mock login fails with a network error | the mint port changed after the build: `make rebuild` (it is baked into the bundle) |
+| `docker-build` asks for a key | set `CLERK_PUBLISHABLE_KEY` (public key of your Clerk instance) |
+| Fresh start | `make down && make docker-reset && make up`; native: `make infra-reset` |
+| Gate fails on `migrate` or database tests | `make infra-up`, then `export TEST_DATABASE_URL=...54329/meterwise?sslmode=disable` |
+
+## Configuration (environment)
+
+`go run ./cmd/meterwised config check -json` lists every problem at once.
 
 | Variable | Default | Meaning |
 |---|---|---|

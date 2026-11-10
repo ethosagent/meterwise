@@ -15,7 +15,8 @@ Plans live in `plan/` (gitignored, local; may be absent in a fresh clone or work
 ## Golden path
 
 ```sh
-scripts/install-hooks.sh                 # once per clone/worktree: pre-commit (fast) + pre-push (full gate)
+make setup                               # once: tools check, deps, git hooks, .env from .env.example (make help lists all)
+make up                                  # whole stack in Docker (mock login, URL printed); make down; native: make infra-up dev
 scripts/run-checks.sh                    # THE gate; CI runs exactly this
 scripts/run-checks.sh --fast             # inner loop: fmt vet arch docs size sqlc (seconds)
 scripts/quiet.sh go test -race ./internal/config   # any command, failures-only output
@@ -48,6 +49,7 @@ failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when 
 | `internal/archtest/` | The dependency-law gate (protected) |
 | `web/src/features/<name>/` | One folder per UI feature; `web/src/contract/generated.ts` is generated |
 | `tools/` | Separate Go module pinning golangci-lint, govulncheck, sqlc, goose |
+| `deploy/dev/`, `docker/`, `docker-compose.yml` | `make setup`/`make dev` scripts; dev-image entrypoint; compose (`postgres` = tests, profile `app` = the stack); [`local-dev.md`](docs/runbooks/local-dev.md) |
 | `.agents/` | pipeline, risk tiers, review lenses, skills; `.claude/` hooks, rules, settings |
 
 ## Dependency law (enforced by `internal/archtest`)

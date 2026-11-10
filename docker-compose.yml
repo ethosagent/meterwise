@@ -17,3 +17,82 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
+
+  # ---- App stack: `make up` (compose profile "app"). Everything below is dev-only and binds 127.0.0.1. ----
+  # Own database with a persistent named volume; the tmpfs `postgres` above stays the test database.
+  appdb:
+    profiles: [app]
+    image: postgres:16
+    environment:
+      POSTGRES_USER: meterwise
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-meterwise}
+      POSTGRES_DB: meterwise
+    ports:
+      - "127.0.0.1:${APP_PG_PORT:-54330}:5432"
+    volumes:
+      - appdb-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meterwise -d meterwise"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The Clerk twin: HTTPS issuer/JWKS/invitations API for meterwised, plain-HTTP token mint for the browser.
+  # Writes its self-signed certificate to the shared `ca` volume; meterwised trusts it from there.
+  clerkmock:
+    profiles: [app]
+    build: { context: ., target: clerkmock }
+    command: ["-listen-tls", "0.0.0.0:9443", "-listen-http", "0.0.0.0:9444", "-public-host", "clerkmock", "-ca-out", "/ca/ca.pem"]
+    ports:
+      - "127.0.0.1:${MOCK_MINT_PORT:-9444}:9444"
+    volumes:
+      - ca:/ca
+    restart: unless-stopped
+
+  migrate:
+    profiles: [app]
+    build: &dev-build
+      context: .
+      target: dev
+      args:
+        VITE_MOCK_TOKEN_URL: http://127.0.0.1:${MOCK_MINT_PORT:-9444}/mint
+    command: ["migrate"]
+    environment: &dev-env
+      DATABASE_URL: postgres://meterwise:${APP_DB_PASSWORD:-meterwise}@appdb:5432/meterwise?sslmode=disable
+    depends_on:
+      appdb: { condition: service_healthy }
+    restart: "no"
+
+  meterwised:
+    profiles: [app]
+    build: *dev-build
+    command: ["serve"]
+    environment:
+      <<: *dev-env
+      APP_ENV: dev
+      APP_NAME: Meterwise (dev)
+      LISTEN_PROXY: ":8080"
+      LISTEN_API: ":8081"
+      LISTEN_ADMIN: "0.0.0.0:9090"   # published on 127.0.0.1 only
+      PROXY_PUBLIC_HOST: localhost:${APP_PROXY_PORT:-8080}
+      APP_URL: http://127.0.0.1:${APP_API_PORT:-8081}
+      CLERK_ISSUER: https://clerkmock:9443
+      CLERK_JWKS_URL: https://clerkmock:9443/.well-known/jwks.json
+      CLERK_API_URL: https://clerkmock:9443/v1
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-sk_test_clerkmock}
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-whsec_ZGV2LW9ubHktd2ViaG9vay1zZWNyZXQ=}
+    ports:
+      - "127.0.0.1:${APP_API_PORT:-8081}:8081"
+      - "127.0.0.1:${APP_PROXY_PORT:-8080}:8080"
+      - "127.0.0.1:${APP_ADMIN_PORT:-9090}:9090"
+    volumes:
+      - ca:/ca:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      clerkmock: { condition: service_healthy, restart: true }
+    restart: unless-stopped
+
+volumes:
+  appdb-data:
+  ca:
