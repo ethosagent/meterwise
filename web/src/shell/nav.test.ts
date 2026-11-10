@@ -29,6 +29,8 @@ describe("nav", () => {
     expect(pageByKey("access").label).toBe("Access management");
     expect(pageByPath("/sessions")?.key).toBe("sessions");
     expect(pageByPath("/nope")).toBeUndefined();
+    expect(pageByPath("/sessions/sess_1")?.key).toBe("sessions");
+    expect(pageByPath("/sessionsx")).toBeUndefined();
     expect(DEFAULT_PATH).toBe("/overview");
   });
 });
