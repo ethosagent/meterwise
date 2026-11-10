@@ -102,3 +102,50 @@ func TestCheckRoleOnAnUnmigratedDatabaseOwnsNothing(t *testing.T) {
 		t.Fatalf("%+v, %v", rc, err)
 	}
 }
+
+// TestCheckRoleSeesMembershipOfSuperuserAndBypassRLSRoles: a role that is not itself a superuser
+// but is a member of one can SET ROLE to it, so it must report Superuser; the same holds for
+// BYPASSRLS, directly or through membership.
+func TestCheckRoleSeesMembershipOfSuperuserAndBypassRLSRoles(t *testing.T) {
+	admin := pgtest.DSN(t)
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	sfx := hex.EncodeToString(b[:])
+	app, su, byp, direct := "mw_app_"+sfx, "mw_su_"+sfx, "mw_byp_"+sfx, "mw_direct_"+sfx
+	adminExec(t, admin,
+		"CREATE ROLE "+app+" LOGIN PASSWORD 'pw'",
+		"CREATE ROLE "+direct+" LOGIN PASSWORD 'pw' BYPASSRLS",
+		"CREATE ROLE "+su+" NOLOGIN SUPERUSER",
+		"CREATE ROLE "+byp+" NOLOGIN BYPASSRLS")
+	t.Cleanup(func() {
+		adminExec(t, admin, "DROP ROLE IF EXISTS "+app, "DROP ROLE IF EXISTS "+direct,
+			"DROP ROLE IF EXISTS "+su, "DROP ROLE IF EXISTS "+byp)
+	})
+	dsn := pgtest.NewDatabase(t)
+	ctx := context.Background()
+	check := func(role string) store.RoleCheck {
+		rc, err := asRole(ctx, t, dsn, role).CheckRole(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rc
+	}
+	if rc := check(app); rc.Superuser || rc.BypassRLS {
+		t.Fatalf("a plain app role: %+v", rc)
+	}
+	if rc := check(direct); rc.Superuser || !rc.BypassRLS {
+		t.Fatalf("a direct BYPASSRLS role: %+v", rc)
+	}
+	adminExec(t, dsn, "GRANT "+su+" TO "+app)
+	if rc := check(app); !rc.Superuser {
+		t.Fatalf("a member of a superuser role must count as a superuser: %+v", rc)
+	}
+	adminExec(t, dsn, "REVOKE "+su+" FROM "+app, "GRANT "+byp+" TO "+app)
+	if rc := check(app); rc.Superuser || !rc.BypassRLS {
+		t.Fatalf("a member of a BYPASSRLS role: %+v", rc)
+	}
+	adminExec(t, dsn, "REVOKE "+byp+" FROM "+app)
+	if rc := check(app); rc.Superuser || rc.BypassRLS {
+		t.Fatalf("after the revokes: %+v", rc)
+	}
+}

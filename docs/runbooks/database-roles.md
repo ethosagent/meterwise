@@ -1,8 +1,9 @@
 # Database roles
 
 Two roles, two jobs. Outside `APP_ENV=dev`, `meterwised serve` **refuses to start** if the role in
-`DATABASE_URL` is a superuser or owns `audit_log` (it names the role and points here). A superuser
-bypasses every permission, and an owner may drop the append-only trigger of ADR 0018, so either one
+`DATABASE_URL` is a superuser, is a **member** of a superuser role, has `BYPASSRLS` (directly or through
+membership), or owns `audit_log` (it names the role and points here). A superuser
+bypasses every permission, a member of one can `SET ROLE` to it, and an owner may drop the append-only trigger of ADR 0018, so either one
 could rewrite the audit trail.
 
 | Role | Used by | Can |
@@ -10,7 +11,7 @@ could rewrite the audit trail.
 | `meterwise_owner` | `meterwised migrate`, run by the deploy pipeline | own the schema, create and alter tables |
 | `meterwise_app` | `meterwised serve` | `SELECT`, `INSERT` on `audit_log`; `SELECT`, `INSERT`, `UPDATE`, `DELETE` on every other table |
 
-`meterwise_app` is not a superuser, does not own any table, and has no `UPDATE` or `DELETE` on
+`meterwise_app` is not a superuser, is in no superuser or `BYPASSRLS` role, does not own any table, and has no `UPDATE` or `DELETE` on
 `audit_log`.
 
 ## One-time setup (as a superuser, once per database)
@@ -50,13 +51,16 @@ DATABASE_URL=postgres://meterwise_app:...@db/meterwise    meterwised serve
 ## Checking
 
 ```sql
-SELECT rolname, rolsuper FROM pg_roles WHERE rolname IN ('meterwise_owner','meterwise_app');
+SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname IN ('meterwise_owner','meterwise_app');
+SELECT r.rolname FROM pg_roles r                                      -- no rows
+ WHERE (r.rolsuper OR r.rolbypassrls) AND pg_has_role('meterwise_app', r.rolname, 'MEMBER');
 SELECT tableowner FROM pg_tables WHERE tablename = 'audit_log';      -- meterwise_owner
 SELECT has_table_privilege('meterwise_app', 'audit_log', 'UPDATE');  -- false
 ```
 
 Group membership counts: if `meterwise_app` is a member of `meterwise_owner` (or of any role that
-owns `audit_log`) the guard treats it as an owner and refuses. In dev (`APP_ENV=dev`) the guard is
+owns `audit_log`) the guard treats it as an owner and refuses; membership of any superuser role
+(`GRANT postgres TO meterwise_app`) or of any `BYPASSRLS` role is refused the same way. In dev (`APP_ENV=dev`) the guard is
 off so the compose Postgres superuser works.
 
 Rotating the passwords: see [`rotate-keys.md`](rotate-keys.md).

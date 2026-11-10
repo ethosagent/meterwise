@@ -29,6 +29,7 @@ func TestRoleGuardRefusesSuperusersAndAuditLogOwnersOutsideDev(t *testing.T) {
 		{"prod superuser", "prod", store.RoleCheck{Role: "postgres", Superuser: true}, `"postgres" is a superuser`},
 		{"prod owner", "prod", store.RoleCheck{Role: "owner", OwnsAuditLog: true}, `"owner" owns audit_log`},
 		{"test env is not dev", "test", store.RoleCheck{Role: "x", Superuser: true}, "superuser"},
+		{"prod bypassrls", "prod", store.RoleCheck{Role: "b", BypassRLS: true}, `"b" bypasses row-level security`},
 		{"prod app role", "prod", store.RoleCheck{Role: "meterwise_app"}, ""},
 		{"dev superuser", "dev", store.RoleCheck{Role: "meterwise", Superuser: true, OwnsAuditLog: true}, ""},
 	} {

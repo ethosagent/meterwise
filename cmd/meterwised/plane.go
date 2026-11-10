@@ -18,9 +18,10 @@ import (
 const roleRunbook = "docs/runbooks/database-roles.md"
 
 // requireLeastPrivilegeRole refuses a database role that could rewrite the audit log: outside
-// APP_ENV=dev the app must not run as a superuser (it bypasses every permission, including the
-// append-only trigger's) nor as the owner of audit_log (an owner may drop the trigger). Migrations
-// run as the owner role; the app runs as meterwise_app.
+// APP_ENV=dev the app must not run as a superuser or a member of one (it bypasses every
+// permission, including the append-only trigger's), nor with BYPASSRLS directly or through
+// membership, nor as the owner of audit_log (an owner may drop the trigger). Migrations run as the
+// owner role; the app runs as meterwise_app.
 func requireLeastPrivilegeRole(appEnv string, rc store.RoleCheck) *contract.Error {
 	if appEnv == "dev" {
 		return nil
@@ -29,6 +30,8 @@ func requireLeastPrivilegeRole(appEnv string, rc store.RoleCheck) *contract.Erro
 	switch {
 	case rc.Superuser:
 		why = fmt.Sprintf("the database role %q is a superuser", rc.Role)
+	case rc.BypassRLS:
+		why = fmt.Sprintf("the database role %q bypasses row-level security", rc.Role)
 	case rc.OwnsAuditLog:
 		why = fmt.Sprintf("the database role %q owns audit_log", rc.Role)
 	default:

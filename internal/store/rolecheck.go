@@ -10,13 +10,15 @@ import (
 // and so be able to drop its trigger or its rows.
 type RoleCheck struct {
 	Role         string
-	Superuser    bool
+	Superuser    bool // is a superuser, or a member of one (SET ROLE reaches it)
+	BypassRLS    bool // has BYPASSRLS, directly or through membership
 	OwnsAuditLog bool // owns audit_log, or has the owner's privileges through membership
 }
 
 const roleCheckSQL = `
 SELECT current_user::text,
-       COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false),
+       EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolsuper AND pg_has_role(current_user, r.rolname, 'MEMBER')),
+       EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolbypassrls AND pg_has_role(current_user, r.rolname, 'MEMBER')),
        COALESCE((SELECT pg_has_role(current_user, c.relowner, 'USAGE')
                    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                   WHERE c.relname = 'audit_log' AND c.relkind = 'r' AND n.nspname = ANY (current_schemas(false))
@@ -28,7 +30,7 @@ func (s *Store) CheckRole(ctx context.Context) (RoleCheck, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var rc RoleCheck
-	if err := s.pool.QueryRow(ctx, roleCheckSQL).Scan(&rc.Role, &rc.Superuser, &rc.OwnsAuditLog); err != nil {
+	if err := s.pool.QueryRow(ctx, roleCheckSQL).Scan(&rc.Role, &rc.Superuser, &rc.BypassRLS, &rc.OwnsAuditLog); err != nil {
 		return RoleCheck{}, fail(ClassUnreachable, "store: cannot read the database role")
 	}
 	return rc, nil
