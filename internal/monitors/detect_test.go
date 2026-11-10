@@ -19,6 +19,9 @@ const fixtureWS = "ws-fixture"
 type ringEntry struct {
 	contract.CallSummary
 	ShinglesFrom string
+	// ArgsFrom are the arguments of the entry's first tool: its ArgsHashes become their real hash, so a
+	// stream fixture can name the same call.
+	ArgsFrom string
 }
 
 type fixture struct {
@@ -27,8 +30,10 @@ type fixture struct {
 	SessionCalls int             `json:"session_calls"`
 	Config       json.RawMessage `json:"config"`
 	Stream       *struct {
-		Text  string
-		Tools []string
+		Text      string
+		Reasoning string
+		Tools     []string
+		Args      []string // arguments per tool, in order; missing means none
 	}
 	Expect struct {
 		Fires    bool
@@ -61,14 +66,22 @@ func loadFixture(t *testing.T, path string) (fixture, *tollgate.Call, ringView, 
 		if e.ShinglesFrom != "" {
 			e.Shingles = contract.TurnShingles("", e.ShinglesFrom)
 		}
+		if e.ArgsFrom != "" {
+			e.ArgsHashes = []uint64{contract.ToolArgsHash(e.Tools[0], []byte(e.ArgsFrom))}
+		}
 		ring = append(ring, e.CallSummary)
 	}
 	c := &tollgate.Call{Tenant: tollgate.Tenant{ID: fixtureWS}, Session: tollgate.Session{Calls: f.SessionCalls}, Meta: map[string]any{}}
 	if f.Stream != nil {
 		st := &callState{cfg: cfg}
 		st.event(tollgate.Event{Kind: tollgate.EventTextDelta, Text: f.Stream.Text})
+		st.event(tollgate.Event{Kind: tollgate.EventReasoningDelta, Text: f.Stream.Reasoning})
 		for i, name := range f.Stream.Tools {
-			st.event(tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Index: i, Name: name}})
+			var args string
+			if i < len(f.Stream.Args) {
+				args = f.Stream.Args[i]
+			}
+			st.event(tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Index: i, Name: name, Arguments: args}})
 		}
 		c.Meta[metaState] = st
 	}

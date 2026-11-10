@@ -1,0 +1,46 @@
+{
+  "description": "the phrases are in the reasoning, the reversal is the same call as two calls ago",
+  "ring": [
+    {
+      "Index": 1,
+      "Tools": [
+        "read_file"
+      ],
+      "ArgsFrom": "{\"path\":\"a.go\"}"
+    },
+    {
+      "Index": 2,
+      "Tools": [
+        "grep"
+      ],
+      "ArgsFrom": "{\"q\":\"x\"}"
+    }
+  ],
+  "session_calls": 3,
+  "stream": {
+    "reasoning": "Hold on, I was wrong about the grep result.",
+    "tools": [
+      "read_file"
+    ],
+    "args": [
+      "{\"path\":\"a.go\"}"
+    ]
+  },
+  "expect": {
+    "fires": true,
+    "evidence": {
+      "matchedCalls": [
+        1,
+        2,
+        3
+      ],
+      "tool": "read_file",
+      "phrases": [
+        "i was wrong",
+        "hold on"
+      ],
+      "count": 2,
+      "threshold": 2
+    }
+  }
+}

@@ -19,15 +19,23 @@ const (
 )
 
 // callState is what the Hook keeps for one call: the resolved config, how many notes went into the
-// request (After checks they were adopted) and, for streams, the text and tool names OnEvent saw.
-// It lives in Meta as a pointer, so a late write cannot corrupt a copy.
+// request (After checks they were adopted) and, for streams, the answer text, the reasoning and the tool
+// calls OnEvent saw, each bounded. It lives in Meta as a pointer, so a late write cannot corrupt a copy.
 type callState struct {
 	cfg   contract.MonitorConfig
 	noted int
 
-	mu    sync.Mutex
-	buf   []byte
-	tools map[int]string
+	mu     sync.Mutex
+	buf    []byte // answer text
+	reason []byte // reasoning text
+	tools  map[int]*streamTool
+	args   int // argument bytes kept, across tools
+}
+
+// streamTool is one tool call of the response, reassembled by index.
+type streamTool struct {
+	name string
+	args []byte
 }
 
 func stateOf(c *tollgate.Call) *callState {
@@ -35,32 +43,50 @@ func stateOf(c *tollgate.Call) *callState {
 	return st
 }
 
+func appendCapped(dst []byte, s string) []byte {
+	if room := maxStreamBytes - len(dst); room > 0 {
+		if len(s) > room {
+			s = s[:room]
+		}
+		dst = append(dst, s...)
+		dst = append(dst, ' ')
+	}
+	return dst
+}
+
 // event records one stream event; it is the only writer after Before.
 func (s *callState) event(e tollgate.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch e.Kind {
-	case tollgate.EventTextDelta, tollgate.EventReasoningDelta:
-		if room := maxStreamBytes - len(s.buf); room > 0 {
-			t := e.Text
-			if len(t) > room {
-				t = t[:room]
-			}
-			s.buf = append(s.buf, t...)
-			s.buf = append(s.buf, ' ')
-		}
+	case tollgate.EventTextDelta:
+		s.buf = appendCapped(s.buf, e.Text)
+	case tollgate.EventReasoningDelta:
+		s.reason = appendCapped(s.reason, e.Text)
 	case tollgate.EventToolCallDelta:
-		if e.ToolCall != nil && e.ToolCall.Name != "" {
-			if s.tools == nil {
-				s.tools = map[int]string{}
-			}
-			s.tools[e.ToolCall.Index] = e.ToolCall.Name
+		if e.ToolCall == nil {
+			return
+		}
+		if s.tools == nil {
+			s.tools = map[int]*streamTool{}
+		}
+		t := s.tools[e.ToolCall.Index]
+		if t == nil {
+			t = &streamTool{}
+			s.tools[e.ToolCall.Index] = t
+		}
+		if e.ToolCall.Name != "" {
+			t.name = e.ToolCall.Name
+		}
+		if s.args+len(e.ToolCall.Arguments) <= maxStreamBytes {
+			t.args = append(t.args, e.ToolCall.Arguments...)
+			s.args += len(e.ToolCall.Arguments)
 		}
 	}
 }
 
-// snapshot returns the collected text and the tool names in call order.
-func (s *callState) snapshot() (text string, tools []string) {
+// snapshot returns the collected answer text, the reasoning, and the named tool calls in call order.
+func (s *callState) snapshot() (text, reasoning string, tools []streamTool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx := make([]int, 0, len(s.tools))
@@ -69,7 +95,9 @@ func (s *callState) snapshot() (text string, tools []string) {
 	}
 	slices.Sort(idx)
 	for _, i := range idx {
-		tools = append(tools, s.tools[i])
+		if t := s.tools[i]; t.name != "" {
+			tools = append(tools, streamTool{name: t.name, args: slices.Clone(t.args)})
+		}
 	}
-	return string(s.buf), tools
+	return string(s.buf), string(s.reason), tools
 }

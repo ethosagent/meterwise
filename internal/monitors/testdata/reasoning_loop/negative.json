@@ -1,9 +1,22 @@
 {
-  "description": "a long response with no repeated run",
+  "description": "a long reasoning with no repeated run",
   "ring": [
-    {"Index": 1, "Tools": ["grep"], "ArgsHashes": [1], "ShinglesFrom": "completely different earlier text about databases and indexes and query plans that goes on for a good while longer than eight tokens"}
+    {
+      "Index": 1,
+      "Tools": [
+        "grep"
+      ],
+      "ArgsHashes": [
+        1
+      ],
+      "ShinglesFrom": "completely different earlier text about databases and indexes and query plans that goes on for a good while longer than eight tokens"
+    }
   ],
   "session_calls": 2,
-  "stream": {"text": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"},
-  "expect": {"fires": false}
+  "stream": {
+    "reasoning": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+  },
+  "expect": {
+    "fires": false
+  }
 }

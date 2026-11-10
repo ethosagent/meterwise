@@ -1,0 +1,12 @@
+{
+  "description": "answer text that repeats a long passage does not count: only reasoning does",
+  "ring": [],
+  "session_calls": 3,
+  "stream": {
+    "text": "The agent considered the failing build and traced the error back through every module until it found the stale cache entry that broke the linker step and then it decided to clear that cache and run the full build once more to be certain The agent considered the failing build and traced the error back through every module until it found the stale cache entry that broke the linker step and then it decided to clear that cache and run the full build once more to be certain",
+    "reasoning": "short plan: check the build"
+  },
+  "expect": {
+    "fires": false
+  }
+}

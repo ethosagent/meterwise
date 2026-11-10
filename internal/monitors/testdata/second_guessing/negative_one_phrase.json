@@ -1,10 +1,32 @@
 {
   "description": "a reversal but only one phrase",
   "ring": [
-    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [1]},
-    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [2]}
+    {
+      "Index": 1,
+      "Tools": [
+        "read_file"
+      ],
+      "ArgsFrom": "{\"path\":\"a.go\"}"
+    },
+    {
+      "Index": 2,
+      "Tools": [
+        "grep"
+      ],
+      "ArgsFrom": "{\"q\":\"x\"}"
+    }
   ],
   "session_calls": 3,
-  "stream": {"text": "Wait, I will try the other tool now.", "tools": ["read_file"]},
-  "expect": {"fires": false}
+  "stream": {
+    "text": "No wait, I will try the other tool now.",
+    "tools": [
+      "read_file"
+    ],
+    "args": [
+      "{\"path\":\"a.go\"}"
+    ]
+  },
+  "expect": {
+    "fires": false
+  }
 }

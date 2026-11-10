@@ -6,17 +6,18 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-// DetectReasoningLoop fires when the response repeats a run of at least ShingleTokens tokens, either
-// inside itself or against the opening of one of the session's last three turns (the ring keeps a
-// bounded shingle prefix per turn). It reads the text OnEvent collected, so it only sees streams.
+// DetectReasoningLoop fires when the response's reasoning repeats a run of at least ShingleTokens tokens,
+// either inside itself or against the opening of one of the session's last three turns (the ring keeps a
+// bounded shingle prefix per turn). It counts reasoning text only: an answer that shows code before and
+// after a fix repeats itself on purpose (M3). It reads what OnEvent collected, so it only sees streams.
 func DetectReasoningLoop(c *tollgate.Call, r contract.RingView, cfg contract.MonitorConfig) (contract.MonitorVerdict, bool) {
 	k := cfg.ReasoningLoop
 	st := stateOf(c)
 	if st == nil {
 		return contract.MonitorVerdict{}, false
 	}
-	text, _ := st.snapshot()
-	win := contract.ShinglesOf(contract.Tokens(text, maxStreamTokens), maxWindows)
+	_, reasoning, _ := st.snapshot()
+	win := contract.ShinglesOf(contract.Tokens(reasoning, maxStreamTokens), maxWindows)
 	need := max(1, k.ShingleTokens-contract.ShingleSize+1)
 	run, at := selfRun(win)
 	var matched []int
@@ -75,12 +76,12 @@ func setRun(win []uint64, set map[uint64]struct{}) (best, at int) {
 	return best, at
 }
 
-// reconsider is the fixed dictionary of second-guessing phrases, as token sequences. Evidence holds
-// only these phrases, never the model's own words.
+// reconsider is the fixed dictionary of second-guessing phrases, as token sequences. Every phrase has at
+// least two words: single words such as "wait", "actually" or "hmm" are everyday wording (M3). Evidence
+// holds only these phrases, never the model's own words.
 var reconsider = [][]string{
 	{"on", "second", "thought"}, {"let", "me", "reconsider"}, {"let", "me", "rethink"}, {"i", "made", "a", "mistake"},
 	{"i", "was", "wrong"}, {"scratch", "that"}, {"on", "reflection"}, {"hold", "on"}, {"no", "wait"},
-	{"wait"}, {"actually"}, {"hmm"},
 }
 
 // countPhrases counts dictionary phrases in tokens (longest match first, no overlap) and names the
@@ -132,23 +133,36 @@ func joinWords(w []string) string {
 	return out
 }
 
-// DetectSecondGuessing fires when the response holds at least MinPhrases reconsideration phrases and
-// its first tool is a reversal: the same tool as two calls ago but not the one just before (A-B-A).
+// DetectSecondGuessing fires when the response (answer text and reasoning) holds at least MinPhrases
+// reconsideration phrases and its first tool call is a reversal: the very call made two calls ago (same
+// tool and same arguments hash) after a different one just before (A-B-A). The same tool with other
+// arguments (Read, Bash, Read of another file) is everyday work, not a reversal (M3).
 func DetectSecondGuessing(c *tollgate.Call, r contract.RingView, cfg contract.MonitorConfig) (contract.MonitorVerdict, bool) {
 	k := cfg.SecondGuessing
 	st := stateOf(c)
 	if st == nil {
 		return contract.MonitorVerdict{}, false
 	}
-	text, tools := st.snapshot()
-	total, phrases := countPhrases(contract.Tokens(text, maxStreamTokens))
+	text, reasoning, tools := st.snapshot()
 	calls := r.Calls()
 	n := len(calls)
-	if total < k.MinPhrases || len(tools) == 0 || n < 2 || toolAt(calls[n-2], 0) != tools[0] || toolAt(calls[n-1], 0) == tools[0] {
+	if len(tools) == 0 || n < 2 || !reversal(contract.ToolArgsHash(tools[0].name, tools[0].args), calls[n-2], calls[n-1]) {
+		return contract.MonitorVerdict{}, false
+	}
+	total, phrases := countPhrases(contract.Tokens(text+" "+reasoning, maxStreamTokens))
+	if total < k.MinPhrases {
 		return contract.MonitorVerdict{}, false
 	}
 	return newVerdict(contract.MonitorSecondGuessing, k.Mode, contract.MonitorEvidence{
-		MatchedCalls: []int{calls[n-2].Index, calls[n-1].Index, c.Session.Calls}, Tool: tools[0],
+		MatchedCalls: []int{calls[n-2].Index, calls[n-1].Index, c.Session.Calls}, Tool: tools[0].name,
 		Phrases: phrases, Count: total, Threshold: k.MinPhrases,
 	}), true
+}
+
+// reversal reports whether call h goes back to a's first call after b's first call left it (A-B-A).
+func reversal(h uint64, a, b contract.CallSummary) bool {
+	if len(a.ArgsHashes) == 0 || a.ArgsHashes[0] != h {
+		return false
+	}
+	return len(b.ArgsHashes) == 0 || b.ArgsHashes[0] != h
 }

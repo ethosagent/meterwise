@@ -13,38 +13,49 @@ import (
 
 func okMetric() tollgate.Metric { return tollgate.Metric{Finish: tollgate.FinishOK, Status: 200} }
 
+const readArgs = `{"path":"a.go"}`
+
+// sgRing is a read, then a grep: a stream that reads the same file again with doubt is a reversal.
 func sgRing() fakeRing {
-	return fakeRing{{Index: 1, Tools: []string{"read_file"}, ArgsHashes: []uint64{1}}, {Index: 2, Tools: []string{"grep"}, ArgsHashes: []uint64{2}}}
+	return fakeRing{
+		{Index: 1, Tools: []string{"read_file"}, ArgsHashes: []uint64{contract.ToolArgsHash("read_file", []byte(readArgs))}},
+		{Index: 2, Tools: []string{"grep"}, ArgsHashes: []uint64{2}},
+	}
+}
+
+// readAgain is the stream event of a tool call that reads a.go again.
+func readAgain() tollgate.Event {
+	return tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Index: 0, Name: "read_file", Arguments: readArgs}}
 }
 
 func sgAttrs() map[string]string {
 	return attr(func(c *contract.MonitorConfig) { c.SecondGuessing.Mode = contract.ModeNote })
 }
 
-// streamed plays one streamed response through Before, OnEvent and After.
-func streamed(t *testing.T, h *monitors.Hook, session string, calls int, text, tool string) *tollgate.Call {
+// streamed plays one streamed response that reads a.go again through Before, OnEvent and After.
+func streamed(t *testing.T, h *monitors.Hook, session string, calls int, text string) *tollgate.Call {
 	t.Helper()
 	c := before(t, tollgate.WireOpenAIChat, sgRing(), sgAttrs(), calls, []tollgate.Message{user("go")})
 	c.Session.ID, c.Stream = session, true
 	h.Before(bg, c)
 	h.OnEvent(bg, c, tollgate.Event{Kind: tollgate.EventTextDelta, Text: text})
-	h.OnEvent(bg, c, tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Index: 0, Name: tool}})
+	h.OnEvent(bg, c, readAgain())
 	h.After(bg, c, okMetric())
 	return c
 }
 
-const doubtful = "Wait, that is not right. Actually, let me reconsider."
+const doubtful = "No wait, that is not right. On second thought, let me reconsider."
 
 func TestStreamMonitorRecordsWhereItFiredAndNotesTheNextCall(t *testing.T) {
 	h := newMon(monitors.Options{})
-	fired := streamed(t, h, "s1", 3, doubtful, "read_file")
+	fired := streamed(t, h, "s1", 3, doubtful)
 	vs, notes := verdictsOf(fired)
 	if len(vs) != 1 || notes != 0 {
 		t.Fatalf("verdicts %+v notes %d", vs, notes)
 	}
 	v := vs[0]
 	if v.Monitor != contract.MonitorSecondGuessing || v.Mode != contract.ModeNote || v.Action != contract.ModeNote ||
-		strings.Join(v.Evidence.Phrases, ",") != "let me reconsider,wait,actually" || v.Evidence.Count != 3 {
+		strings.Join(v.Evidence.Phrases, ",") != "on second thought,let me reconsider,no wait" || v.Evidence.Count != 3 {
 		t.Errorf("verdict %+v", v)
 	}
 	if est := v.Basis; est != (contract.EstBasis{}) {
@@ -65,7 +76,7 @@ func TestStreamMonitorRecordsWhereItFiredAndNotesTheNextCall(t *testing.T) {
 		t.Error("a queued note is delivered once")
 	}
 
-	again := streamed(t, h, "s1", 3, doubtful, "read_file")
+	again := streamed(t, h, "s1", 3, doubtful)
 	if vs, _ := verdictsOf(again); len(vs) != 1 || vs[0].Action != contract.ModeObserve {
 		t.Errorf("the same finding in the same session is recorded but not noted again: %+v", vs)
 	}
@@ -77,7 +88,7 @@ func TestStreamMonitorObserveQueuesNothingAndOtherSessionsAreApart(t *testing.T)
 	c.Stream = true
 	h.Before(bg, c)
 	h.OnEvent(bg, c, tollgate.Event{Kind: tollgate.EventTextDelta, Text: doubtful})
-	h.OnEvent(bg, c, tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Name: "read_file"}})
+	h.OnEvent(bg, c, readAgain())
 	h.After(bg, c, okMetric())
 	vs, _ := verdictsOf(c)
 	if len(vs) != 1 || vs[0].Action != contract.ModeObserve {
@@ -88,7 +99,7 @@ func TestStreamMonitorObserveQueuesNothingAndOtherSessionsAreApart(t *testing.T)
 	if _, n := verdictsOf(next); n != 0 {
 		t.Error("observe never queues a note")
 	}
-	streamed(t, h, "sA", 3, doubtful, "read_file")
+	streamed(t, h, "sA", 3, doubtful)
 	other := before(t, tollgate.WireOpenAIChat, fakeRing{}, sgAttrs(), 4, weatherTranscript(1))
 	other.Session.ID = "sB"
 	h.Before(bg, other)
@@ -108,7 +119,7 @@ func TestStreamDetectorsSkipFailedAndBufferedCalls(t *testing.T) {
 			c.Stream = true
 			h.Before(bg, c)
 			h.OnEvent(bg, c, tollgate.Event{Kind: tollgate.EventTextDelta, Text: doubtful})
-			h.OnEvent(bg, c, tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Name: "read_file"}})
+			h.OnEvent(bg, c, readAgain())
 			m := okMetric()
 			mod(c, &m)
 			h.After(bg, c, m)

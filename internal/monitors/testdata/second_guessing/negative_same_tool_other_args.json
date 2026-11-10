@@ -1,0 +1,32 @@
+{
+  "description": "the verifier's case: Read, Bash, Read is an everyday order; reading another file is not a reversal",
+  "ring": [
+    {
+      "Index": 1,
+      "Tools": [
+        "Read"
+      ],
+      "ArgsFrom": "{\"file_path\":\"config.go\"}"
+    },
+    {
+      "Index": 2,
+      "Tools": [
+        "Bash"
+      ],
+      "ArgsFrom": "{\"command\":\"go test ./...\"}"
+    }
+  ],
+  "session_calls": 3,
+  "stream": {
+    "text": "No wait, on second thought the failure is elsewhere.",
+    "tools": [
+      "Read"
+    ],
+    "args": [
+      "{\"file_path\":\"main.go\"}"
+    ]
+  },
+  "expect": {
+    "fires": false
+  }
+}

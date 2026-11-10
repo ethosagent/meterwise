@@ -1,10 +1,47 @@
 {
-  "description": "four reconsideration phrases and a reversal to the tool used two calls ago",
+  "description": "three reconsideration phrases and a reversal to the very call made two calls ago (same tool, same arguments)",
   "ring": [
-    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [1]},
-    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [2]}
+    {
+      "Index": 1,
+      "Tools": [
+        "read_file"
+      ],
+      "ArgsFrom": "{\"path\":\"a.go\"}"
+    },
+    {
+      "Index": 2,
+      "Tools": [
+        "grep"
+      ],
+      "ArgsFrom": "{\"q\":\"x\"}"
+    }
   ],
   "session_calls": 3,
-  "stream": {"text": "Wait, that is not right. Actually, let me reconsider the whole approach. Hmm.", "tools": ["read_file"]},
-  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 2, 3], "tool": "read_file", "phrases": ["let me reconsider", "wait", "actually", "hmm"], "count": 4, "threshold": 2}}
+  "stream": {
+    "text": "No wait, that is not right. On second thought, let me reconsider the whole approach.",
+    "tools": [
+      "read_file"
+    ],
+    "args": [
+      "{\"path\":\"a.go\"}"
+    ]
+  },
+  "expect": {
+    "fires": true,
+    "evidence": {
+      "matchedCalls": [
+        1,
+        2,
+        3
+      ],
+      "tool": "read_file",
+      "phrases": [
+        "on second thought",
+        "let me reconsider",
+        "no wait"
+      ],
+      "count": 3,
+      "threshold": 2
+    }
+  }
 }

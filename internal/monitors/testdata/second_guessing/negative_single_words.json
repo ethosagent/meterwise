@@ -1,0 +1,32 @@
+{
+  "description": "the verifier's case: single words (actually, wait, hmm) are everyday wording, not reconsideration",
+  "ring": [
+    {
+      "Index": 1,
+      "Tools": [
+        "read_file"
+      ],
+      "ArgsFrom": "{\"path\":\"a.go\"}"
+    },
+    {
+      "Index": 2,
+      "Tools": [
+        "grep"
+      ],
+      "ArgsFrom": "{\"q\":\"x\"}"
+    }
+  ],
+  "session_calls": 3,
+  "stream": {
+    "text": "Actually, the config is loaded in config.go, not main.go. Hmm, the test output above shows the env var is read once; wait for the build to finish before rerunning.",
+    "tools": [
+      "read_file"
+    ],
+    "args": [
+      "{\"path\":\"a.go\"}"
+    ]
+  },
+  "expect": {
+    "fires": false
+  }
+}

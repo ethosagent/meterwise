@@ -1,0 +1,11 @@
+{
+  "description": "the verifier's case: an answer shows a function before and after a one-line fix; that is answer text, not reasoning",
+  "ring": [],
+  "session_calls": 5,
+  "stream": {
+    "text": "The handler returns 500 for a missing user. Current code:\nfunc handle(w http.ResponseWriter, r *http.Request) { id := r.PathValue(\"id\"); if id == \"\" { http.Error(w, \"missing id\", 400); return }; user, err := store.Load(r.Context(), id); if err != nil { http.Error(w, err.Error(), 500); return }; json.NewEncoder(w).Encode(user) }\nFixed code (404 when not found):\nfunc handle(w http.ResponseWriter, r *http.Request) { id := r.PathValue(\"id\"); if id == \"\" { http.Error(w, \"missing id\", 400); return }; user, err := store.Load(r.Context(), id); if err != nil { http.Error(w, err.Error(), 500); return }; json.NewEncoder(w).Encode(user) } // with errors.Is(err, store.ErrNotFound) mapped to 404"
+  },
+  "expect": {
+    "fires": false
+  }
+}
