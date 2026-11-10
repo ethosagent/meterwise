@@ -9,7 +9,7 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/monitors"
-	"github.com/ethosagent/meterwise/internal/monitors/wire"
+	"github.com/ethosagent/meterwise/internal/wire"
 )
 
 // S2: a session's one note or block per subject is used up only when it is delivered: the note spliced

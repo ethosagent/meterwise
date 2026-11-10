@@ -9,7 +9,7 @@ import (
 
 	"github.com/ethosagent/tollgate"
 
-	"github.com/ethosagent/meterwise/internal/monitors/wire"
+	"github.com/ethosagent/meterwise/internal/wire"
 )
 
 const note = "[proxy] You already ran this exact call at step 3 <&>."

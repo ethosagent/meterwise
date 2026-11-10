@@ -36,8 +36,8 @@ var allRules = []string{"D1", "P1", "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H
 var rank = map[string]int{
 	"contract": 0, "nonet": 0,
 	"config": 1, "store": 1,
-	"identity": 2, "tenancy": 2, "access": 2, "wsauth": 2, "audit": 2, "savings": 2,
-	"dataplane": 3, "history": 3, "monitors": 3, "ledger": 3,
+	"identity": 2, "tenancy": 2, "access": 2, "wsauth": 2, "audit": 2, "savings": 2, "wire": 2,
+	"dataplane": 3, "history": 3, "monitors": 3, "ledger": 3, "trim": 3, "router": 3, "memory": 3,
 	"api": 4,
 }
 
@@ -53,7 +53,7 @@ const clerkmockPkg = module + "/internal/identity/clerkmock"
 var clerkmockUsers = []string{"cmd/clerkmock-serve", "cmd/clerk-replay"}
 
 // pure are the hot-path packages of rule H3.
-var pure = []string{"history", "monitors", "savings"}
+var pure = []string{"history", "monitors", "savings", "wire", "trim", "router"}
 
 // pureBanned are stdlib prefixes pure packages may not import (H3).
 var pureBanned = []string{"net", "database/sql", "os/exec"}
@@ -199,9 +199,9 @@ func checkPure(imp string, add func(rule, why string)) {
 		if underAny(imp, pureBanned...) {
 			add("H3", "hot-path packages (history, monitors, savings) do no network, database or process I/O")
 		}
-	case imp == tollgate, imp == module+"/internal/contract":
+	case imp == tollgate, imp == module+"/internal/contract", imp == module+"/internal/wire":
 	default:
-		add("H3", "hot-path packages import only the standard library, tollgate's root and internal/contract")
+		add("H3", "hot-path packages import only the standard library, tollgate's root, internal/contract and internal/wire")
 	}
 }
 

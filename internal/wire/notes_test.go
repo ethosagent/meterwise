@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethosagent/tollgate"
 
-	"github.com/ethosagent/meterwise/internal/monitors/wire"
+	"github.com/ethosagent/meterwise/internal/wire"
 )
 
 // MC2: AppendNotes scans and copies once, and its bytes are those of adding the notes one by one.

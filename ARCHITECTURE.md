@@ -33,8 +33,8 @@ Enforced by `internal/archtest` (gate `arch`), each rule with a seeded violation
 ```
 cmd/*                         rank 5   binary and tools; wires everything
 internal/api                  rank 4   control-plane HTTP
-internal/{dataplane,history,monitors,ledger}   rank 3   call path
-internal/{identity,tenancy,access,wsauth,audit,savings}   rank 2   domain
+internal/{dataplane,history,monitors,ledger,trim,router,memory}   rank 3   call path
+internal/{identity,tenancy,access,wsauth,audit,savings,wire}   rank 2   domain
 internal/{config,store}       rank 1   base
 internal/{contract,nonet}     rank 0   kernel and test guard
 internal/archtest             standalone: standard library only, imported by nobody
@@ -47,7 +47,7 @@ internal/archtest             standalone: standard library only, imported by nob
 | H0 | `internal/contract` imports the standard library and the tollgate root only. |
 | H1 | tollgate's public surface only: its root, `ext/**`, and `testkit` from tests. Never `internal/`, `cmd/` or anything else. |
 | H2 | Lower never imports higher (ranks above). Nothing imports a `cmd/*` or `archtest`. |
-| H3 | `history`, `monitors`, `savings` are pure: stdlib (no `net`, `database/sql`, `os/exec`), tollgate root, `contract`. |
+| H3 | `history`, `monitors`, `savings`, `wire`, `trim`, `router` are pure: stdlib (no `net`, `database/sql`, `os/exec`), tollgate root, `contract`, `wire`. |
 | H4 | Only `ledger` and `audit` write `calls`, `sessions`, `monitor_events`, `audit_log` (INSERT, UPDATE, DELETE, MERGE, TRUNCATE, COPY over `.go`/`.sql`, comments ignored). |
 | H5 | `web/` imports `web/src/**` and the npm allowlist only (any JS/TS extension, template-literal imports included; `node:` only in tests); `package.json` declares nothing else. |
 | H6 | A third-party Go import needs an allowlist entry per layer in `law_test.go` and an ADR (0007). |
@@ -74,6 +74,10 @@ Adding a dependency, a layer or a rule edits `internal/archtest` and `ARCHITECTU
 | `internal/tenancy` `access` `audit` | Org and workspaces; RBAC kernel; append-only audit | 2 |
 | `internal/wsauth` | `/w/{id}` to tenant; reset and grace handling | 2 |
 | `internal/savings` | Pricing snapshot, estimator (pure) | 2 |
+| `internal/wire` | The one body-edit protocol: byte-splice editors for provider JSON (pure) | 2 |
+| `internal/trim` | Deterministic tool-result trimming (pure, hot path) | 3 |
+| `internal/router` | Cheaper-model routing decisions (pure, hot path) | 3 |
+| `internal/memory` | Cross-session solution memory; the only outbound model caller | 3 |
 | `internal/config` | Environment to validated `Config`; reports every problem | 1 |
 | `internal/store` | sqlc output, pgx pool, goose migrations, `pgtest` twin | 1 |
 | `internal/contract` | Errors registry, ports, route table, DTOs, `MicroUSD` | 0 |

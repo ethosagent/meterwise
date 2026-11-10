@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/monitors"
-	"github.com/ethosagent/meterwise/internal/monitors/wire"
+	"github.com/ethosagent/meterwise/internal/wire"
 )
 
 type obj = map[string]any

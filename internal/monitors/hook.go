@@ -13,7 +13,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 )
 
-// Editor edits provider JSON for notes and blocks. The monitors/wire package implements it; archtest H3
+// Editor edits provider JSON for notes and blocks. The internal/wire package implements it; archtest H3
 // forbids this pure package from importing wire, so the host injects it (wire.Editor{}).
 type Editor interface {
 	AppendNotes(w tollgate.WireFormat, body []byte, notes []string) ([]byte, error)
