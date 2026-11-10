@@ -1,19 +1,19 @@
 ---
 name: demo-traffic
-description: Replay committed synthetic request fixtures through a local workspace URL so the dashboard has data. Manual only; run when a demo or screenshot needs traffic.
+description: Fill a workspace's ledger with synthetic sessions (OpenAI and Anthropic wires) so the dashboard, Setup status and /stats have data. Manual only; run when a demo or screenshot needs traffic.
 disable-model-invocation: true
 ---
 
 # Demo traffic
 
 Rules first:
-- Manual only. Needs a running `meterwised` and a workspace URL (set `METERWISE_DEMO_URL`).
-- Fixtures in `testdata/demo/` are synthetic; never replay real prompts or put keys in them.
-- The upstream must be a local fake (tollgate `testkit.FakeUpstream`), never a live provider.
+- Manual only. Needs a migrated Postgres in `DATABASE_URL`; no running `meterwised` is needed.
+- `cmd/demo-traffic` runs a real tollgate proxy with the ledger hook against a loopback fake upstream built into the command. No provider key exists anywhere in the run, and it never contacts a live provider.
+- Bodies are synthetic; never replay real prompts.
 
 ## Steps
 
-1. Start the stack and create a workspace; copy its proxy URL.
-2. `METERWISE_DEMO_URL=http://127.0.0.1:8080/w/<id> make demo-traffic`
-   (runs `.agents/skills/demo-traffic/scripts/replay.sh`).
-3. Open the dashboard and check the session list.
+1. `make db-up && go run ./cmd/meterwised migrate` (or `make up` for the Docker stack).
+2. `make demo-traffic` (native `DATABASE_URL`), or `make docker-demo-traffic` (the Docker stack database).
+   `ROUNDS=20 WORKSPACE=<workspace uuid> make demo-traffic` picks the volume and the workspace (default: the default workspace).
+3. Open Setup: "connected - last call ... - N calls today"; `GET /api/workspaces/{id}/stats` shows spend.
