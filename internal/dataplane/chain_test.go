@@ -24,7 +24,7 @@ func names(hs []tollgate.Hook) []string {
 	return out
 }
 
-func TestHookChainOrderIsWsauthHistoryMonitorsInjectedLedger(t *testing.T) {
+func TestHookChainDefaultOrderIsWsauthHistoryMonitorsInjectedLedger(t *testing.T) {
 	hooks, sources := dataplane.HookChain(dataplane.ChainOptions{PrivacyMode: true}, []tollgate.Hook{namedHook{name: "extra"}}, namedHook{name: "ledger"})
 	want := []string{"wsauth", "history", "monitors", "extra", "ledger"}
 	if got := names(hooks); !reflect.DeepEqual(got, want) {
