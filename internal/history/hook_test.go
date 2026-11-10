@@ -445,3 +445,30 @@ func TestBeforeStopsReadingAtItsDeadline(t *testing.T) {
 		t.Fatalf("a read cut by the deadline keeps the newest turns: %d entries, newest %v", len(got), got)
 	}
 }
+
+// K3: the S1 guard also covers the catch-up. While call 5's After has not run, a side request that shares the
+// session id (its own two-turn conversation) arrives as call 6: its turns must not fill entry 5, which is
+// the main thread's call 5 still in flight.
+func TestSideRequestWhileTheRingLagsIsNotCaughtUpFromItsOwnTurns(t *testing.T) {
+	h := history.New(history.Options{})
+	user := tollgate.Message{Role: tollgate.RoleUser, Text: "task"}
+	main := []tollgate.Message{user}
+	for i := 1; i <= 4; i++ {
+		run(t, h, newCall("ws", "s", i, main...), 1, 1, toolDelta(0, "grep", fmt.Sprintf(`{"q":%d}`, i)))
+		id := fmt.Sprint(i)
+		main = append(main, asst("", tc(id, "grep", fmt.Sprintf(`{"q":%d}`, i))), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: id, Text: "r"})
+	}
+	if _, err := h.Before(bg, newCall("ws", "s", 5, main...)); err != nil { // call 5 is in flight: no After yet
+		t.Fatal(err)
+	}
+	side := newCall("ws", "s", 6, tollgate.Message{Role: tollgate.RoleUser, Text: "name this chat"},
+		asst("", tc("s1", "read_file", `{"path":"/a"}`)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: "s1", Text: "r"},
+		asst("", tc("s2", "read_file", `{"path":"/b"}`)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: "s2", Text: "r"})
+	if _, err := h.Before(bg, side); err != nil {
+		t.Fatal(err)
+	}
+	got := ringOf(t, side)
+	if len(got) != 4 || got[3].Index != 4 || h.Status()["caught_up"] != int64(0) || h.Status()["heal_misaligned"] != int64(1) {
+		t.Fatalf("ring %+v status %v", got, h.Status())
+	}
+}

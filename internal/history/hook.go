@@ -86,7 +86,8 @@ func key(tenant, session string) string { return tenant + "\x00" + session }
 // rebuilt from the call's messages (a restart, or an evicted ring). A ring behind the call (the previous
 // call's After has not run yet: a client faster than After) is caught up from the same messages, and only
 // the missing turns are parsed. An empty newest entry (a call answered without a stream, such as a
-// block) is healed from the request's newest turn, when the request's older turns match the ring's.
+// block) is healed from the request's newest turn. Both only when the request's older turns match the
+// ring's (aligned): a side request that shares the session id fills nothing (K3).
 func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response, error) {
 	if c.Provider.Wire == tollgate.WirePassthrough || c.Session.ID == "" {
 		return nil, nil
@@ -124,9 +125,9 @@ func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call, late func() bool) []
 	}
 	lo := max(cur.newest()+1, n-RingDepth)
 	heal := emptyAt(cur.calls, n-1)
-	if heal && !aligned(cur.calls, msgs, n, late) {
-		heal = false
-		h.unhealed.Add(1)
+	if (lo <= n-1 || heal) && !aligned(cur.calls, msgs, n, late) {
+		h.unhealed.Add(1) // a side request's turns are neither a catch-up nor a heal (K3, S1)
+		return nil
 	}
 	if lo > n-1 && !heal {
 		return nil
@@ -170,7 +171,7 @@ func (h *Hook) late(ctx context.Context) func() bool {
 	}
 }
 
-// aligned reports whether the request's turns line up with the ring before a heal of entry n-1: each of
+// aligned reports whether the request's turns line up with the ring before a catch-up or a heal of entry n-1: each of
 // the ring's entries n-2 .. n-1-alignDepth that has content must be the request's turn at that index. A
 // side request that shares the session id (title generation, another conversation) leaves an empty entry
 // n-1 while the main thread's next request carries, as its newest turn, the turn the ring already holds
