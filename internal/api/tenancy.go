@@ -160,7 +160,11 @@ func (s *server) createWorkspace(c Call, req contract.CreateWorkspaceRequest) (c
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}
-	return s.workspaceViewOf(c, ws)
+	v, err := s.workspaceViewOf(c, ws)
+	if err != nil {
+		return committed(contract.WorkspaceView{ID: ws.ID, Name: ws.Name}, err)
+	}
+	return v, nil
 }
 
 func (s *server) updateWorkspace(c Call, req contract.UpdateWorkspaceRequest) (contract.WorkspaceView, error) {
@@ -168,7 +172,11 @@ func (s *server) updateWorkspace(c Call, req contract.UpdateWorkspaceRequest) (c
 	if err != nil {
 		return contract.WorkspaceView{}, err
 	}
-	return s.workspaceViewOf(c, ws)
+	v, err := s.workspaceViewOf(c, ws)
+	if err != nil {
+		return committed(contract.WorkspaceView{ID: ws.ID, Name: ws.Name}, err)
+	}
+	return v, nil
 }
 
 func (s *server) deleteWorkspace(c Call, _ none) (none, error) {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 
@@ -55,6 +56,26 @@ func register[Req, Resp any](s *server, method, pattern string, fn func(Call, Re
 	s.handle(method, pattern, adaptAudited(s, status, row.Audit, fn))
 }
 
+// committedError marks a failure that came after the change committed (building the response). It
+// carries what the committed entity yields for the audit extractors, so the one emit in
+// adaptAudited still writes the row; the client gets err.
+type committedError struct {
+	resp any
+	err  error
+}
+
+func (e *committedError) Error() string { return e.err.Error() }
+func (e *committedError) Unwrap() error { return e.err }
+
+// committed wraps a post-commit failure; with a nil err it is the identity. resp is the minimal
+// response the route's audit extractors read from the committed entity.
+func committed[Resp any](resp Resp, err error) (Resp, error) {
+	if err == nil {
+		return resp, nil
+	}
+	return resp, &committedError{resp: resp, err: err}
+}
+
 // adapt turns fn into an http.HandlerFunc. A request that reaches it without a session (the
 // gateway did not run) is refused as unauthenticated rather than served as an empty user.
 func adapt[Req, Resp any](s *server, status int, fn func(Call, Req) (Resp, error)) http.HandlerFunc {
@@ -80,6 +101,13 @@ func adaptAudited[Req, Resp any](s *server, status int, spec *contract.AuditSpec
 			return
 		}
 		out, err := fn(c, in)
+		if ce := (*committedError)(nil); errors.As(err, &ce) {
+			// the change committed and only the response failed: the audit row still goes out
+			if spec != nil {
+				s.emitAudit(c, spec, in, ce.resp)
+			}
+			err = ce.err
+		}
 		if err != nil {
 			s.fail(w, r, err)
 			return

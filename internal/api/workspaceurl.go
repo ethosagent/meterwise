@@ -82,11 +82,13 @@ func (s *server) resetWorkspaceURL(c Call, req contract.ResetURLRequest) (contra
 		return contract.ResetURLResponse{}, err
 	}
 	// Managing the URL is not reading it: only a caller who also holds workspace_url:read gets it back.
+	out := contract.ResetURLResponse{PreviousGraceUntil: contract.RFC3339(res.PreviousGraceUntil)}
 	v, err := s.workspaceViewOf(c, res.Workspace)
 	if err != nil {
-		return contract.ResetURLResponse{}, err
+		return committed(out, err) // the reset committed: the audit row is still written
 	}
-	return contract.ResetURLResponse{ProxyURL: v.ProxyURL, PreviousGraceUntil: contract.RFC3339(res.PreviousGraceUntil)}, nil
+	out.ProxyURL = v.ProxyURL
+	return out, nil
 }
 
 func (s *server) retirePreviousURL(c Call, _ none) (none, error) {
