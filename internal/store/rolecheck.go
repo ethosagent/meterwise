@@ -19,13 +19,14 @@ const roleCheckSQL = `
 SELECT current_user::text,
        EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolsuper AND pg_has_role(current_user, r.rolname, 'MEMBER')),
        EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolbypassrls AND pg_has_role(current_user, r.rolname, 'MEMBER')),
-       COALESCE((SELECT pg_has_role(current_user, c.relowner, 'USAGE')
+       COALESCE((SELECT bool_or(pg_has_role(current_user, c.relowner, 'USAGE'))
                    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-                  WHERE c.relname = 'audit_log' AND c.relkind = 'r' AND n.nspname = ANY (current_schemas(false))
-                  LIMIT 1), false)`
+                  WHERE c.relname = 'audit_log' AND c.relkind IN ('r', 'p')
+                    AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%'), false)`
 
 // CheckRole reports the privileges of the role this store is connected as. An unmigrated database
-// has no audit_log, so OwnsAuditLog is false there.
+// has no audit_log, so OwnsAuditLog is false there. The table is looked up in every schema, not
+// only on the search_path, so a DSN with a narrow search_path cannot hide it.
 func (s *Store) CheckRole(ctx context.Context) (RoleCheck, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

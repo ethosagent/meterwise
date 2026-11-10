@@ -149,3 +149,23 @@ func TestCheckRoleSeesMembershipOfSuperuserAndBypassRLSRoles(t *testing.T) {
 		t.Fatalf("after the revokes: %+v", rc)
 	}
 }
+
+// TestCheckRoleFindsAuditLogWhateverTheSearchPath: a DSN whose search_path leaves out the schema
+// that holds audit_log must not make the guard fail open.
+func TestCheckRoleFindsAuditLogWhateverTheSearchPath(t *testing.T) {
+	dsn := pgtest.NewDatabase(t)
+	if _, err := store.Migrate(context.Background(), dsn); err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("search_path", "pg_catalog")
+	u.RawQuery = q.Encode()
+	rc, err := mustOpen(t, u.String()).CheckRole(context.Background())
+	if err != nil || !rc.OwnsAuditLog {
+		t.Fatalf("owner of audit_log outside the search_path: %+v, %v", rc, err)
+	}
+}
