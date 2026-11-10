@@ -17,6 +17,9 @@ type Ledger interface {
 	MonitorStats(ctx context.Context, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error)
 }
 
+// maxClientFilter bounds the ?client= filter (a family is at most 64 bytes).
+const maxClientFilter = 64
+
 // registerLedger wires the Plan 05 read routes. The gateway has already authorized the workspace
 // (from the path, or from the required workspaceId query for /api/sessions/{id}).
 func (s *server) registerLedger() {
@@ -58,6 +61,11 @@ func (s *server) listSessions(c Call, _ none) (contract.SessionList, error) {
 		return contract.SessionList{}, err
 	}
 	q.Limit = limit
+	if q.Client, q.Outcome = c.Query("client"), c.Query("outcome"); len(q.Client) > maxClientFilter {
+		return contract.SessionList{}, contract.Invalid("client", "is too long")
+	} else if !contract.ValidSessionOutcome(q.Outcome) {
+		return contract.SessionList{}, contract.Invalid("outcome", "must be completed, abandoned or open")
+	}
 	page, err := led.ListSessions(c.Ctx, q)
 	if err != nil {
 		return contract.SessionList{}, err
@@ -90,6 +98,7 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	for i, e := range events {
 		out.MonitorEvents[i] = e.View()
 	}
+	out.Insight = insightOf(events)
 	return out, nil
 }
 
