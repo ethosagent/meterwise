@@ -28,19 +28,14 @@ func (s *server) monitorStats(c Call, _ none) (contract.MonitorStatsView, error)
 	if err != nil {
 		return contract.MonitorStatsView{}, err
 	}
-	rng := c.Query("range")
-	if rng == "" {
-		rng = "7d"
-	}
-	days, ok := statsRanges[rng]
-	if !ok {
-		return contract.MonitorStatsView{}, contract.Invalid("range", "must be 7d or 30d")
+	rng, _, from, to, err := s.statsRangeOf(c)
+	if err != nil {
+		return contract.MonitorStatsView{}, err
 	}
 	cfg, err := s.Tenancy.MonitorConfig(c.Ctx, c.Principal, c.Path("id"))
 	if err != nil {
 		return contract.MonitorStatsView{}, err
 	}
-	from, to := statsWindow(s.now(), days)
 	rows, err := led.MonitorStats(c.Ctx, c.Path("id"), from, to)
 	if err != nil {
 		return contract.MonitorStatsView{}, err

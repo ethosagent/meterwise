@@ -147,20 +147,30 @@ func fillDays(from time.Time, days int, have []contract.StatsDay) []contract.Sta
 	return out
 }
 
-func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
-	led, err := s.ledger()
-	if err != nil {
-		return contract.StatsView{}, err
-	}
-	rng := c.Query("range")
+// statsRangeOf reads ?range= (7d or 30d, default 7d) into its name, length in days and [from, to) window. An
+// unknown value is a 422 naming the range field. Workspace stats and monitor stats share it.
+func (s *server) statsRangeOf(c Call) (rng string, days int, from, to time.Time, err error) {
+	rng = c.Query("range")
 	if rng == "" {
 		rng = "7d"
 	}
 	days, ok := statsRanges[rng]
 	if !ok {
-		return contract.StatsView{}, contract.Invalid("range", "must be 7d or 30d")
+		return "", 0, from, to, contract.Invalid("range", "must be 7d or 30d")
 	}
-	from, to := statsWindow(s.now(), days)
+	from, to = statsWindow(s.now(), days)
+	return rng, days, from, to, nil
+}
+
+func (s *server) workspaceStats(c Call, _ none) (contract.StatsView, error) {
+	led, err := s.ledger()
+	if err != nil {
+		return contract.StatsView{}, err
+	}
+	_, days, from, to, err := s.statsRangeOf(c)
+	if err != nil {
+		return contract.StatsView{}, err
+	}
 	st, err := led.Stats(c.Ctx, c.Path("id"), from, to)
 	if err != nil {
 		return contract.StatsView{}, err
