@@ -179,33 +179,55 @@ func (h *Hook) late(ctx context.Context) func() bool {
 // the heal goes ahead.
 func aligned(calls []contract.CallSummary, msgs []tollgate.Message, n int, late func() bool) bool {
 	lo, hi := n-1-alignDepth, n-2
-	want := map[int]contract.CallSummary{}
-	for _, s := range calls {
-		if s.Index >= lo && s.Index <= hi && !emptyTurn(s) {
-			want[s.Index] = s
+	var want [alignDepth]*contract.CallSummary // want[hi-idx]: the ring's entry at idx, when it has content
+	wanted := 0
+	for i := range calls {
+		if s := &calls[i]; s.Index >= lo && s.Index <= hi && !emptyTurn(*s) {
+			want[hi-s.Index] = s
+			wanted++
 		}
 	}
-	if len(want) == 0 {
+	if wanted == 0 {
 		return true
 	}
-	got := readBack(msgs, n, lo, hi, func(i int) bool { _, ok := want[i]; return ok }, late, 0)
-	if len(got) != len(want) {
-		return false
-	}
-	for _, g := range got {
-		if !sameTurn(g, want[g.Index]) {
+	k, matched := 0, 0
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != tollgate.RoleAssistant {
+			continue
+		}
+		k++
+		idx := n - k
+		if idx < lo {
+			break
+		}
+		if idx > hi || want[hi-idx] == nil {
+			continue
+		}
+		if late() { // the deadline ends the check: what cannot be compared is not aligned
 			return false
 		}
+		if !sameTurn(*want[hi-idx], msgs[i]) {
+			return false
+		}
+		matched++
 	}
-	return true
+	return matched == wanted
 }
 
 // alignDepth is how many ring entries below a heal are checked against the request.
 const alignDepth = 3
 
-// sameTurn compares the content of two ring entries (tools, their arguments and the text).
-func sameTurn(a, b contract.CallSummary) bool {
-	return a.TextHash == b.TextHash && slices.Equal(a.Tools, b.Tools) && slices.Equal(a.ArgsHashes, b.ArgsHashes)
+// sameTurn compares a ring entry with an assistant message: the tools, their arguments and the text.
+func sameTurn(s contract.CallSummary, m tollgate.Message) bool {
+	if s.TextHash != contract.NormalizedHash(m.Text) || len(s.Tools) != len(m.ToolCalls) || len(s.ArgsHashes) != len(m.ToolCalls) {
+		return false
+	}
+	for i, tc := range m.ToolCalls {
+		if s.Tools[i] != tc.Name || s.ArgsHashes[i] != contract.ToolArgsHash(tc.Name, tc.Arguments) {
+			return false
+		}
+	}
+	return true
 }
 
 // emptyAt reports whether the ring holds an entry for call index i with no content.
