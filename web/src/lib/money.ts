@@ -61,7 +61,11 @@ export function sharePct(part: string, whole: string): number {
 
 /** The larger of the amounts, as a decimal string ("0.000000" for an empty list). */
 export function maxMicro(values: readonly string[]): string {
-  const m = values.reduce((acc, v) => (parseMicro(v) > acc ? parseMicro(v) : acc), 0n);
+  let m = 0n;
+  for (const v of values) {
+    const x = parseMicro(v);
+    if (x > m) m = x;
+  }
   return `${m / MICRO_PER_USD}.${(m % MICRO_PER_USD).toString().padStart(6, "0")}`;
 }
 

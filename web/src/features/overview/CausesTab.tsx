@@ -20,7 +20,7 @@ import { useCopy } from "../../api/useCopy";
 import { useToastOnError } from "../../api/useToastOnError";
 import type { CauseView, ClientRow, Suggestion } from "../../contract/generated";
 import { formatBp, formatTokens, formatUsd, isPositiveMicro } from "../../lib/money";
-import { MODE_LABEL, isMode, monitorLabel } from "../monitors/monitorMeta";
+import { isMode, MODE_LABEL, monitorLabel } from "../monitors/monitorMeta";
 import { ConfidenceTag } from "./ConfidenceTag";
 
 /** The most repeated target of a cause: the path when one was stored, else the tool and the 8-hex hash prefix. */

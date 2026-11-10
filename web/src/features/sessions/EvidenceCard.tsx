@@ -17,10 +17,10 @@ function MatchedSteps({ indexes, calls }: { indexes: number[]; calls: readonly C
   return (
     <Typography.Text>
       Matched{" "}
-      {indexes.map((n, i) => {
+      {[...new Set(indexes)].map((n, i) => {
         const ref = stepRef(n, calls);
         return (
-          <span key={`${n}:${i}`}>
+          <span key={n}>
             {i > 0 ? ", " : ""}
             {ref.callId ? (
               <Link to={{ search: `?call=${encodeURIComponent(ref.callId)}` }}>{ref.label}</Link>

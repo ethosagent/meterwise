@@ -1,7 +1,7 @@
 import { Alert, Button, Card, Empty, Typography } from "antd";
 import { Link } from "react-router-dom";
-import { formatTokens, formatUsd, isPositiveMicro } from "../../lib/money";
 import type { SavingsHero } from "../../contract/generated";
+import { formatTokens, formatUsd, isPositiveMicro } from "../../lib/money";
 
 /** No call has ever reached the workspace: the next step is Setup, not a page of zeros. */
 export function NoCalls() {

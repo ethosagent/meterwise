@@ -6,9 +6,9 @@ import {
   MONITOR_KEYS,
   type MonitorKey,
   type MonitorMode,
-  OBSERVE_ONLY,
   monitorAbout,
   monitorLabel,
+  OBSERVE_ONLY,
 } from "./monitorMeta";
 
 interface Row {

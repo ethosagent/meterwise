@@ -2,7 +2,7 @@ import { Card, Flex, Tag, Typography, theme } from "antd";
 import type { CSSProperties } from "react";
 import type { CauseView } from "../../contract/generated";
 import { formatUsd, isPositiveMicro, maxMicro, sharePct } from "../../lib/money";
-import { MODE_LABEL, isMode, monitorLabel } from "../monitors/monitorMeta";
+import { isMode, MODE_LABEL, monitorLabel } from "../monitors/monitorMeta";
 
 type Kind = "certain" | "likely" | "would-save";
 

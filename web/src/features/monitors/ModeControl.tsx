@@ -1,13 +1,13 @@
 import { Popconfirm, Segmented, Tooltip } from "antd";
 import { useState } from "react";
 import {
+  isMode,
   MODE_LABEL,
   type MonitorKey,
   type MonitorMode,
+  monitorLabel,
   OBSERVE_ONLY,
   OBSERVE_ONLY_HINT,
-  isMode,
-  monitorLabel,
 } from "./monitorMeta";
 
 const MODES: MonitorMode[] = ["observe", "note", "block"];

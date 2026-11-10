@@ -1,5 +1,5 @@
 import { Card, Skeleton } from "antd";
-import { Suspense, lazy } from "react";
+import { lazy, Suspense } from "react";
 import type { SavingsDay } from "../../contract/generated";
 import { formatUsd } from "../../lib/money";
 

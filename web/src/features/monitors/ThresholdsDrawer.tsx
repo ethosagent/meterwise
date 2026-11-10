@@ -1,7 +1,7 @@
 import { Button, Drawer, Flex, InputNumber, Switch, Typography, theme } from "antd";
 import { useState } from "react";
 import type { MonitorConfig } from "../../contract/generated";
-import { type MonitorKey, THRESHOLDS, monitorAbout, monitorLabel } from "./monitorMeta";
+import { type MonitorKey, monitorAbout, monitorLabel, THRESHOLDS } from "./monitorMeta";
 
 type Values = Record<string, number | boolean>;
 

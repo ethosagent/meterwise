@@ -65,8 +65,8 @@ function Step({
                 {call.notesInjected} {call.notesInjected === 1 ? "note" : "notes"} added
               </Tag>
             ) : null}
-            {call.toolCalls.map((t, i) => (
-              <Tag key={`${t}:${i}`}>{t}</Tag>
+            {[...new Set(call.toolCalls)].map((t) => (
+              <Tag key={t}>{t}</Tag>
             ))}
           </Flex>
           <Flex gap={token.marginSM} align="center">
