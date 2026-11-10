@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"testing"
 	"time"
@@ -55,4 +56,26 @@ func exec(ctx context.Context, t testing.TB, dsn, stmt string) {
 	if _, err := conn.Exec(ctx, stmt); err != nil {
 		t.Fatalf("pgtest: %s: %v", stmt, err)
 	}
+}
+
+// Exec runs statements on the server named by dsn over one short connection and returns the first
+// error. Unlike the helpers above it never calls t.Fatal, so it is safe from a timer goroutine; it
+// is for tests that cut and restore a throwaway database (ALLOW_CONNECTIONS, pg_terminate_backend).
+func Exec(ctx context.Context, dsn string, stmts ...string) error {
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return err
+	}
+	cfg.ConnectTimeout = 5 * time.Second
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	for _, q := range stmts {
+		if _, err := conn.Exec(ctx, q); err != nil {
+			return fmt.Errorf("%s: %w", q, err)
+		}
+	}
+	return nil
 }

@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/ethosagent/tollgate"
 
 	"github.com/ethosagent/meterwise/internal/store/pgtest"
@@ -67,19 +65,10 @@ func TestRealPostgresOutageOfThreeSecondsLosesNoCallAndNoClose(t *testing.T) {
 }
 
 func adminExec(t testing.TB, dsn string, stmts ...string) {
-	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		t.Errorf("admin connect: %v", err)
-		return
-	}
-	defer func() { _ = conn.Close(ctx) }()
-	for _, q := range stmts {
-		if _, err := conn.Exec(ctx, q); err != nil {
-			t.Errorf("%s: %v", q, err)
-		}
+	if err := pgtest.Exec(ctx, dsn, stmts...); err != nil {
+		t.Errorf("admin: %v", err)
 	}
 }
 
