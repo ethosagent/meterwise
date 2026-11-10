@@ -49,7 +49,7 @@ func (s *server) savingsOverview(c Call, _ none) (contract.SavingsOverview, erro
 	if err != nil {
 		return contract.SavingsOverview{}, err
 	}
-	cfg, err := s.Tenancy.MonitorConfig(c.Ctx, c.Principal, c.Path("id"))
+	cfg, err := s.causeModes(c)
 	if err != nil {
 		return contract.SavingsOverview{}, err
 	}
@@ -73,7 +73,7 @@ func (s *server) savingsCauses(c Call, _ none) (contract.SavingsCauses, error) {
 	if err != nil {
 		return contract.SavingsCauses{}, err
 	}
-	cfg, err := s.Tenancy.MonitorConfig(c.Ctx, c.Principal, c.Path("id"))
+	cfg, err := s.causeModes(c)
 	if err != nil {
 		return contract.SavingsCauses{}, err
 	}
@@ -107,16 +107,54 @@ func (s *server) savingsSaves(c Call, _ none) (contract.SaveList, error) {
 	return sv.Saves(c.Ctx, c.Path("id"), r, c.Query("cursor"), limit)
 }
 
-// fillCause sets a monitor row's configured Mode and the class the estimator gives that monitor in that mode
-// (savings.Estimate with an empty basis: only the confidence is read).
-func fillCause(cfg contract.MonitorConfig, row *contract.CauseView) {
-	name, ok := row.Cause.Monitor()
-	if !ok {
-		return
+// modes are the four feature settings a cause row's Mode and Confidence come from.
+type modes struct {
+	monitors contract.MonitorConfig
+	trim     contract.TrimMode
+	router   contract.RouterMode
+	memory   contract.MemoryMode
+}
+
+// causeModes reads the workspace's monitor, trim, router and memory settings (each one a cached read).
+func (s *server) causeModes(c Call) (modes, error) {
+	var m modes
+	var err error
+	if m.monitors, err = s.Tenancy.MonitorConfig(c.Ctx, c.Principal, c.Path("id")); err != nil {
+		return m, err
 	}
-	m := cfg.ModeOf(name)
-	_, conf := savings.Estimate(contract.MonitorVerdict{Monitor: name, Mode: m, Action: m})
-	row.Mode, row.Confidence = string(m), conf
+	t, err := s.Tenancy.TrimConfig(c.Ctx, c.Principal, c.Path("id"))
+	if err != nil {
+		return m, err
+	}
+	r, err := s.Tenancy.RouterConfig(c.Ctx, c.Principal, c.Path("id"))
+	if err != nil {
+		return m, err
+	}
+	mem, err := s.Tenancy.MemoryConfig(c.Ctx, c.Principal, c.Path("id"))
+	if err != nil {
+		return m, err
+	}
+	m.trim, m.router, m.memory = t.Mode, r.Mode, mem.Mode
+	return m, nil
+}
+
+// fillCause sets a row's configured Mode and the class the cause gives: a monitor's comes from the estimator
+// (savings.Estimate with an empty basis: only the confidence is read), trim and router savings are certain
+// where they are measured, and memory's are likely (ADR 0027).
+func fillCause(m modes, row *contract.CauseView) {
+	switch row.Cause.Kind() {
+	case contract.KindTrim:
+		row.Mode, row.Confidence = string(m.trim), contract.ConfidenceCertain
+	case contract.KindRouter:
+		row.Mode, row.Confidence = string(m.router), contract.ConfidenceCertain
+	case contract.KindMemory:
+		row.Mode, row.Confidence = string(m.memory), contract.ConfidenceLikely
+	default:
+		name, _ := row.Cause.Monitor()
+		mode := m.monitors.ModeOf(name)
+		_, conf := savings.Estimate(contract.MonitorVerdict{Monitor: name, Mode: mode, Action: mode})
+		row.Mode, row.Confidence = string(mode), conf
+	}
 }
 
 // upsellOf lists the monitors that are in observe mode and would have saved something, biggest first. Likely

@@ -98,7 +98,7 @@ func TestSavingsPayloads(t *testing.T) {
 	}
 
 	causes := decodeAs[contract.SavingsCauses](t, raws["causes"])
-	if len(causes.Causes) != 6 || len(causes.Clients) != 2 || causes.Clients[0].Client != "opencode" || causes.Clients[1].Client != "unknown" {
+	if len(causes.Causes) != 9 || len(causes.Clients) != 2 || causes.Clients[0].Client != "opencode" || causes.Clients[1].Client != "unknown" {
 		t.Fatalf("causes = %+v", causes)
 	}
 	if len(causes.Suggestions) != 1 || causes.Suggestions[0].Monitor != contract.MonitorRepeatedRead || causes.Suggestions[0].Path == nil || *causes.Suggestions[0].Path != "src/a.go" || causes.Suggestions[0].Count != 2 {
@@ -113,7 +113,7 @@ func checkOverviewInvariants(t *testing.T, s *stack, tok, ws string, ov contract
 	for _, c := range ov.ByCause {
 		saved, likely, would = saved+c.SavedUsd, likely+c.LikelySavedUsd, would+c.WouldSaveUsd
 	}
-	if saved != ov.Hero.SavedUsd || likely != ov.Hero.LikelySavedUsd || would != ov.Hero.WouldSaveUsd || len(ov.ByCause) != 6 {
+	if saved != ov.Hero.SavedUsd || likely != ov.Hero.LikelySavedUsd || would != ov.Hero.WouldSaveUsd || len(ov.ByCause) != 9 {
 		t.Errorf("sum of causes %v/%v/%v != hero %+v", saved, likely, would, ov.Hero)
 	}
 	for _, d := range ov.Days {
@@ -170,7 +170,7 @@ func TestSavingsEmptyWorkspaceAndPaging(t *testing.T) {
 	admin := s.admin(t, "user_admin")
 	_, ws := s.defaultWorkspace(t, admin.tok)
 	empty := decodeAs[contract.SavingsOverview](t, s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/savings/overview?range=30d", "", 200))
-	if empty.State != contract.SavingsNoCalls || len(empty.Days) != 30 || empty.FirstCallAt != nil || empty.Hero.SavedBp != nil || len(empty.ByCause) != 6 || empty.Upsell == nil {
+	if empty.State != contract.SavingsNoCalls || len(empty.Days) != 30 || empty.FirstCallAt != nil || empty.Hero.SavedBp != nil || len(empty.ByCause) != 9 || empty.Upsell == nil {
 		t.Fatalf("empty = %+v", empty)
 	}
 	raw := string(s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/savings/causes", "", 200))

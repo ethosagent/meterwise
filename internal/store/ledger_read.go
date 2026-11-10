@@ -66,12 +66,15 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 	if !contract.ValidSessionOutcome(q.Outcome) {
 		return contract.SessionPage{}, contract.Invalid("outcome", "must be completed, abandoned or open")
 	}
+	if !contract.ValidSessionTag(q.Tag) {
+		return contract.SessionPage{}, contract.Invalid("tag", "must be trimmed, routed or remembered")
+	}
 	at, id, err := decodeCursor(q.Cursor)
 	if err != nil {
 		return contract.SessionPage{}, err
 	}
 	params := sqlc.ListSessionsParams{WorkspaceID: q.WorkspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: clampInt32(int64(limit + 1))}
-	params.Client, params.Outcome = textArg(q.Client), textArg(q.Outcome)
+	params.Client, params.Outcome, params.Tag = textArg(q.Client), textArg(q.Outcome), textArg(q.Tag)
 	if q.Cursor != "" {
 		params.CursorAt, params.CursorID = pgts(at), pgtype.Text{String: id, Valid: true}
 	}
@@ -91,6 +94,23 @@ func (s *Store) ListSessions(ctx context.Context, q contract.SessionQuery) (cont
 	return page, nil
 }
 
+// enumPtr is a nullable text column as a pointer to its string type.
+func enumPtr[T ~string](v pgtype.Text) *T {
+	if !v.Valid {
+		return nil
+	}
+	e := T(v.String)
+	return &e
+}
+
+func intPtr(v pgtype.Int4) *int {
+	if !v.Valid {
+		return nil
+	}
+	n := int(v.Int32)
+	return &n
+}
+
 // textArg is a nullable text parameter: "" means no filter.
 func textArg(v string) pgtype.Text { return pgtype.Text{String: v, Valid: v != ""} }
 
@@ -102,7 +122,7 @@ func sessionOf(r sessionRow) contract.SessionRecord {
 		ID: r.ID, WorkspaceID: r.WorkspaceID, Source: r.Source, StartedAt: ts(r.StartedAt), LastSeenAt: ts(r.LastSeenAt),
 		ClosedAt: tsp(r.ClosedAt), Calls: int(r.Calls), InputTokens: r.InputTokens, OutputTokens: r.OutputTokens,
 		Cost: microIf(r.HasCost, r.CostMicro), Saved: contract.MicroUSD(r.SavedMicro), LikelySaved: contract.MicroUSD(r.LikelySavedMicro),
-		Outcome: r.Outcome, Client: r.Client,
+		Outcome: r.Outcome, Client: r.Client, TrimTokens: r.TrimTokens, RoutedCalls: int(r.RoutedCalls), Hints: int(r.Hints),
 	}
 }
 
@@ -152,6 +172,10 @@ func (s *Store) sessionWith(ctx context.Context, q *sqlc.Queries, workspaceID, i
 			Usage: contract.Usage{Input: c.InputTokens, Output: c.OutputTokens, Cached: c.CachedTokens, Reasoning: c.ReasoningTokens},
 			Cost:  microIf(c.HasCost, c.CostMicro), TTFBMs: int64(c.TtfbMs), DurationMs: int64(c.DurationMs), ToolCalls: s.toolNames(c.ID, c.ToolCalls), Blocked: c.Blocked,
 			NotesInjected: int(c.NotesInjected),
+			TrimTokens:    c.TrimTokens, SavedUSDTrim: contract.MicroUSD(c.SavedTrimMicro), SavedUSDRouter: contract.MicroUSD(c.SavedRouterMicro),
+			HintInjected: c.HintInjected, RoutedFrom: c.RoutedFrom.String, RoutedTo: c.RoutedTo.String,
+			TrimAction: enumPtr[contract.TrimAction](c.TrimAction), TrimConfidence: enumPtr[contract.Confidence](c.TrimConfidence),
+			RouterAction: enumPtr[contract.RouteAction](c.RouterAction), RouterScoreBp: intPtr(c.RouterScoreBp),
 		}
 	}
 	return sessionOf(sessionRow(r)), out, truncated, nil
@@ -181,6 +205,16 @@ func (s *Store) Stats(ctx context.Context, workspaceID string, from, to time.Tim
 		return contract.Stats{}, queryErr(err)
 	}
 	st.Saved, st.Likely = contract.MicroUSD(sv.SavedMicro), contract.MicroUSD(sv.LikelyMicro)
+	cs, err := s.q.SavingsCallSavers(ctx, sqlc.SavingsCallSaversParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
+	if err != nil {
+		return contract.Stats{}, queryErr(err)
+	}
+	for _, c := range cs { // trim and router money is in the same two numbers as the monitors' (ADR 0027)
+		if !c.Day.Valid {
+			st.Saved += contract.MicroUSD(c.TrimSavedMicro + c.RouterSavedMicro)
+			st.Likely += contract.MicroUSD(c.TrimLikelyMicro)
+		}
+	}
 	return st, nil
 }
 

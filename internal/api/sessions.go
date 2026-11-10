@@ -66,6 +66,9 @@ func (s *server) listSessions(c Call, _ none) (contract.SessionList, error) {
 	} else if !contract.ValidSessionOutcome(q.Outcome) {
 		return contract.SessionList{}, contract.Invalid("outcome", "must be completed, abandoned or open")
 	}
+	if q.Tag = c.Query("tag"); !contract.ValidSessionTag(q.Tag) {
+		return contract.SessionList{}, contract.Invalid("tag", "must be trimmed, routed or remembered")
+	}
 	page, err := led.ListSessions(c.Ctx, q)
 	if err != nil {
 		return contract.SessionList{}, err
@@ -90,7 +93,7 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	}
 	out := contract.SessionDetail{
 		Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: truncated,
-		MonitorEvents: make([]contract.MonitorEventView, len(events)),
+		MonitorEvents: make([]contract.MonitorEventView, len(events)), MemoryHits: []contract.MemoryHitView{},
 	}
 	for i, r := range calls {
 		out.Calls[i] = callView(r)
@@ -107,6 +110,7 @@ func sessionView(r contract.SessionRecord) contract.SessionView {
 		ID: r.ID, WorkspaceID: r.WorkspaceID, Source: r.Source, StartedAt: contract.RFC3339(r.StartedAt), LastSeenAt: contract.RFC3339(r.LastSeenAt),
 		Calls: r.Calls, InputTokens: r.InputTokens, OutputTokens: r.OutputTokens, CostUsd: r.Cost, SavedUsd: r.Saved,
 		LikelySavedUsd: r.LikelySaved, Outcome: r.Outcome, Client: strOrNil(r.Client),
+		TrimTokens: r.TrimTokens, RoutedCalls: r.RoutedCalls, Hints: r.Hints,
 	}
 	if r.ClosedAt != nil {
 		closed := contract.RFC3339(*r.ClosedAt)
@@ -121,7 +125,19 @@ func callView(r contract.CallRecord) contract.CallView {
 		Stream: r.Stream, Status: r.Status, Finish: r.Finish, InputTokens: r.Usage.Input, OutputTokens: r.Usage.Output,
 		CachedTokens: r.Usage.Cached, ReasoningTokens: r.Usage.Reasoning, CostUsd: r.Cost, TtfbMs: r.TTFBMs, DurationMs: r.DurationMs,
 		ToolCalls: r.ToolCalls, Blocked: r.Blocked, NotesInjected: r.NotesInjected,
+		TrimAction: strEnum(r.TrimAction), TrimConfidence: strEnum(r.TrimConfidence), TrimTokens: r.TrimTokens, SavedUsdTrim: r.SavedUSDTrim,
+		RouterAction: strEnum(r.RouterAction), RoutedFrom: strOrNil(r.RoutedFrom), RoutedTo: strOrNil(r.RoutedTo), RouterScoreBp: r.RouterScoreBp,
+		SavedUsdRouter: r.SavedUSDRouter, HintInjected: r.HintInjected,
 	}
+}
+
+// strEnum is a nullable enum as a nullable string.
+func strEnum[T ~string](v *T) *string {
+	if v == nil {
+		return nil
+	}
+	s := string(*v)
+	return &s
 }
 
 // statsRanges are the accepted ?range= values and their length in UTC days.

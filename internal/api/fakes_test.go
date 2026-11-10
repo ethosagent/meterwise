@@ -62,6 +62,18 @@ func (m *memTenancy) MonitorConfig(context.Context, contract.Principal, string) 
 	return contract.DefaultMonitorConfig(), nil
 }
 
+func (m *memTenancy) TrimConfig(context.Context, contract.Principal, string) (contract.TrimConfig, error) {
+	return contract.DefaultTrimConfig(), nil
+}
+
+func (m *memTenancy) RouterConfig(context.Context, contract.Principal, string) (contract.RouterConfig, error) {
+	return contract.DefaultRouterConfig(), nil
+}
+
+func (m *memTenancy) MemoryConfig(context.Context, contract.Principal, string) (contract.MemoryConfig, error) {
+	return contract.DefaultMemoryConfig(), nil
+}
+
 func (m *memTenancy) ListMembers(context.Context, contract.Principal) ([]contract.Member, error) {
 	return nil, nil
 }

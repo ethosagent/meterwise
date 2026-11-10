@@ -29,10 +29,15 @@ func seedBench(t *testing.T, s *store.Store, ws string) {
 	ctx := context.Background()
 	for _, q := range []string{
 		`INSERT INTO calls (id, org_id, workspace_id, session_id, call_index, started_at, provider, model, wire, stream, status, finish,
-		                    input_tokens, output_tokens, cost_usd, tool_calls, blocked, client)
+		                    input_tokens, output_tokens, cost_usd, tool_calls, blocked, client,
+		                    trim_action, trim_confidence, trim_tokens, saved_usd_trim, router_action, routed_from, routed_to, router_score_bp, saved_usd_router)
 		 SELECT 'c' || g, $1::uuid, $2::uuid, 's' || (g / 10), g % 10, now() - (g * interval '51 seconds'), 'openai', 'gpt-4o', 'openai.chat', true, 200, 'ok',
 		        1000 + g % 500, 100 + g % 50, ((g % 90) + 1) / 1000.0, '["read","grep"]'::jsonb, g % 40 = 0,
-		        (ARRAY['opencode','claude-code','codex','curl',NULL])[1 + g % 5]
+		        (ARRAY['opencode','claude-code','codex','curl',NULL])[1 + g % 5],
+		        CASE WHEN g % 7 = 0 THEN (ARRAY['acted','observe'])[1 + (g / 7) % 2] END, CASE WHEN g % 7 = 0 THEN (ARRAY['certain','likely'])[1 + (g / 7) % 2] END,
+		        CASE WHEN g % 7 = 0 THEN 200 + g % 300 ELSE 0 END, CASE WHEN g % 7 = 0 THEN ((g % 30) + 1) / 1000.0 ELSE 0 END,
+		        CASE WHEN g % 11 = 0 THEN (ARRAY['routed','observe'])[1 + (g / 11) % 2] END, CASE WHEN g % 11 = 0 THEN 'gpt-4o' END,
+		        CASE WHEN g % 11 = 0 THEN 'gpt-4o-mini' END, CASE WHEN g % 11 = 0 THEN 1500 END, CASE WHEN g % 11 = 0 THEN ((g % 20) + 1) / 1000.0 ELSE 0 END
 		 FROM generate_series(0, $3::int - 1) AS g`,
 		`INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd, client)
 		 SELECT 's' || (g / 10), $1::uuid, $2::uuid, 'header', now() - ((g / 10) * 10 * interval '51 seconds') - interval '9 minutes',

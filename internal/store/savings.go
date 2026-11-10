@@ -25,7 +25,7 @@ func (s *Store) readSnapshot(ctx context.Context, fn func(q *sqlc.Queries) error
 
 // Overview reads the savings dashboard of a workspace for a validated range (ruling S2: money from
 // monitor_events by ts, spend from calls by started_at, UTC day buckets). The days array covers the whole
-// range, zero-filled. ByCause holds the six monitors in MonitorNames order with Mode, Confidence left for
+// range, zero-filled. ByCause holds nine rows with Mode, Confidence left for
 // the caller to fill from the workspace's monitor settings, and Upsell is left empty for the same reason.
 // The three savings classes are separate fields everywhere and never summed (ADR 0023).
 func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.SavingsRange) (contract.SavingsOverview, error) {
@@ -37,12 +37,12 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		spend    []sqlc.SavingsSpendByDayRow
 		events   []sqlc.SavingsEventsByDayRow
 		stats    []contract.MonitorStatRow
-		tops     []sqlc.SavingsCauseTopsRow
+		callSav  []sqlc.SavingsCallSaversRow
 		first    sqlc.CallStatusRow
 		acted    bool
 		spendArg = sqlc.SavingsSpendByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
 		evArg    = sqlc.SavingsEventsByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
-		topArg   = sqlc.SavingsCauseTopsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
+		savArg   = sqlc.SavingsCallSaversParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
 	)
 	err := s.readSnapshot(ctx, func(q *sqlc.Queries) (err error) {
 		if spend, err = q.SavingsSpendByDay(ctx, spendArg); err != nil {
@@ -54,13 +54,13 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		if stats, err = s.monitorStatsWith(ctx, q, workspaceID, from, to); err != nil {
 			return err
 		}
-		if tops, err = q.SavingsCauseTops(ctx, topArg); err != nil {
+		if callSav, err = q.SavingsCallSavers(ctx, savArg); err != nil {
 			return err
 		}
 		if first, err = q.CallStatus(ctx, sqlc.CallStatusParams{WorkspaceID: workspaceID, SinceTs: pgts(to)}); err != nil {
 			return err
 		}
-		if acted = actedMoney(events); !acted { // acted money in the range already proves a monitor acted
+		if acted = actedMoney(events, callSav); !acted { // acted money in the range already proves a monitor acted
 			acted, err = q.SavingsHasActed(ctx, workspaceID)
 		}
 		return err
@@ -75,17 +75,22 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 	if t := tsp(first.FirstCallAt); t != nil {
 		out.FirstCallAt = new(contract.RFC3339(*t))
 	}
-	out.Days, out.Hero = daysAndHero(r, spend, events)
-	for _, card := range causesOf(stats, tops) {
+	out.Days, out.Hero = daysAndHero(r, spend, events, callSav)
+	for _, card := range causesOf(stats, nil, callSav) {
 		out.ByCause = append(out.ByCause, card.CauseView)
 	}
 	return out, nil
 }
 
 // actedMoney is true when the range's totals row holds saved or likely money, which only acted events produce.
-func actedMoney(events []sqlc.SavingsEventsByDayRow) bool {
+func actedMoney(events []sqlc.SavingsEventsByDayRow, callSav []sqlc.SavingsCallSaversRow) bool {
 	for _, e := range events {
 		if !e.Day.Valid && (e.SavedMicro != 0 || e.LikelyMicro != 0) {
+			return true
+		}
+	}
+	for _, c := range callSav {
+		if !c.Day.Valid && (c.TrimSavedMicro != 0 || c.TrimLikelyMicro != 0 || c.RouterSavedMicro != 0) {
 			return true
 		}
 	}
@@ -103,8 +108,10 @@ func stateOf(hasCalls, acted bool) string {
 }
 
 // daysAndHero zero-fills the range's days from the two per-day reads and takes the hero from their totals
-// rows. WouldHavePaid is paid + saved (certain only) per day and in the hero.
-func daysAndHero(r contract.SavingsRange, spend []sqlc.SavingsSpendByDayRow, events []sqlc.SavingsEventsByDayRow) ([]contract.SavingsDay, contract.SavingsHero) {
+// rows. The trim and router branches from calls add to the same classes: certain trim and routed money to saved,
+// likely trim to likely, observe amounts to would-save. WouldHavePaid is paid + saved (certain only) per day and
+// in the hero.
+func daysAndHero(r contract.SavingsRange, spend []sqlc.SavingsSpendByDayRow, events []sqlc.SavingsEventsByDayRow, callSav []sqlc.SavingsCallSaversRow) ([]contract.SavingsDay, contract.SavingsHero) {
 	byDay := make(map[string]*contract.SavingsDay, r.Days())
 	days := make([]contract.SavingsDay, r.Days())
 	for i := range days {
@@ -131,6 +138,22 @@ func daysAndHero(r contract.SavingsRange, spend []sqlc.SavingsSpendByDayRow, eve
 			d.SavedUsd, d.LikelySavedUsd = contract.MicroUSD(e.SavedMicro), contract.MicroUSD(e.LikelyMicro)
 		}
 	}
+	for _, c := range callSav {
+		saved, likely := contract.MicroUSD(c.TrimSavedMicro+c.RouterSavedMicro), contract.MicroUSD(c.TrimLikelyMicro)
+		if !c.Day.Valid {
+			hero.SavedUsd += saved
+			hero.LikelySavedUsd += likely
+			hero.WouldSaveUsd += contract.MicroUSD(c.TrimWouldMicro + c.RouterWouldMicro)
+			hero.SavedTokens += c.TrimSavedTokens
+			hero.LikelySavedTokens += c.TrimLikelyTokens
+			hero.WouldSaveTokens += c.TrimWouldTokens
+			continue
+		}
+		if d := byDay[c.Day.Time.UTC().Format(time.DateOnly)]; d != nil {
+			d.SavedUsd += saved
+			d.LikelySavedUsd += likely
+		}
+	}
 	for i := range days {
 		days[i].WouldHavePaidUsd = days[i].PaidUsd + days[i].SavedUsd
 	}
@@ -152,8 +175,10 @@ func basisPoints(part, whole contract.MicroUSD) *int {
 	return &bp
 }
 
-// causesOf builds the six CauseView rows in MonitorNames order from the monitor stats and the per-monitor tops.
-func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) []contract.CauseCard {
+// causesOf builds the nine cause rows in AllSavingsCauses order: the six monitors from their stats (with the
+// per-monitor tops when the caller read them), then trim and router from the calls branch, then memory. Memory's
+// money comes from memory_hits, which lands with the memory feature; until then its row is zero.
+func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow, callSav []sqlc.SavingsCallSaversRow) []contract.CauseCard {
 	type top struct {
 		client, tool, path, hash string
 		repeats, toolN           int64
@@ -173,8 +198,8 @@ func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) 
 			by[m].path, by[m].hash, by[m].repeats = t.Val, t.Val2, t.N
 		}
 	}
-	out := make([]contract.CauseCard, len(stats))
-	for i, st := range stats {
+	out := make([]contract.CauseCard, 0, len(stats)+3)
+	for _, st := range stats {
 		c := contract.CauseCard{CauseView: contract.CauseView{
 			Cause: contract.SavingsCause(st.Monitor), Kind: contract.KindMonitor, Fires: st.Fires, SavedUsd: st.Saved, LikelySavedUsd: st.Likely,
 			WouldSaveUsd: st.WouldSave, SavedTokens: st.SavedTokens, LikelySavedTokens: st.LikelySavedTokens, WouldSaveTokens: st.WouldSaveTokens,
@@ -188,9 +213,26 @@ func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) 
 				c.TopPathHash = new(hashPrefix(t.hash))
 			}
 		}
-		out[i] = c
+		out = append(out, c)
 	}
-	return out
+	var tot sqlc.SavingsCallSaversRow
+	for _, c := range callSav {
+		if !c.Day.Valid {
+			tot = c
+		}
+	}
+	return append(out,
+		contract.CauseCard{CauseView: contract.CauseView{
+			Cause: contract.CauseTrim, Kind: contract.KindTrim, Fires: tot.TrimFires, SavedUsd: contract.MicroUSD(tot.TrimSavedMicro),
+			LikelySavedUsd: contract.MicroUSD(tot.TrimLikelyMicro), WouldSaveUsd: contract.MicroUSD(tot.TrimWouldMicro),
+			SavedTokens: tot.TrimSavedTokens, LikelySavedTokens: tot.TrimLikelyTokens, WouldSaveTokens: tot.TrimWouldTokens,
+		}},
+		contract.CauseCard{CauseView: contract.CauseView{
+			Cause: contract.CauseRouter, Kind: contract.KindRouter, Fires: tot.RouterFires, SavedUsd: contract.MicroUSD(tot.RouterSavedMicro),
+			WouldSaveUsd: contract.MicroUSD(tot.RouterWouldMicro),
+		}},
+		contract.CauseCard{CauseView: contract.CauseView{Cause: contract.CauseMemory, Kind: contract.KindMemory}},
+	)
 }
 
 func textPtr(s string) *string {

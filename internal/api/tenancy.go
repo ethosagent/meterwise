@@ -32,6 +32,12 @@ type Tenancy interface {
 	SetAllowedCIDRs(ctx context.Context, p contract.Principal, workspaceID string, cidrs []string) ([]string, error)
 	MonitorConfig(ctx context.Context, p contract.Principal, workspaceID string) (contract.MonitorConfig, error)
 	UpdateMonitorConfig(ctx context.Context, p contract.Principal, workspaceID string, patch contract.MonitorConfigPatch) (contract.MonitorConfig, error)
+	TrimConfig(ctx context.Context, p contract.Principal, workspaceID string) (contract.TrimConfig, error)
+	UpdateTrimConfig(ctx context.Context, p contract.Principal, workspaceID string, patch contract.TrimConfigPatch) (contract.TrimConfig, error)
+	RouterConfig(ctx context.Context, p contract.Principal, workspaceID string) (contract.RouterConfig, error)
+	UpdateRouterConfig(ctx context.Context, p contract.Principal, workspaceID string, patch contract.RouterConfigPatch) (contract.RouterConfig, error)
+	MemoryConfig(ctx context.Context, p contract.Principal, workspaceID string) (contract.MemoryConfig, error)
+	UpdateMemoryConfig(ctx context.Context, p contract.Principal, workspaceID string, patch contract.MemoryConfigPatch) (contract.MemoryConfig, error)
 
 	ListInvitations(ctx context.Context, p contract.Principal) ([]contract.Invitation, error)
 	CreateInvitation(ctx context.Context, p contract.Principal, email string, role contract.Role) (contract.Invitation, error)

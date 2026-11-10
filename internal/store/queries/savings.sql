@@ -29,9 +29,34 @@ WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
 GROUP BY GROUPING SETS (((ts AT TIME ZONE 'UTC')::date), ())
 ORDER BY 1 NULLS LAST;
 
+-- name: SavingsCallSavers :many
+-- Per UTC day of [from_ts, to_ts) plus one totals row: what trim and the router saved, read from calls by
+-- started_at. An acted trim is saved (certain) or likely by trim_confidence; observe amounts live in the same
+-- columns and are would-save. A routed call is saved (always certain); the router has no tokens. Fires count
+-- the calls the feature recorded a decision on (a held route records nothing). No column adds two classes.
+SELECT (started_at AT TIME ZONE 'UTC')::date AS day,
+       (COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'certain'), 0) * 1000000)::bigint AS trim_saved_micro,
+       (COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'likely'), 0) * 1000000)::bigint AS trim_likely_micro,
+       (COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'observe'), 0) * 1000000)::bigint AS trim_would_micro,
+       COALESCE(SUM(trim_tokens) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'certain'), 0)::bigint AS trim_saved_tokens,
+       COALESCE(SUM(trim_tokens) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'likely'), 0)::bigint AS trim_likely_tokens,
+       COALESCE(SUM(trim_tokens) FILTER (WHERE trim_action = 'observe'), 0)::bigint AS trim_would_tokens,
+       COUNT(*) FILTER (WHERE trim_action IS NOT NULL)::bigint AS trim_fires,
+       (COALESCE(SUM(saved_usd_router) FILTER (WHERE router_action = 'routed'), 0) * 1000000)::bigint AS router_saved_micro,
+       (COALESCE(SUM(saved_usd_router) FILTER (WHERE router_action = 'observe'), 0) * 1000000)::bigint AS router_would_micro,
+       COUNT(*) FILTER (WHERE router_action IS NOT NULL)::bigint AS router_fires
+FROM calls
+WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
+  AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
+GROUP BY GROUPING SETS (((started_at AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST;
+
 -- name: SavingsHasActed :one
--- Whether any monitor has ever acted (note or block) in the workspace: the collecting/active split.
-SELECT EXISTS (SELECT 1 FROM monitor_events WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND action <> 'observe')::bool AS acted;
+-- Whether any saver has ever acted in the workspace (a monitor note or block, an acted trim, a routed call):
+-- the collecting/active split.
+SELECT (EXISTS (SELECT 1 FROM monitor_events WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND action <> 'observe')
+        OR EXISTS (SELECT 1 FROM calls WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
+                   AND (trim_action = 'acted' OR router_action = 'routed')))::bool AS acted;
 
 -- name: SavingsCauseTops :many
 -- For each monitor, the most frequent client, tool and path (rank 1 of each dimension) over the window. A
@@ -88,14 +113,28 @@ ORDER BY 2 DESC, 1
 LIMIT sqlc.arg(max_rows)::int;
 
 -- name: SavingsClientSaved :many
--- Saved and likely money per client of the call each acted event belongs to (ruling S2 filters).
-SELECT COALESCE(c.client, '')::text AS client,
-       (COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'certain'), 0) * 1000000)::bigint AS saved_micro,
-       (COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'likely'), 0) * 1000000)::bigint AS likely_micro
-FROM monitor_events e
-JOIN calls c ON c.id = e.call_id AND c.workspace_id = e.workspace_id
-WHERE e.workspace_id = sqlc.arg(workspace_id)::text::uuid AND e.action <> 'observe'
-  AND e.ts >= sqlc.arg(from_ts)::timestamptz AND e.ts < sqlc.arg(to_ts)::timestamptz
+-- Saved and likely money per client: the monitors' acted events through the call each belongs to (ruling S2
+-- filters), plus the calls' own acted trim and routed money by started_at, so the clients add up to the hero.
+SELECT client::text AS client, (SUM(saved_micro))::bigint AS saved_micro, (SUM(likely_micro))::bigint AS likely_micro
+FROM (
+    SELECT COALESCE(c.client, '') AS client,
+           COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'certain'), 0) * 1000000 AS saved_micro,
+           COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'likely'), 0) * 1000000 AS likely_micro
+    FROM monitor_events e
+    JOIN calls c ON c.id = e.call_id AND c.workspace_id = e.workspace_id
+    WHERE e.workspace_id = sqlc.arg(workspace_id)::text::uuid AND e.action <> 'observe'
+      AND e.ts >= sqlc.arg(from_ts)::timestamptz AND e.ts < sqlc.arg(to_ts)::timestamptz
+    GROUP BY 1
+    UNION ALL
+    SELECT COALESCE(client, ''),
+           COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'certain'), 0) * 1000000
+             + COALESCE(SUM(saved_usd_router) FILTER (WHERE router_action = 'routed'), 0) * 1000000,
+           COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'likely'), 0) * 1000000
+    FROM calls
+    WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
+      AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
+    GROUP BY 1
+) u
 GROUP BY 1;
 
 -- name: ListSaves :many

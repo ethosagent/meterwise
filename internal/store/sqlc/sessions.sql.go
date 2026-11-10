@@ -38,7 +38,8 @@ func (q *Queries) CallStatus(ctx context.Context, arg CallStatusParams) (CallSta
 const getSession = `-- name: GetSession :one
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
        COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
-       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
+       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client,
+       trim_tokens, routed_calls, hints
 FROM sessions
 WHERE workspace_id = $1::text::uuid AND id = $2::text
 `
@@ -64,6 +65,9 @@ type GetSessionRow struct {
 	LikelySavedMicro int64
 	Outcome          string
 	Client           string
+	TrimTokens       int64
+	RoutedCalls      int32
+	Hints            int32
 }
 
 func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSessionRow, error) {
@@ -85,13 +89,18 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (GetSess
 		&i.LikelySavedMicro,
 		&i.Outcome,
 		&i.Client,
+		&i.TrimTokens,
+		&i.RoutedCalls,
+		&i.Hints,
 	)
 	return i, err
 }
 
 const listSessionCalls = `-- name: ListSessionCalls :many
 SELECT id, call_index, started_at, provider, model, wire, stream, status, finish, input_tokens, output_tokens, cached_tokens,
-       reasoning_tokens, COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, ttfb_ms, duration_ms, tool_calls, blocked, notes_injected
+       reasoning_tokens, COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, ttfb_ms, duration_ms, tool_calls, blocked, notes_injected,
+       trim_action, trim_confidence, trim_tokens, (saved_usd_trim * 1000000)::bigint AS saved_trim_micro,
+       router_action, routed_from, routed_to, router_score_bp, (saved_usd_router * 1000000)::bigint AS saved_router_micro, hint_injected
 FROM calls
 WHERE workspace_id = $1::text::uuid AND session_id = $2::text
 ORDER BY call_index, started_at, id
@@ -105,26 +114,36 @@ type ListSessionCallsParams struct {
 }
 
 type ListSessionCallsRow struct {
-	ID              string
-	CallIndex       int32
-	StartedAt       pgtype.Timestamptz
-	Provider        string
-	Model           string
-	Wire            string
-	Stream          bool
-	Status          int32
-	Finish          string
-	InputTokens     int64
-	OutputTokens    int64
-	CachedTokens    int64
-	ReasoningTokens int64
-	CostMicro       int64
-	HasCost         bool
-	TtfbMs          int32
-	DurationMs      int32
-	ToolCalls       []byte
-	Blocked         bool
-	NotesInjected   int32
+	ID               string
+	CallIndex        int32
+	StartedAt        pgtype.Timestamptz
+	Provider         string
+	Model            string
+	Wire             string
+	Stream           bool
+	Status           int32
+	Finish           string
+	InputTokens      int64
+	OutputTokens     int64
+	CachedTokens     int64
+	ReasoningTokens  int64
+	CostMicro        int64
+	HasCost          bool
+	TtfbMs           int32
+	DurationMs       int32
+	ToolCalls        []byte
+	Blocked          bool
+	NotesInjected    int32
+	TrimAction       pgtype.Text
+	TrimConfidence   pgtype.Text
+	TrimTokens       int64
+	SavedTrimMicro   int64
+	RouterAction     pgtype.Text
+	RoutedFrom       pgtype.Text
+	RoutedTo         pgtype.Text
+	RouterScoreBp    pgtype.Int4
+	SavedRouterMicro int64
+	HintInjected     bool
 }
 
 func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsParams) ([]ListSessionCallsRow, error) {
@@ -157,6 +176,16 @@ func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsPara
 			&i.ToolCalls,
 			&i.Blocked,
 			&i.NotesInjected,
+			&i.TrimAction,
+			&i.TrimConfidence,
+			&i.TrimTokens,
+			&i.SavedTrimMicro,
+			&i.RouterAction,
+			&i.RoutedFrom,
+			&i.RoutedTo,
+			&i.RouterScoreBp,
+			&i.SavedRouterMicro,
+			&i.HintInjected,
 		); err != nil {
 			return nil, err
 		}
@@ -171,15 +200,20 @@ func (q *Queries) ListSessionCalls(ctx context.Context, arg ListSessionCallsPara
 const listSessions = `-- name: ListSessions :many
 SELECT id, workspace_id::text AS workspace_id, source, started_at, last_seen_at, closed_at, calls, input_tokens, output_tokens,
        COALESCE((cost_usd * 1000000)::bigint, 0)::bigint AS cost_micro, (cost_usd IS NOT NULL)::bool AS has_cost, (saved_usd * 1000000)::bigint AS saved_micro,
-       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client
+       (likely_saved_usd * 1000000)::bigint AS likely_saved_micro, outcome, COALESCE(client, '')::text AS client,
+       trim_tokens, routed_calls, hints
 FROM sessions
 WHERE workspace_id = $1::text::uuid
   AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
   AND (started_at, id) < (COALESCE($4::timestamptz, 'infinity'::timestamptz), COALESCE($5::text, ''))
   AND ($6::text IS NULL OR COALESCE(client, 'unknown') = $6::text)
   AND ($7::text IS NULL OR outcome = $7::text)
+  AND ($8::text IS NULL
+       OR ($8::text = 'trimmed' AND trim_tokens > 0)
+       OR ($8::text = 'routed' AND routed_calls > 0)
+       OR ($8::text = 'remembered' AND hints > 0))
 ORDER BY started_at DESC, id DESC
-LIMIT $8::int
+LIMIT $9::int
 `
 
 type ListSessionsParams struct {
@@ -190,6 +224,7 @@ type ListSessionsParams struct {
 	CursorID    pgtype.Text
 	Client      pgtype.Text
 	Outcome     pgtype.Text
+	Tag         pgtype.Text
 	MaxRows     int32
 }
 
@@ -209,6 +244,9 @@ type ListSessionsRow struct {
 	LikelySavedMicro int64
 	Outcome          string
 	Client           string
+	TrimTokens       int64
+	RoutedCalls      int32
+	Hints            int32
 }
 
 // One page of a workspace's sessions, newest first by (started_at, id); [from_ts, to_ts) bounds started_at.
@@ -223,6 +261,7 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]L
 		arg.CursorID,
 		arg.Client,
 		arg.Outcome,
+		arg.Tag,
 		arg.MaxRows,
 	)
 	if err != nil {
@@ -248,6 +287,9 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]L
 			&i.LikelySavedMicro,
 			&i.Outcome,
 			&i.Client,
+			&i.TrimTokens,
+			&i.RoutedCalls,
+			&i.Hints,
 		); err != nil {
 			return nil, err
 		}

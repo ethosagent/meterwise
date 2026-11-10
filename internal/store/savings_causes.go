@@ -19,7 +19,7 @@ const (
 	unknownClient    = "unknown"
 )
 
-// Causes reads "where the savings came from" for a validated range: the six per-monitor causes (Mode and
+// Causes reads "where the savings came from" for a validated range: the nine causes (Mode and
 // Confidence for the caller to fill, as in Overview), the per-client table and the repeat targets the caller
 // turns into suggestions. All reads share one snapshot. A client's previous-window average is null when the
 // client had no calls in the same-length window before the range.
@@ -35,12 +35,16 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 		repeats []sqlc.SavingsRepeatTargetsRow
 		cur     []sqlc.SavingsClientsRow
 		saved   []sqlc.SavingsClientSavedRow
+		callSav []sqlc.SavingsCallSaversRow
 	)
 	err := s.readSnapshot(ctx, func(q *sqlc.Queries) (err error) {
 		if stats, err = s.monitorStatsWith(ctx, q, workspaceID, from, to); err != nil {
 			return err
 		}
 		if tops, err = q.SavingsCauseTops(ctx, sqlc.SavingsCauseTopsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}); err != nil {
+			return err
+		}
+		if callSav, err = q.SavingsCallSavers(ctx, sqlc.SavingsCallSaversParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}); err != nil {
 			return err
 		}
 		if repeats, err = q.SavingsRepeatTargets(ctx, sqlc.SavingsRepeatTargetsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: maxRepeatTargets}); err != nil {
@@ -55,7 +59,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 	if err != nil {
 		return contract.SavingsCauses{}, nil, err
 	}
-	out := contract.SavingsCauses{Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", Causes: causesOf(stats, tops), Clients: clientRows(cur, saved)}
+	out := contract.SavingsCauses{Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", Causes: causesOf(stats, tops, callSav), Clients: clientRows(cur, saved)}
 	targets := make([]contract.RepeatTarget, len(repeats))
 	for i, t := range repeats {
 		targets[i] = contract.RepeatTarget{Monitor: contract.MonitorName(t.Monitor), Tool: t.Tool, Path: t.Path, PathHash: t.PathHash, Count: t.N}

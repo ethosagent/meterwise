@@ -101,13 +101,13 @@ func TestOverviewHeroDaysAndCauses(t *testing.T) {
 
 func checkCauses(t *testing.T, by []contract.CauseView, h contract.SavingsHero) {
 	t.Helper()
-	names := contract.MonitorNames()
+	names := contract.AllSavingsCauses()
 	if len(by) != len(names) {
-		t.Fatalf("byCause = %d rows, want 6", len(by))
+		t.Fatalf("byCause = %d rows, want 9", len(by))
 	}
 	var saved, likely, would contract.MicroUSD
 	for i, c := range by {
-		if c.Cause != contract.SavingsCause(names[i]) {
+		if c.Cause != names[i] || c.Kind != names[i].Kind() {
 			t.Errorf("row %d is %s, want %s", i, c.Cause, names[i])
 		}
 		saved, likely, would = saved+c.SavedUsd, likely+c.LikelySavedUsd, would+c.WouldSaveUsd
@@ -131,7 +131,7 @@ func TestOverviewStates(t *testing.T) {
 	s, ctx := openMigrated(t), context.Background()
 	empty, collecting := newWS(t, s, "E", "EEEEEEEEEEEEEEEEEEEEEE"), newWS(t, s, "C", "CCCCCCCCCCCCCCCCCCCCCC")
 	o, err := s.Overview(ctx, empty, rangeOf(8, 10))
-	if err != nil || o.State != contract.SavingsNoCalls || o.FirstCallAt != nil || len(o.Days) != 3 || o.Hero.SavedBp != nil || len(o.ByCause) != 6 {
+	if err != nil || o.State != contract.SavingsNoCalls || o.FirstCallAt != nil || len(o.Days) != 3 || o.Hero.SavedBp != nil || len(o.ByCause) != 9 {
 		t.Fatalf("empty = %+v, %v", o, err)
 	}
 	for _, d := range o.Days {
@@ -174,7 +174,7 @@ func TestCausesClientsAndRepeats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Range != "custom" || got.Timezone != "UTC" || len(got.Causes) != 6 || len(got.Clients) != 2 {
+	if got.Range != "custom" || got.Timezone != "UTC" || len(got.Causes) != 9 || len(got.Clients) != 2 {
 		t.Fatalf("causes = %+v", got)
 	}
 	checkCauseTops(t, got.Causes)

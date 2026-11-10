@@ -90,6 +90,81 @@ func (q *Queries) ListSaves(ctx context.Context, arg ListSavesParams) ([]ListSav
 	return items, nil
 }
 
+const savingsCallSavers = `-- name: SavingsCallSavers :many
+SELECT (started_at AT TIME ZONE 'UTC')::date AS day,
+       (COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'certain'), 0) * 1000000)::bigint AS trim_saved_micro,
+       (COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'likely'), 0) * 1000000)::bigint AS trim_likely_micro,
+       (COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'observe'), 0) * 1000000)::bigint AS trim_would_micro,
+       COALESCE(SUM(trim_tokens) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'certain'), 0)::bigint AS trim_saved_tokens,
+       COALESCE(SUM(trim_tokens) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'likely'), 0)::bigint AS trim_likely_tokens,
+       COALESCE(SUM(trim_tokens) FILTER (WHERE trim_action = 'observe'), 0)::bigint AS trim_would_tokens,
+       COUNT(*) FILTER (WHERE trim_action IS NOT NULL)::bigint AS trim_fires,
+       (COALESCE(SUM(saved_usd_router) FILTER (WHERE router_action = 'routed'), 0) * 1000000)::bigint AS router_saved_micro,
+       (COALESCE(SUM(saved_usd_router) FILTER (WHERE router_action = 'observe'), 0) * 1000000)::bigint AS router_would_micro,
+       COUNT(*) FILTER (WHERE router_action IS NOT NULL)::bigint AS router_fires
+FROM calls
+WHERE workspace_id = $1::text::uuid
+  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
+GROUP BY GROUPING SETS (((started_at AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST
+`
+
+type SavingsCallSaversParams struct {
+	WorkspaceID string
+	FromTs      pgtype.Timestamptz
+	ToTs        pgtype.Timestamptz
+}
+
+type SavingsCallSaversRow struct {
+	Day              pgtype.Date
+	TrimSavedMicro   int64
+	TrimLikelyMicro  int64
+	TrimWouldMicro   int64
+	TrimSavedTokens  int64
+	TrimLikelyTokens int64
+	TrimWouldTokens  int64
+	TrimFires        int64
+	RouterSavedMicro int64
+	RouterWouldMicro int64
+	RouterFires      int64
+}
+
+// Per UTC day of [from_ts, to_ts) plus one totals row: what trim and the router saved, read from calls by
+// started_at. An acted trim is saved (certain) or likely by trim_confidence; observe amounts live in the same
+// columns and are would-save. A routed call is saved (always certain); the router has no tokens. Fires count
+// the calls the feature recorded a decision on (a held route records nothing). No column adds two classes.
+func (q *Queries) SavingsCallSavers(ctx context.Context, arg SavingsCallSaversParams) ([]SavingsCallSaversRow, error) {
+	rows, err := q.db.Query(ctx, savingsCallSavers, arg.WorkspaceID, arg.FromTs, arg.ToTs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SavingsCallSaversRow
+	for rows.Next() {
+		var i SavingsCallSaversRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.TrimSavedMicro,
+			&i.TrimLikelyMicro,
+			&i.TrimWouldMicro,
+			&i.TrimSavedTokens,
+			&i.TrimLikelyTokens,
+			&i.TrimWouldTokens,
+			&i.TrimFires,
+			&i.RouterSavedMicro,
+			&i.RouterWouldMicro,
+			&i.RouterFires,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const savingsCauseTops = `-- name: SavingsCauseTops :many
 WITH ev AS (
     SELECT e.monitor, COALESCE(s.client, '') AS client, COALESCE(e.evidence ->> 'tool', '') AS tool,
@@ -153,13 +228,26 @@ func (q *Queries) SavingsCauseTops(ctx context.Context, arg SavingsCauseTopsPara
 }
 
 const savingsClientSaved = `-- name: SavingsClientSaved :many
-SELECT COALESCE(c.client, '')::text AS client,
-       (COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'certain'), 0) * 1000000)::bigint AS saved_micro,
-       (COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'likely'), 0) * 1000000)::bigint AS likely_micro
-FROM monitor_events e
-JOIN calls c ON c.id = e.call_id AND c.workspace_id = e.workspace_id
-WHERE e.workspace_id = $1::text::uuid AND e.action <> 'observe'
-  AND e.ts >= $2::timestamptz AND e.ts < $3::timestamptz
+SELECT client::text AS client, (SUM(saved_micro))::bigint AS saved_micro, (SUM(likely_micro))::bigint AS likely_micro
+FROM (
+    SELECT COALESCE(c.client, '') AS client,
+           COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'certain'), 0) * 1000000 AS saved_micro,
+           COALESCE(SUM(e.est_saved_usd) FILTER (WHERE e.confidence = 'likely'), 0) * 1000000 AS likely_micro
+    FROM monitor_events e
+    JOIN calls c ON c.id = e.call_id AND c.workspace_id = e.workspace_id
+    WHERE e.workspace_id = $1::text::uuid AND e.action <> 'observe'
+      AND e.ts >= $2::timestamptz AND e.ts < $3::timestamptz
+    GROUP BY 1
+    UNION ALL
+    SELECT COALESCE(client, ''),
+           COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'certain'), 0) * 1000000
+             + COALESCE(SUM(saved_usd_router) FILTER (WHERE router_action = 'routed'), 0) * 1000000,
+           COALESCE(SUM(saved_usd_trim) FILTER (WHERE trim_action = 'acted' AND trim_confidence = 'likely'), 0) * 1000000
+    FROM calls
+    WHERE workspace_id = $1::text::uuid
+      AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
+    GROUP BY 1
+) u
 GROUP BY 1
 `
 
@@ -175,7 +263,8 @@ type SavingsClientSavedRow struct {
 	LikelyMicro int64
 }
 
-// Saved and likely money per client of the call each acted event belongs to (ruling S2 filters).
+// Saved and likely money per client: the monitors' acted events through the call each belongs to (ruling S2
+// filters), plus the calls' own acted trim and routed money by started_at, so the clients add up to the hero.
 func (q *Queries) SavingsClientSaved(ctx context.Context, arg SavingsClientSavedParams) ([]SavingsClientSavedRow, error) {
 	rows, err := q.db.Query(ctx, savingsClientSaved, arg.WorkspaceID, arg.FromTs, arg.ToTs)
 	if err != nil {
@@ -331,10 +420,13 @@ func (q *Queries) SavingsEventsByDay(ctx context.Context, arg SavingsEventsByDay
 }
 
 const savingsHasActed = `-- name: SavingsHasActed :one
-SELECT EXISTS (SELECT 1 FROM monitor_events WHERE workspace_id = $1::text::uuid AND action <> 'observe')::bool AS acted
+SELECT (EXISTS (SELECT 1 FROM monitor_events WHERE workspace_id = $1::text::uuid AND action <> 'observe')
+        OR EXISTS (SELECT 1 FROM calls WHERE workspace_id = $1::text::uuid
+                   AND (trim_action = 'acted' OR router_action = 'routed')))::bool AS acted
 `
 
-// Whether any monitor has ever acted (note or block) in the workspace: the collecting/active split.
+// Whether any saver has ever acted in the workspace (a monitor note or block, an acted trim, a routed call):
+// the collecting/active split.
 func (q *Queries) SavingsHasActed(ctx context.Context, workspaceID string) (bool, error) {
 	row := q.db.QueryRow(ctx, savingsHasActed, workspaceID)
 	var acted bool
