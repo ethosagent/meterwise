@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/ethosagent/tollgate"
 
@@ -22,12 +23,21 @@ type Options struct {
 	MaxBytes int64
 	// Shards is the number of lock shards. Default 32.
 	Shards int
+	// Now reads the clock for the deadline check only. Default time.Now.
+	Now func() time.Time
+	// MinDeadline: when the chain's deadline is nearer than this, Before reads no more turns from the
+	// request (it still stamps Meta with the ring it has). Default 5ms, the monitors' own margin.
+	MinDeadline time.Duration
 }
 
-// Hook is the history tollgate Hook (Name "history"). It does no I/O and no clock reads.
+// Hook is the history tollgate Hook (Name "history"). It does no I/O, and reads the clock only for the
+// deadline check.
 type Hook struct {
 	tollgate.NoopHook
+	opt      Options
 	st       *store
+	skipped  atomic.Int64
+	cut      atomic.Int64
 	evicted  atomic.Int64
 	evictedB atomic.Int64
 	caughtUp atomic.Int64
@@ -48,7 +58,13 @@ func New(o Options) *Hook {
 	if o.MaxBytes <= 0 {
 		o.MaxBytes = DefaultMaxBytes
 	}
-	h := &Hook{}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+	if o.MinDeadline <= 0 {
+		o.MinDeadline = 5 * time.Millisecond
+	}
+	h := &Hook{opt: o}
 	h.st = newStore(o.MaxSessions, o.MaxBytes, o.Shards, func(byBytes bool) {
 		if byBytes {
 			h.evictedB.Add(1)
@@ -70,7 +86,7 @@ func key(tenant, session string) string { return tenant + "\x00" + session }
 // call's After has not run yet: a client faster than After) is caught up from the same messages, and only
 // the missing turns are parsed. An empty newest entry (a call answered without a stream, such as a
 // block) is healed from the request's newest turn.
-func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, error) {
+func (h *Hook) Before(ctx context.Context, c *tollgate.Call) (*tollgate.Response, error) {
 	if c.Provider.Wire == tollgate.WirePassthrough || c.Session.ID == "" {
 		return nil, nil
 	}
@@ -79,7 +95,7 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 	}
 	k := key(c.Tenant.ID, c.Session.ID)
 	cur, ok := h.st.get(k)
-	fills := h.missing(cur, ok, c)
+	fills := h.missing(cur, ok, c, h.late(ctx))
 	if !ok || len(fills) > 0 {
 		cur = h.st.update(k, func(r ring) ring {
 			r.calls = put(r.calls, fills, true)
@@ -95,11 +111,10 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 // missing reads, from the call's messages, the ring entries the session lacks: all of them when it has no
 // ring, else the indexes above the newest it knows (at most RingDepth back) and the previous call's entry
 // when it is empty.
-func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call) []contract.CallSummary {
+func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call, late func() bool) []contract.CallSummary {
 	n, msgs := c.Session.Calls, window(c.Messages)
-	never := func() bool { return false }
 	if !ok {
-		fills := readBack(msgs, n, n-RingDepth, n-1, func(int) bool { return true }, never)
+		fills := readBack(msgs, n, n-RingDepth, n-1, func(int) bool { return true }, late)
 		h.read.Add(int64(len(fills)))
 		if len(fills) > 0 {
 			h.rebuilt.Add(1)
@@ -115,7 +130,7 @@ func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call) []contract.CallSumma
 	if heal {
 		from = min(lo, n-1)
 	}
-	fills := readBack(msgs, n, from, n-1, func(i int) bool { return i >= lo || (heal && i == n-1) }, never)
+	fills := readBack(msgs, n, from, n-1, func(i int) bool { return i >= lo || (heal && i == n-1) }, late)
 	h.read.Add(int64(len(fills)))
 	switch {
 	case len(fills) == 0:
@@ -125,6 +140,29 @@ func (h *Hook) missing(cur ring, ok bool, c *tollgate.Call) []contract.CallSumma
 		h.healed.Add(1)
 	}
 	return fills
+}
+
+// late returns the deadline check readBack asks before each turn it parses: true once the chain's
+// deadline is nearer than MinDeadline. The first time it is true is counted (skipped_deadline when the
+// read had not started, cut_deadline when it stops a read part way).
+func (h *Hook) late(ctx context.Context) func() bool {
+	d, ok := ctx.Deadline()
+	if !ok {
+		return func() bool { return false }
+	}
+	asked := false
+	return func() bool {
+		if d.Sub(h.opt.Now()) >= h.opt.MinDeadline {
+			asked = true
+			return false
+		}
+		if asked {
+			h.cut.Add(1)
+		} else {
+			h.skipped.Add(1)
+		}
+		return true
+	}
 }
 
 // emptyAt reports whether the ring holds an entry for call index i with no content.
@@ -193,5 +231,6 @@ func (h *Hook) Status() map[string]any {
 	return map[string]any{
 		"sessions": h.st.size(), "bytes": h.st.held(), "evicted": h.evicted.Load(), "evicted_bytes": h.evictedB.Load(), "rebuilt": h.rebuilt.Load(),
 		"appended": h.appended.Load(), "healed": h.healed.Load(), "caught_up": h.caughtUp.Load(), "turns_read": h.read.Load(),
+		"skipped_deadline": h.skipped.Load(), "cut_deadline": h.cut.Load(),
 	}
 }

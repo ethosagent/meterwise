@@ -1,12 +1,15 @@
 package history_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ethosagent/tollgate"
 
@@ -391,5 +394,38 @@ func TestRingsStayWithinTheByteBudget(t *testing.T) {
 	h.OnSessionClosed(bg, tollgate.Session{ID: "199", TenantID: "ws"})
 	if after := h.Status()["bytes"].(int64); after >= st["bytes"].(int64) {
 		t.Errorf("closing a session must release its bytes: %d -> %d", st["bytes"], after)
+	}
+}
+
+// m1: history's Before has its own deadline check. With the chain's deadline nearer than MinDeadline it
+// reads nothing (counted) and still stamps Meta; a read that reaches the margin mid-way stops there,
+// keeping the newest turns it already read.
+func TestBeforeStopsReadingAtItsDeadline(t *testing.T) {
+	var msgs []tollgate.Message
+	for i := 0; i < 20; i++ {
+		msgs = append(msgs, asst("", tc(fmt.Sprint(i), "grep", fmt.Sprintf(`{"i":%d}`, i))), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: fmt.Sprint(i), Text: "r"})
+	}
+	base := time.Now().Add(time.Hour)
+	ctx, cancel := context.WithDeadline(bg, base.Add(10*time.Millisecond))
+	defer cancel()
+
+	late := history.New(history.Options{Now: func() time.Time { return base.Add(6 * time.Millisecond) }, MinDeadline: 5 * time.Millisecond})
+	c := newCall("ws", "s", 21, msgs...)
+	late.Before(ctx, c)
+	if got := ringOf(t, c); len(got) != 0 || late.Status()["skipped_deadline"] != int64(1) || late.Status()["turns_read"] != int64(0) {
+		t.Fatalf("ring %d entries, status %v: a late Before must read nothing", len(got), late.Status())
+	}
+	if _, ok := c.Meta[contract.MetaMonitors].(*contract.CallVerdicts); !ok {
+		t.Error("a late Before still stamps the verdict pointer")
+	}
+
+	var ticks atomic.Int64 // every clock read moves 1 ms on
+	clock := func() time.Time { return base.Add(time.Duration(ticks.Add(1)-1) * time.Millisecond) }
+	partial := history.New(history.Options{Now: clock, MinDeadline: 5 * time.Millisecond})
+	c = newCall("ws", "s", 21, msgs...)
+	partial.Before(ctx, c)
+	got := ringOf(t, c)
+	if len(got) == 0 || len(got) >= 20 || got[len(got)-1].Index != 20 {
+		t.Fatalf("a read cut by the deadline keeps the newest turns: %d entries, newest %v", len(got), got)
 	}
 }
