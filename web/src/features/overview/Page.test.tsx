@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PermissionSnapshot } from "../../contract/generated";
 import {
   OVERVIEW_ACTIVE,
@@ -90,6 +90,19 @@ describe("OverviewPage causes and chart", () => {
     expect(
       await screen.findByRole("img", { name: /Spend by UTC day, 2026-11-04 to 2026-11-10/ }),
     ).toBeInTheDocument();
+  });
+
+  it("asks for the biggest saves while the overview is still loading (no waterfall)", async () => {
+    const api = mockApi();
+    const served = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+      /\/savings\/overview/.test(String(input))
+        ? new Promise<Response>(() => undefined)
+        : served(input, init),
+    );
+    renderAt(<OverviewPage />, PATH);
+    await waitFor(() => expect(api.callsTo("GET", /\/savings\/saves\?/)).toHaveLength(1));
+    expect(screen.queryByTestId("hero-saved")).toBeNull(); // the overview is still pending
   });
 
   it("offers the observe-mode upsell and explains how it counts", async () => {
@@ -216,13 +229,12 @@ describe("OverviewPage empty states and access", () => {
   });
 
   it("collecting says the monitors are observing and shows would-save", async () => {
-    const api = mockApi({ savings: { overview: OVERVIEW_COLLECTING } });
+    mockApi({ savings: { overview: OVERVIEW_COLLECTING } });
     renderAt(<OverviewPage />, PATH);
     expect(await screen.findByText(/Collecting: your monitors are observing/)).toBeInTheDocument();
     expect(screen.getByText(/Observe mode found \$0\.40/)).toBeInTheDocument();
     expect(screen.getByTestId("hero-saved")).toHaveTextContent("$0.00");
     expect(screen.getByText("Duplicate tool call would save $0.40")).toBeInTheDocument();
-    expect(api.callsTo("GET", /savings\/saves/)).toHaveLength(0);
   });
 
   it("without savings:read shows no access and asks for no savings data", async () => {
