@@ -256,8 +256,7 @@ func TestStreamDetectorsAddNothingToTTFB(t *testing.T) {
 		base.ttfb(t, i)
 		with.ttfb(t, i)
 	}
-	added := time.Hour
-	var pb, pw time.Duration
+	var pbs, pws []time.Duration // the p50 of each trial, per rig
 	trials, n := 5, 300
 	if instrumented() {
 		trials, n = 2, 100
@@ -267,13 +266,27 @@ func TestStreamDetectorsAddNothingToTTFB(t *testing.T) {
 		for i := 0; i < n; i++ {
 			db, dw = append(db, base.ttfb(t, i)), append(dw, with.ttfb(t, i))
 		}
-		if d := pct(dw, 0.5) - pct(db, 0.5); d < added {
-			added, pb, pw = d, pct(db, 0.5), pct(dw, 0.5)
-		}
+		pbs, pws = append(pbs, pct(db, 0.5)), append(pws, pct(dw, 0.5))
 	}
+	pb, pw, added := pct(pbs, 0.5), pct(pws, 0.5), addedMedian(pbs, pws)
 	t.Logf("TTFB p50: history only %v, history+monitors %v, added %v", pb, pw, added)
 	if added >= scaled(time.Millisecond) {
 		t.Fatalf("monitors added %v to the median TTFB", added)
+	}
+}
+
+// addedMedian is the cost the monitors add: the median of the per-trial p50s with them minus the same
+// without. Taking each rig's median apart (not the best of the per-trial differences) keeps one trial
+// whose base rig absorbed noise from shrinking the difference.
+func addedMedian(base, with []time.Duration) time.Duration { return pct(with, 0.5) - pct(base, 0.5) }
+
+func TestAddedMedianIsNotTheBestTrial(t *testing.T) {
+	ms := time.Millisecond
+	// the monitors cost 5 ms in four trials; in the fifth the base rig was slowed by noise (9 ms vs 8 ms)
+	base := []time.Duration{3 * ms, 3 * ms, 3 * ms, 3 * ms, 9 * ms}
+	with := []time.Duration{8 * ms, 8 * ms, 8 * ms, 8 * ms, 8 * ms}
+	if got := addedMedian(base, with); got != 5*ms {
+		t.Fatalf("added = %v, want 5ms (a min of per-trial differences would say -1ms)", got)
 	}
 }
 
