@@ -2,15 +2,23 @@
 -- The only INSERT into calls (H4). One statement for a whole batch (a JSON array of call objects),
 -- idempotent on the tollgate call id: a repeat inserts nothing and returns no id, which is how the
 -- ledger knows not to count the call into its session twice. A missing "cost" is NULL (a model with no
--- price). Money converts from micro-USD to numeric(14,6) here; "startedUs" is unix microseconds.
+-- price). Money converts from micro-USD to numeric(14,6) here; "startedUs" is unix microseconds. The saver fields
+-- (plans 09-11) are NULL or 0 for a call no saver touched: "trimAction"/"trimConfidence"/"routerAction" ''/missing is
+-- NULL; "savedTrim" and "savedRouter" are micro-USD of the action's class (certain or likely money when it acted,
+-- would-save when it only observed).
 INSERT INTO calls (id, org_id, workspace_id, session_id, call_index, started_at, provider, model, wire, stream, status, finish,
                    input_tokens, output_tokens, cached_tokens, reasoning_tokens, cost_usd, ttfb_ms, duration_ms, tool_calls,
-                   blocked, notes_injected, client)
+                   blocked, notes_injected, client, trim_action, trim_confidence, trim_tokens, saved_usd_trim, router_action,
+                   routed_from, routed_to, router_score_bp, saved_usd_router, hint_injected)
 SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', (r.j->>'callIndex')::int,
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'provider', r.j->>'model', r.j->>'wire',
        (r.j->>'stream')::bool, (r.j->>'status')::int, r.j->>'finish', (r.j->>'input')::bigint, (r.j->>'output')::bigint,
        (r.j->>'cached')::bigint, (r.j->>'reasoning')::bigint, (r.j->>'cost')::numeric / 1000000, (r.j->>'ttfbMs')::int,
-       (r.j->>'durationMs')::int, COALESCE(r.j->'toolCalls', '[]'::jsonb), (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', '')
+       (r.j->>'durationMs')::int, COALESCE(r.j->'toolCalls', '[]'::jsonb), (r.j->>'blocked')::bool, (r.j->>'notesInjected')::int, NULLIF(r.j->>'client', ''),
+       NULLIF(r.j->>'trimAction', ''), NULLIF(r.j->>'trimConfidence', ''), COALESCE((r.j->>'trimTokens')::bigint, 0),
+       COALESCE((r.j->>'savedTrim')::numeric, 0) / 1000000, NULLIF(r.j->>'routerAction', ''), NULLIF(r.j->>'routedFrom', ''),
+       NULLIF(r.j->>'routedTo', ''), (r.j->>'routerScoreBp')::int, COALESCE((r.j->>'savedRouter')::numeric, 0) / 1000000,
+       COALESCE((r.j->>'hintInjected')::bool, false)
 FROM jsonb_array_elements(sqlc.arg(calls_json)::jsonb) AS r(j)
 ON CONFLICT (id) DO NOTHING
 RETURNING id;
@@ -22,15 +30,18 @@ RETURNING id;
 -- session. started_at is the keyset sort key of the session list: set by the first insert, never changed. A missing
 -- "cost" is NULL (all calls unpriced). "saved" and "likely" are the two savings numbers of the inserted calls (monitor
 -- events that acted, by confidence; never summed, never observe). Money converts from micro-USD to numeric(14,6)
--- here; times are unix microseconds.
+-- here; times are unix microseconds. "trimTokens", "routedCalls" and "hints" are the saver totals of the inserted calls;
+-- "saved" and "likely" already include acted trim (by confidence) and routed savings.
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
-                      client, first_user_message_preview, last_finish, last_had_text, saved_usd, likely_saved_usd)
+                      client, first_user_message_preview, last_finish, last_had_text, saved_usd, likely_saved_usd,
+                      trim_tokens, routed_calls, hints)
 SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'source',
        timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond',
        timestamptz 'epoch' + (r.j->>'lastSeenUs')::bigint * interval '1 microsecond',
        (r.j->>'calls')::int, (r.j->>'input')::bigint, (r.j->>'output')::bigint, (r.j->>'cost')::numeric / 1000000,
        NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool,
-       (r.j->>'saved')::numeric / 1000000, (r.j->>'likely')::numeric / 1000000
+       (r.j->>'saved')::numeric / 1000000, (r.j->>'likely')::numeric / 1000000,
+       COALESCE((r.j->>'trimTokens')::bigint, 0), COALESCE((r.j->>'routedCalls')::int, 0), COALESCE((r.j->>'hints')::int, 0)
 FROM jsonb_array_elements(sqlc.arg(sessions_json)::jsonb) AS r(j)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
     calls = sessions.calls + EXCLUDED.calls,
@@ -38,6 +49,9 @@ ON CONFLICT (workspace_id, id) DO UPDATE SET
     output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
     saved_usd = sessions.saved_usd + EXCLUDED.saved_usd,
     likely_saved_usd = sessions.likely_saved_usd + EXCLUDED.likely_saved_usd,
+    trim_tokens = sessions.trim_tokens + EXCLUDED.trim_tokens,
+    routed_calls = sessions.routed_calls + EXCLUDED.routed_calls,
+    hints = sessions.hints + EXCLUDED.hints,
     cost_usd = CASE WHEN sessions.cost_usd IS NULL AND EXCLUDED.cost_usd IS NULL THEN NULL
                     ELSE COALESCE(sessions.cost_usd, 0) + COALESCE(EXCLUDED.cost_usd, 0) END,
     client = COALESCE(sessions.client, EXCLUDED.client),
@@ -89,3 +103,16 @@ SET feedback = sqlc.narg(feedback)::text
 WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND id = sqlc.arg(id)::bigint
 RETURNING id, org_id::text AS org_id, workspace_id::text AS workspace_id, session_id, call_id, call_index, ts, monitor, mode, action,
           evidence, est_saved_tokens, (est_saved_usd * 1000000)::bigint AS est_saved_micro, confidence, feedback, created_at;
+
+-- name: InsertTrimEvents :exec
+-- The only INSERT into trim_events (H4): one row per non-reverted trim stage of the calls a batch really inserted (a JSON
+-- array of stage objects), idempotent on (workspace_id, call_id, stage). ts is the call's start; sizes and the token
+-- estimate only, never request text.
+INSERT INTO trim_events (org_id, workspace_id, session_id, call_id, ts, stage, tool_name, regions, bytes_before, bytes_after,
+                         est_tokens, reverted, action)
+SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId',
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond', r.j->>'stage', NULLIF(r.j->>'tool', ''),
+       (r.j->>'regions')::int, (r.j->>'bytesBefore')::int, (r.j->>'bytesAfter')::int, (r.j->>'estTokens')::bigint,
+       (r.j->>'reverted')::bool, r.j->>'action'
+FROM jsonb_array_elements(sqlc.arg(events_json)::jsonb) AS r(j)
+ON CONFLICT (workspace_id, call_id, stage) DO NOTHING;

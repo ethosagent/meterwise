@@ -109,6 +109,9 @@ type queue struct {
 	// blocksDowngraded counts block verdicts on a call that already had usage (the upstream was reached first);
 	// invalidVerdicts counts verdicts dropped for a name, mode or action outside the fixed sets.
 	blocksDowngraded, invalidVerdicts atomic.Int64
+	// trimUnpriced and routerUnpriced count saver savings left at 0 because a model had no price; invalidSaverMeta
+	// counts trim or router results dropped for a value outside the fixed sets (they would break the table CHECKs).
+	trimUnpriced, routerUnpriced, invalidSaverMeta atomic.Int64
 
 	// refused counts calls refused before the upstream, indexed by HTTP status (a status outside 0..599 is 0).
 	refused [maxStatus]atomic.Int64

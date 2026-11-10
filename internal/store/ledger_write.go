@@ -27,6 +27,10 @@ type sessionAgg struct {
 	in, out   int64
 	costMicro int64
 	priced    bool
+	// saver totals of the batch's calls (plans 09-11); acted trim and routed money is already in saved/likely below.
+	trimTokens  int64
+	routedCalls int32
+	hints       int32
 	// saved and likely are the two savings numbers of the batch's calls (R6): verdicts that acted, by confidence.
 	savedMicro, likelyMicro int64
 	preview                 string
@@ -68,6 +72,9 @@ func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (Wri
 		if err != nil {
 			return err
 		}
+		if err := writeTrimEvents(ctx, q, fresh); err != nil {
+			return err
+		}
 		return s.writeSessions(ctx, q, counted)
 	})
 	if err != nil {
@@ -101,6 +108,7 @@ type callJSON struct {
 	Blocked       bool     `json:"blocked"`
 	NotesInjected int32    `json:"notesInjected"`
 	Client        string   `json:"client"`
+	saverCall
 }
 
 func callJSONs(recs []contract.CallRecord) []callJSON {
@@ -116,7 +124,7 @@ func callJSONs(recs []contract.CallRecord) []callJSON {
 			StartedUs: r.StartedAt.UnixMicro(), Provider: r.Provider, Model: r.Model, Wire: r.Wire, Stream: r.Stream,
 			Status: clampInt32(int64(r.Status)), Finish: r.Finish, Input: r.Usage.Input, Output: r.Usage.Output, Cached: r.Usage.Cached,
 			Reasoning: r.Usage.Reasoning, Cost: cost, TTFBMs: clampInt32(r.TTFBMs), DurationMs: clampInt32(r.DurationMs), ToolCalls: r.ToolCalls,
-			Blocked: r.Blocked, NotesInjected: clampInt32(int64(r.NotesInjected)), Client: r.Client,
+			Blocked: r.Blocked, NotesInjected: clampInt32(int64(r.NotesInjected)), Client: r.Client, saverCall: saverCallOf(r),
 		}
 	}
 	return out
@@ -175,6 +183,7 @@ func (a *sessionAgg) add(r contract.CallRecord, end time.Time) {
 			a.likelyMicro += int64(v.EstUSD)
 		}
 	}
+	a.addSavers(r)
 	if a.preview == "" {
 		a.preview = r.Preview
 	}
@@ -201,6 +210,7 @@ type sessionJSON struct {
 	LastHadText bool   `json:"lastHadText"`
 	Saved       int64  `json:"saved"`
 	Likely      int64  `json:"likely"`
+	saverSession
 }
 
 func (a *sessionAgg) json(k sessionKey) sessionJSON {
@@ -212,7 +222,7 @@ func (a *sessionAgg) json(k sessionKey) sessionJSON {
 		ID: k.id, OrgID: a.rec.OrgID, WorkspaceID: k.ws, Source: a.rec.SessionSource, StartedUs: a.started.UnixMicro(),
 		LastSeenUs: a.lastSeen.UnixMicro(), Calls: clampInt32(int64(a.calls)), Input: a.in, Output: a.out, Cost: cost,
 		Client: a.client, Preview: a.preview, LastFinish: a.rec.Finish, LastHadText: a.rec.LastHadText,
-		Saved: a.savedMicro, Likely: a.likelyMicro,
+		Saved: a.savedMicro, Likely: a.likelyMicro, saverSession: saverSession{TrimTokens: a.trimTokens, RoutedCalls: a.routedCalls, Hints: a.hints},
 	}
 }
 

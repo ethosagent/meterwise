@@ -135,6 +135,7 @@ func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
 		return
 	}
 	h.attachVerdicts(c, m, &rec)
+	h.attachSavers(c, m, &rec)
 	h.q.enqueue(item{call: &rec})
 }
 
