@@ -296,3 +296,72 @@ func TestRingIsLeftAloneWhenTheRequestCarriesFewerTurns(t *testing.T) {
 		t.Fatalf("ring %+v status %v", got, h.Status())
 	}
 }
+
+// B2: the catch-up compares the call index with the newest index the ring knows, works past RingDepth, and
+// parses only the missing turn.
+func TestCatchUpPastRingDepthReadsOnlyTheMissingTurn(t *testing.T) {
+	h := history.New(history.Options{})
+	user := tollgate.Message{Role: tollgate.RoleUser, Text: "task"}
+	msgs := []tollgate.Message{user}
+	for i := 1; i <= 70; i++ {
+		args := fmt.Sprintf(`{"q":%d}`, i)
+		if i < 70 {
+			run(t, h, newCall("ws", "s", i, msgs...), 1, 1, toolDelta(0, "grep", args))
+		}
+		id := fmt.Sprint(i)
+		msgs = append(msgs, asst("", tc(id, "grep", args)), tollgate.Message{Role: tollgate.RoleTool, ToolCallID: id, Text: "r"})
+	}
+	// call 70 was answered but its After has not run; call 71 arrives
+	read := h.Status()["turns_read"].(int64)
+	c := newCall("ws", "s", 71, msgs...)
+	h.Before(bg, c)
+	got := ringOf(t, c)
+	if len(got) != history.RingDepth || got[0].Index != 21 || got[len(got)-1].Index != 70 {
+		t.Fatalf("ring len %d first %d last %d", len(got), got[0].Index, got[len(got)-1].Index)
+	}
+	if got[len(got)-1].ArgsHashes[0] != contract.ToolArgsHash("grep", []byte(`{"q":70}`)) {
+		t.Error("index 70 must hold call 70's turn")
+	}
+	if n := h.Status()["turns_read"].(int64) - read; n != 1 {
+		t.Errorf("turns read for the catch-up = %d, want 1 (incremental)", n)
+	}
+}
+
+// A call that failed upstream has no turn in the next request: its index must not be filled from another
+// turn (which would duplicate it).
+func TestFailedCallIndexIsNotFilledFromAnotherTurn(t *testing.T) {
+	h := history.New(history.Options{})
+	user := tollgate.Message{Role: tollgate.RoleUser, Text: "task"}
+	run(t, h, newCall("ws", "s", 1, user), 1, 1, toolDelta(0, "grep", `{"q":1}`))
+	turn1 := []tollgate.Message{user, asst("", tc("1", "grep", `{"q":1}`)), {Role: tollgate.RoleTool, ToolCallID: "1", Text: "r"}}
+	c2 := newCall("ws", "s", 2, turn1...)
+	h.Before(bg, c2)
+	h.After(bg, c2, tollgate.Metric{Finish: tollgate.FinishUpstreamError, Status: 529})
+	c3 := newCall("ws", "s", 3, turn1...) // the client retries with the same messages
+	h.Before(bg, c3)
+	if got := ringOf(t, c3); len(got) != 1 || got[0].Index != 1 {
+		t.Fatalf("ring after a failed call = %+v, want only call 1", got)
+	}
+}
+
+// A late After with no content (a call answered without a stream) keeps what the catch-up found, and takes
+// its token counts.
+func TestLateEmptyAfterKeepsTheCaughtUpTurn(t *testing.T) {
+	h := history.New(history.Options{})
+	user := tollgate.Message{Role: tollgate.RoleUser, Text: "task"}
+	run(t, h, newCall("ws", "s", 1, user), 1, 1, toolDelta(0, "grep", `{"q":1}`))
+	c2 := newCall("ws", "s", 2, user)
+	h.Before(bg, c2)
+	msgs := []tollgate.Message{user, asst("", tc("1", "grep", `{"q":1}`)), {Role: tollgate.RoleTool, ToolCallID: "1", Text: "r"},
+		asst("", tc("2", "grep", `{"q":2}`)), {Role: tollgate.RoleTool, ToolCallID: "2", Text: "r"}}
+	c3 := newCall("ws", "s", 3, msgs...)
+	h.Before(bg, c3) // catches index 2 up
+	h.After(bg, c2, tollgate.Metric{Finish: tollgate.FinishOK, Status: 200, Usage: tollgate.Usage{InputTokens: 42}})
+	h.After(bg, c3, tollgate.Metric{Finish: tollgate.FinishUpstreamError, Status: 500})
+	c4 := newCall("ws", "s", 4, msgs...)
+	h.Before(bg, c4)
+	got := ringOf(t, c4)
+	if len(got) != 2 || got[1].Index != 2 || len(got[1].Tools) != 1 || got[1].Input != 42 {
+		t.Fatalf("ring = %+v", got)
+	}
+}

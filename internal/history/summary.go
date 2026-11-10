@@ -72,55 +72,44 @@ func fromMessage(m tollgate.Message) *turn {
 	return t
 }
 
-// rebuild derives a session's ring from the request's own messages: one entry per assistant turn,
-// newest last, indexed backwards from the current call. Token counts are unknown (0).
-func rebuild(c *tollgate.Call) []contract.CallSummary {
-	msgs := c.Messages
+// window is what a ring is read from: the request's newest maxRebuildMessages messages, without a
+// trailing assistant message, which is a prefill (the client starts the answer it asks for), not a turn.
+func window(msgs []tollgate.Message) []tollgate.Message {
+	if n := len(msgs); n > 0 && msgs[n-1].Role == tollgate.RoleAssistant {
+		msgs = msgs[:n-1]
+	}
 	if len(msgs) > maxRebuildMessages {
 		msgs = msgs[len(msgs)-maxRebuildMessages:]
 	}
+	return msgs
+}
+
+// readBack reduces the assistant turns of msgs, newest first, to ring entries: the k-th newest is call
+// index calls-k (the request carries every earlier call's turn, the newest last). Only indexes in
+// [lo, hi] that want accepts are parsed, and the walk stops below lo, so a catch-up parses only the
+// turns it misses. stop is asked before each parse; true ends the walk (the deadline). Token counts of
+// the entries are unknown (0).
+func readBack(msgs []tollgate.Message, calls, lo, hi int, want func(int) bool, stop func() bool) []contract.CallSummary {
 	var out []contract.CallSummary
-	for i := len(msgs) - 1; i >= 0 && len(out) < RingDepth; i-- {
-		if msgs[i].Role == tollgate.RoleAssistant {
-			out = append(out, fromMessage(msgs[i]).summary())
+	k := 0
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != tollgate.RoleAssistant {
+			continue
 		}
-	}
-	slices.Reverse(out)
-	for i := range out {
-		out[i].Index = max(1, c.Session.Calls-len(out)+i)
-		if i < len(out)-ringShingles {
-			out[i].Shingles = nil
+		k++
+		idx := calls - k
+		if idx < lo {
+			break
 		}
-	}
-	return out
-}
-
-// assistantTurns counts the assistant messages in the rebuild window of c.
-func assistantTurns(c *tollgate.Call) int {
-	msgs := c.Messages
-	if len(msgs) > maxRebuildMessages {
-		msgs = msgs[len(msgs)-maxRebuildMessages:]
-	}
-	n := 0
-	for i := range msgs {
-		if msgs[i].Role == tollgate.RoleAssistant {
-			n++
+		if idx > hi || !want(idx) {
+			continue
 		}
-	}
-	return n
-}
-
-// extend returns cur plus the turns it misses, taken from the newest assistant messages of c and
-// indexed backwards from the current call. Token counts of the new entries are unknown (0).
-func extend(cur []contract.CallSummary, c *tollgate.Call) []contract.CallSummary {
-	missing := min(assistantTurns(c), RingDepth) - len(cur)
-	fresh := rebuild(c)
-	if missing <= 0 || len(fresh) < missing {
-		return cur
-	}
-	out := cur
-	for _, s := range fresh[len(fresh)-missing:] {
-		out = appendCall(out, s)
+		if stop() {
+			break
+		}
+		s := fromMessage(msgs[i]).summary()
+		s.Index = idx
+		out = append(out, s)
 	}
 	return out
 }
