@@ -129,6 +129,7 @@ func (rt *instance) startLedger(ctx context.Context) (*ledger.Hook, error) {
 	pctx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	rt.stopPricing = stop
 	go loader.Run(pctx)
+	rt.db.SetLogger(rt.log)
 	hook, err := ledger.New(ctx, ledger.Options{Writer: rt.db, Pricer: pricer, PrivacyMode: &rt.cfg.PrivacyMode, Log: rt.log})
 	if err != nil {
 		return nil, fmt.Errorf("ledger: %w", err)

@@ -82,3 +82,16 @@ func adminExec(t testing.TB, dsn string, stmts ...string) {
 		}
 	}
 }
+
+// The store's count of unreadable tool_calls values is on /statusz through the ledger's status.
+func TestStatusCarriesTheStoresUnreadableToolCallsCount(t *testing.T) {
+	s, _ := pgStore(t)
+	h := newHook(t, s, nil)
+	t.Cleanup(func() { _ = h.Close(context.Background()) })
+	if v, ok := h.Status()["unreadable_tool_calls"]; !ok || v != int64(0) {
+		t.Fatalf("status = %v", h.Status())
+	}
+	if _, ok := newHook(t, &fakeWriter{}, nil).Status()["unreadable_tool_calls"]; ok {
+		t.Fatal("a writer that cannot count them must not report a count")
+	}
+}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,7 @@ type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
 
+	log          atomic.Pointer[slog.Logger]
 	badTools     atomic.Int64 // unreadable calls.tool_calls values seen by Session
 	badToolsOnce sync.Once
 }

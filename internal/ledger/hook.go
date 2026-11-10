@@ -157,7 +157,14 @@ func (h *Hook) OnSessionClosed(_ context.Context, s tollgate.Session) {
 func (h *Hook) Close(ctx context.Context) error { return h.q.close(ctx) }
 
 // Status reports the queue and its counters for /statusz (it implements contract.StatusSource).
-func (h *Hook) Status() map[string]any { return h.q.status() }
+func (h *Hook) Status() map[string]any {
+	st := h.q.status()
+	// stored tool_calls values the store could not read (the store counts them; the Writer may not be the store)
+	if w, ok := h.opt.Writer.(interface{ UnreadableToolCalls() int64 }); ok {
+		st["unreadable_tool_calls"] = w.UnreadableToolCalls()
+	}
+	return st
+}
 
 // record builds the calls row from the neutral Call and Metric. It reports false for a call that
 // cannot be attributed to a workspace (no tenant uuid or org: the dev NoAuth tenant).

@@ -48,8 +48,10 @@ func TestUnreadableToolCallsAreCountedAndLoggedOnce(t *testing.T) {
 	}
 	adminExec(t, dsn, `UPDATE calls SET tool_calls = '{"not":"an array"}'::jsonb WHERE id = 'c1'`)
 	var logs bytes.Buffer
+	s.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+	var global bytes.Buffer
 	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&global, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	for range 2 {
 		_, calls, err := s.Session(ctx, ws, "s1")
@@ -62,5 +64,8 @@ func TestUnreadableToolCallsAreCountedAndLoggedOnce(t *testing.T) {
 	}
 	if n := strings.Count(logs.String(), "tool_calls"); n != 1 {
 		t.Fatalf("logged %d times, want once:\n%s", n, logs.String())
+	}
+	if global.Len() != 0 {
+		t.Fatalf("the store wrote to slog.Default: %s", global.String())
 	}
 }
