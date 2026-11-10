@@ -253,39 +253,40 @@ func (q *Queries) ListSessions(ctx context.Context, arg ListSessionsParams) ([]L
 	return items, nil
 }
 
-const statsByDay = `-- name: StatsByDay :many
+const stats = `-- name: Stats :many
 SELECT (started_at AT TIME ZONE 'UTC')::date AS day, (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spend_micro,
        COUNT(*)::bigint AS calls, COUNT(DISTINCT session_id)::bigint AS sessions
 FROM calls
 WHERE workspace_id = $1::text::uuid
   AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-GROUP BY 1
-ORDER BY 1
+GROUP BY GROUPING SETS (((started_at AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST
 `
 
-type StatsByDayParams struct {
+type StatsParams struct {
 	WorkspaceID string
 	FromTs      pgtype.Timestamptz
 	ToTs        pgtype.Timestamptz
 }
 
-type StatsByDayRow struct {
+type StatsRow struct {
 	Day        pgtype.Date
 	SpendMicro int64
 	Calls      int64
 	Sessions   int64
 }
 
-// Per UTC day of [from_ts, to_ts): spend (priced calls only), calls and distinct sessions.
-func (q *Queries) StatsByDay(ctx context.Context, arg StatsByDayParams) ([]StatsByDayRow, error) {
-	rows, err := q.db.Query(ctx, statsByDay, arg.WorkspaceID, arg.FromTs, arg.ToTs)
+// Per UTC day of [from_ts, to_ts) (spend over priced calls only, calls, distinct sessions) plus one totals row,
+// the row whose day is NULL (the empty grouping set always yields a row, even for no calls).
+func (q *Queries) Stats(ctx context.Context, arg StatsParams) ([]StatsRow, error) {
+	rows, err := q.db.Query(ctx, stats, arg.WorkspaceID, arg.FromTs, arg.ToTs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []StatsByDayRow
+	var items []StatsRow
 	for rows.Next() {
-		var i StatsByDayRow
+		var i StatsRow
 		if err := rows.Scan(
 			&i.Day,
 			&i.SpendMicro,
@@ -300,31 +301,4 @@ func (q *Queries) StatsByDay(ctx context.Context, arg StatsByDayParams) ([]Stats
 		return nil, err
 	}
 	return items, nil
-}
-
-const statsTotals = `-- name: StatsTotals :one
-SELECT (COALESCE(SUM(cost_usd), 0) * 1000000)::bigint AS spend_micro, COUNT(*)::bigint AS calls,
-       COUNT(DISTINCT session_id)::bigint AS sessions
-FROM calls
-WHERE workspace_id = $1::text::uuid
-  AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
-`
-
-type StatsTotalsParams struct {
-	WorkspaceID string
-	FromTs      pgtype.Timestamptz
-	ToTs        pgtype.Timestamptz
-}
-
-type StatsTotalsRow struct {
-	SpendMicro int64
-	Calls      int64
-	Sessions   int64
-}
-
-func (q *Queries) StatsTotals(ctx context.Context, arg StatsTotalsParams) (StatsTotalsRow, error) {
-	row := q.db.QueryRow(ctx, statsTotals, arg.WorkspaceID, arg.FromTs, arg.ToTs)
-	var i StatsTotalsRow
-	err := row.Scan(&i.SpendMicro, &i.Calls, &i.Sessions)
-	return i, err
 }

@@ -134,17 +134,17 @@ func (s *Store) Stats(ctx context.Context, workspaceID string, from, to time.Tim
 	if !validID(workspaceID) {
 		return contract.Stats{}, contract.Invalid("workspaceId", "must be a workspace id")
 	}
-	tot, err := s.q.StatsTotals(ctx, sqlc.StatsTotalsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
+	rows, err := s.q.Stats(ctx, sqlc.StatsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
 	if err != nil {
 		return contract.Stats{}, queryErr(err)
 	}
-	days, err := s.q.StatsByDay(ctx, sqlc.StatsByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)})
-	if err != nil {
-		return contract.Stats{}, queryErr(err)
-	}
-	st := contract.Stats{Spend: contract.MicroUSD(tot.SpendMicro), Calls: int(tot.Calls), Sessions: int(tot.Sessions)}
-	for _, d := range days {
-		st.ByDay = append(st.ByDay, contract.StatsDay{Day: d.Day.Time.UTC(), Spend: contract.MicroUSD(d.SpendMicro), Calls: int(d.Calls), Sessions: int(d.Sessions)})
+	var st contract.Stats
+	for _, r := range rows {
+		if !r.Day.Valid { // the totals row
+			st.Spend, st.Calls, st.Sessions = contract.MicroUSD(r.SpendMicro), int(r.Calls), int(r.Sessions)
+			continue
+		}
+		st.ByDay = append(st.ByDay, contract.StatsDay{Day: r.Day.Time.UTC(), Spend: contract.MicroUSD(r.SpendMicro), Calls: int(r.Calls), Sessions: int(r.Sessions)})
 	}
 	return st, nil
 }
