@@ -30,7 +30,15 @@ type callState struct {
 	buf    []byte // answer text
 	reason []byte // reasoning text
 	tools  map[int]*streamTool
-	args   int // argument bytes kept, across tools
+	args   int         // argument bytes kept, across tools
+	snap   *streamSnap // the snapshot of what is collected so far; nil after any event
+}
+
+// streamSnap is what the stream detectors read: the answer text, the reasoning, and the named tool calls in
+// call order. After takes it once for both detectors.
+type streamSnap struct {
+	text, reasoning string
+	tools           []streamTool
 }
 
 // streamTool is one tool call of the response, reassembled by index.
@@ -59,6 +67,7 @@ func appendCapped(dst []byte, s string) []byte {
 func (s *callState) event(e tollgate.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.snap = nil
 	switch e.Kind {
 	case tollgate.EventTextDelta:
 		s.buf = appendCapped(s.buf, e.Text)
@@ -86,19 +95,32 @@ func (s *callState) event(e tollgate.Event) {
 	}
 }
 
-// snapshot returns the collected answer text, the reasoning, and the named tool calls in call order.
-func (s *callState) snapshot() (text, reasoning string, tools []streamTool) {
+// snapshot returns the collected answer text, the reasoning, and the named tool calls in call order. The
+// result is built once and shared until the next event; callers must not modify it.
+func (s *callState) snapshot() *streamSnap {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.snap != nil {
+		return s.snap
+	}
 	idx := make([]int, 0, len(s.tools))
 	for i := range s.tools {
 		idx = append(idx, i)
 	}
 	slices.Sort(idx)
+	snap := &streamSnap{text: string(s.buf), reasoning: string(s.reason)}
 	for _, i := range idx {
 		if t := s.tools[i]; t.name != "" {
-			tools = append(tools, streamTool{name: t.name, args: slices.Clone(t.args)})
+			snap.tools = append(snap.tools, streamTool{name: t.name, args: slices.Clone(t.args)})
 		}
 	}
-	return string(s.buf), string(s.reason), tools
+	s.snap = snap
+	return snap
+}
+
+// empty reports whether the call collected nothing a stream detector could read.
+func (s *callState) empty() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.buf) == 0 && len(s.reason) == 0 && len(s.tools) == 0
 }

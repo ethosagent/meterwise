@@ -43,20 +43,12 @@ func newRead(prev, cur contract.CallSummary) bool {
 // similarity is the percentage two turns' texts agree and whether it could be measured.
 func similarity(a, b contract.CallSummary) (int, bool) {
 	if len(a.Shingles) > 0 && len(b.Shingles) > 0 {
-		return jaccardPct(hashSet(a.Shingles), hashSet(b.Shingles)), true
+		return jaccardPct(sortedSet(a.Shingles), sortedSet(b.Shingles)), true
 	}
 	if a.TextHash != 0 && a.TextHash == b.TextHash {
 		return 100, true
 	}
 	return 0, false
-}
-
-func hashSet(h []uint64) map[uint64]struct{} {
-	set := make(map[uint64]struct{}, len(h))
-	for _, v := range h {
-		set[v] = struct{}{}
-	}
-	return set
 }
 
 // DetectStepBudget fires on the first call past MaxSteps and again on the first call past 1.5x

@@ -64,7 +64,7 @@ func (t *turn) summary(shingles bool) contract.CallSummary {
 		}
 	}
 	if shingles {
-		s.Shingles = contract.TurnShingles(string(t.reason.b), string(t.prefix.b))
+		s.Shingles = contract.SortedSet(contract.TurnShingles(string(t.reason.b), string(t.prefix.b)))
 	}
 	return s
 }

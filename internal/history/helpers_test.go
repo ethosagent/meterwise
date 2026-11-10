@@ -56,3 +56,11 @@ func text(s string) tollgate.Event { return tollgate.Event{Kind: tollgate.EventT
 func toolDelta(idx int, name, args string) tollgate.Event {
 	return tollgate.Event{Kind: tollgate.EventToolCallDelta, ToolCall: &tollgate.ToolCallDelta{Index: idx, Name: name, Arguments: args}}
 }
+
+func mustBefore(t testing.TB, h *history.Hook, c *tollgate.Call) *tollgate.Call {
+	t.Helper()
+	if _, err := h.Before(bg, c); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}

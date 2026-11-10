@@ -3,6 +3,7 @@ package contract
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -154,6 +155,13 @@ func TurnShingles(reasoning, text string) []uint64 {
 	toks := Tokens(capText(reasoning), 0)
 	toks = append(toks, Tokens(capText(text), 0)...)
 	return ShinglesOf(toks, MaxRingShingles)
+}
+
+// SortedSet sorts hashes ascending and drops repeats, in place. The ring stores a turn's shingles so, and
+// the monitors compare them as sets by a merge walk (a repeated window changes no set operation).
+func SortedSet(h []uint64) []uint64 {
+	slices.Sort(h)
+	return slices.Compact(h)
 }
 
 func capText(s string) string { return TruncateUTF8(s, ShingleTextCap) }

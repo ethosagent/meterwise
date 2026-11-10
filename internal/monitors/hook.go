@@ -244,7 +244,7 @@ func (h *Hook) After(_ context.Context, c *tollgate.Call, m tollgate.Metric) {
 		h.notesNotAdopted.Add(1)
 	}
 	vs, ring := metaOf(c)
-	if vs == nil || ring == nil || !c.Stream || m.Finish != tollgate.FinishOK || m.Status >= 400 {
+	if vs == nil || ring == nil || !c.Stream || m.Finish != tollgate.FinishOK || m.Status >= 400 || st.empty() {
 		return
 	}
 	for _, d := range streamDetectors {
