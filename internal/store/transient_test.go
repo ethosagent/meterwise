@@ -28,6 +28,8 @@ func TestIsTransient(t *testing.T) {
 		{"dial error", fmt.Errorf("x: %w", &net.OpError{Op: "dial", Err: errors.New("connection refused")}), true},
 		{"context deadline on connect", fmt.Errorf("x: %w", context.DeadlineExceeded), true},
 		{"plain error", errors.New("boom"), false},
+		{"pgconn connect error", fmt.Errorf("x: %w", &pgconn.ConnectError{}), true},
+		{"safe to retry", fmt.Errorf("x: %w", safeRetry{}), true},
 		{"contract error", contract.Invalid("f", "bad"), false},
 		{"08006 connection failure", pg("08006", "connection failure"), true},
 		{"08001 cannot establish", pg("08001", "x"), true},
@@ -47,3 +49,9 @@ func TestIsTransient(t *testing.T) {
 		}
 	}
 }
+
+// safeRetry is a driver error that vouches that nothing reached the server.
+type safeRetry struct{}
+
+func (safeRetry) Error() string     { return "not sent" }
+func (safeRetry) SafeToRetry() bool { return true }

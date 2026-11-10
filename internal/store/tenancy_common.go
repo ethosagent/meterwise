@@ -53,6 +53,9 @@ func queryErr(err error) error {
 	if errors.As(err, &pg) {
 		e := fail(ClassPool, "store: query failed (SQLSTATE "+pg.Code+")")
 		e.transient = transientCode(pg.Code, pg.Message)
+		if pg.Code == "55000" && !e.transient {
+			unexpected55000.Add(1)
+		}
 		return e
 	}
 	return fail(ClassUnreachable, "store: database unreachable")
