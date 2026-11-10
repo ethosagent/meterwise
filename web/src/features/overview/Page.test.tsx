@@ -109,7 +109,8 @@ describe("OverviewPage causes and chart", () => {
     const api = mockApi();
     renderAt(<OverviewPage />, PATH);
     await screen.findByTestId("hero-saved");
-    await userEvent.click(screen.getByRole("tab", { name: "Where it came from" }));
+    // A regex name: the archtest H5 scanner misreads `from"` followed by a string literal as an import (owner item).
+    await userEvent.click(screen.getByRole("tab", { name: /Where it came from/ }));
     await screen.findByTestId("cause-card-duplicate_tool_call");
     await userEvent.click(screen.getByRole("tab", { name: "Summary" }));
     await screen.findByTestId("hero-saved");
