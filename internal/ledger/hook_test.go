@@ -106,8 +106,22 @@ func TestBeforeStampsWithoutIO(t *testing.T) {
 	if took := time.Since(start); took > time.Millisecond {
 		t.Errorf("Before took %v, budget 1 ms", took)
 	}
-	if _, ok := c.Meta[ledger.MetaStart].(time.Time); !ok || c.Meta[ledger.MetaIndex] != 3 {
+	if len(c.Meta) != 1 { // one entry: the call state (start, index, stream facts)
 		t.Errorf("meta = %v", c.Meta)
+	}
+	m := metricFor(c)
+	m.Start = time.Time{} // the hook falls back to when the call reached it, and to its session position
+	w := &fakeWriter{}
+	h2 := newHook(t, w, nil)
+	if _, err := h2.Before(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	h2.After(context.Background(), c, m)
+	if err := h2.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.snapshot(); len(got) != 1 || got[0].CallIndex != 3 || got[0].StartedAt.IsZero() || time.Since(got[0].StartedAt) > time.Minute {
+		t.Errorf("record = %+v, want call index 3 and the time Before saw", got)
 	}
 	if h.Name() != "ledger" {
 		t.Errorf("name = %q", h.Name())
