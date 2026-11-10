@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -369,16 +370,11 @@ func (s *Store) Session(ctx context.Context, workspaceID, id string) (contract.S
 	}
 	out := make([]contract.CallRecord, len(calls))
 	for i, c := range calls {
-		var tools []string
-		_ = json.Unmarshal(c.ToolCalls, &tools)
-		if tools == nil {
-			tools = []string{}
-		}
 		out[i] = contract.CallRecord{
 			ID: c.ID, WorkspaceID: workspaceID, SessionID: id, CallIndex: int(c.CallIndex), StartedAt: ts(c.StartedAt), Provider: c.Provider,
 			Model: c.Model, Wire: c.Wire, Stream: c.Stream, Status: int(c.Status), Finish: c.Finish,
 			Usage: contract.Usage{Input: c.InputTokens, Output: c.OutputTokens, Cached: c.CachedTokens, Reasoning: c.ReasoningTokens},
-			Cost:  microIf(c.HasCost, c.CostMicro), TTFBMs: int64(c.TtfbMs), DurationMs: int64(c.DurationMs), ToolCalls: tools, Blocked: c.Blocked,
+			Cost:  microIf(c.HasCost, c.CostMicro), TTFBMs: int64(c.TtfbMs), DurationMs: int64(c.DurationMs), ToolCalls: s.toolNames(c.ID, c.ToolCalls), Blocked: c.Blocked,
 			NotesInjected: int(c.NotesInjected),
 		}
 	}
@@ -435,4 +431,25 @@ func decodeSessionCursor(c string) (time.Time, string, error) {
 		return time.Time{}, "", bad
 	}
 	return time.UnixMicro(micro).UTC(), id, nil
+}
+
+// UnreadableToolCalls is how many stored tool_calls values could not be read since Open.
+func (s *Store) UnreadableToolCalls() int64 { return s.badTools.Load() }
+
+// toolNames decodes a calls.tool_calls value. One that is not a JSON array of names reads as no tool
+// calls, is counted every time and is logged the first time, so a corrupt row leaves a trace.
+func (s *Store) toolNames(callID string, raw []byte) []string {
+	tools := []string{}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		s.badTools.Add(1)
+		s.badToolsOnce.Do(func() {
+			slog.Default().Warn("store: calls.tool_calls is not a JSON array of names; read as none (counted, logged once)",
+				slog.String("call_id", callID))
+		})
+		return []string{}
+	}
+	if tools == nil {
+		tools = []string{}
+	}
+	return tools
 }

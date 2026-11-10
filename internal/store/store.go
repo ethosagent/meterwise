@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +25,9 @@ const connectTimeout = 5 * time.Second
 type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
+
+	badTools     atomic.Int64 // unreadable calls.tool_calls values seen by Session
+	badToolsOnce sync.Once
 }
 
 // Open parses dsn, opens a pool and pings it, so a bad URL or a down database

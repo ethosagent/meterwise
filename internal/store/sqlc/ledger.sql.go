@@ -99,7 +99,6 @@ VALUES ($1::text, $2::text::uuid, $3::text::uuid, $4::text,
         NULLIF($11::text, ''), NULLIF($12::text, ''), $13::text,
         $14::bool)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
-    started_at = LEAST(sessions.started_at, EXCLUDED.started_at),
     calls = sessions.calls + EXCLUDED.calls,
     input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
     output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
@@ -133,6 +132,7 @@ type UpsertSessionParams struct {
 
 // The only INSERT into sessions (H4). The ledger passes the aggregate of the calls a batch really inserted
 // (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed session.
+// started_at is the keyset sort key of the session list: it is set by the first insert and never changes.
 func (q *Queries) UpsertSession(ctx context.Context, arg UpsertSessionParams) error {
 	_, err := q.db.Exec(ctx, upsertSession,
 		arg.ID,

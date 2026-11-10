@@ -18,6 +18,7 @@ RETURNING id;
 -- name: UpsertSession :exec
 -- The only INSERT into sessions (H4). The ledger passes the aggregate of the calls a batch really inserted
 -- (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed session.
+-- started_at is the keyset sort key of the session list: it is set by the first insert and never changes.
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
                       client, first_user_message_preview, last_finish, last_had_text)
 VALUES (sqlc.arg(id)::text, sqlc.arg(org_id)::text::uuid, sqlc.arg(workspace_id)::text::uuid, sqlc.arg(source)::text,
@@ -26,7 +27,6 @@ VALUES (sqlc.arg(id)::text, sqlc.arg(org_id)::text::uuid, sqlc.arg(workspace_id)
         NULLIF(sqlc.arg(client)::text, ''), NULLIF(sqlc.arg(preview)::text, ''), sqlc.arg(last_finish)::text,
         sqlc.arg(last_had_text)::bool)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
-    started_at = LEAST(sessions.started_at, EXCLUDED.started_at),
     calls = sessions.calls + EXCLUDED.calls,
     input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
     output_tokens = sessions.output_tokens + EXCLUDED.output_tokens,
