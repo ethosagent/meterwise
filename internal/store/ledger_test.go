@@ -47,7 +47,7 @@ func TestWriteCallsIsIdempotentAndAggregatesSessions(t *testing.T) {
 	if err != nil || again.Inserted != 0 || again.Duplicates != 3 {
 		t.Fatalf("replay = %+v, %v", again, err)
 	}
-	sess, calls, err := s.Session(ctx, ws, "s1")
+	sess, calls, _, err := s.Session(ctx, ws, "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestWriteCallsIsIdempotentAndAggregatesSessions(t *testing.T) {
 	if _, err := s.WriteCalls(ctx, []contract.CallRecord{rec(ws, "c4", "s3", 1, base, "ok", true, nil)}); err != nil {
 		t.Fatal(err)
 	}
-	if s3, _, _ := s.Session(ctx, ws, "s3"); s3.Cost != nil {
+	if s3, _, _, _ := s.Session(ctx, ws, "s3"); s3.Cost != nil {
 		t.Fatalf("all-unpriced session cost = %v, want NULL", *s3.Cost)
 	}
 	// last_call_at moved to the newest call end, via the setup status
@@ -86,11 +86,11 @@ func TestSessionsAreKeyedByWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ws := range []string{a, b} {
-		if sess, calls, err := s.Session(ctx, ws, "same"); err != nil || sess.Calls != 1 || len(calls) != 1 || sess.WorkspaceID != ws {
+		if sess, calls, _, err := s.Session(ctx, ws, "same"); err != nil || sess.Calls != 1 || len(calls) != 1 || sess.WorkspaceID != ws {
 			t.Fatalf("workspace %s: %+v %v %v", ws, sess, calls, err)
 		}
 	}
-	if _, _, err := s.Session(ctx, missingID, "same"); code(err) != contract.CodeNotFound {
+	if _, _, _, err := s.Session(ctx, missingID, "same"); code(err) != contract.CodeNotFound {
 		t.Fatalf("a session in another workspace must be not found: %v", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestCloseSessionOutcomeHeuristic(t *testing.T) {
 		if ok, err := s.CloseSession(ctx, ws, tc.sess, closedAt); err != nil || !ok {
 			t.Fatalf("%s: close = %v, %v", tc.sess, ok, err)
 		}
-		got, _, err := s.Session(ctx, ws, tc.sess)
+		got, _, _, err := s.Session(ctx, ws, tc.sess)
 		if err != nil || got.Outcome != tc.want || got.ClosedAt == nil || !got.ClosedAt.Equal(closedAt) {
 			t.Errorf("%s: outcome %q closed %v, want %q (%v)", tc.sess, got.Outcome, got.ClosedAt, tc.want, err)
 		}
@@ -136,7 +136,7 @@ func TestCloseSessionOutcomeHeuristic(t *testing.T) {
 	if _, err := s.WriteCalls(ctx, []contract.CallRecord{rec(ws, "again", "done", 3, base.Add(3*time.Hour), "ok", true, mu(5))}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _ := s.Session(ctx, ws, "done"); got.Outcome != contract.OutcomeOpen || got.ClosedAt != nil || got.Calls != 3 {
+	if got, _, _, _ := s.Session(ctx, ws, "done"); got.Outcome != contract.OutcomeOpen || got.ClosedAt != nil || got.Calls != 3 {
 		t.Fatalf("reopen: %+v", got)
 	}
 }

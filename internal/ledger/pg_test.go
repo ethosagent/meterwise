@@ -50,7 +50,7 @@ func TestRealPostgresOneRowPerCallSessionAggregatedAndClosed(t *testing.T) {
 	if n := scalar[int](t, s, `SELECT count(*) FROM calls WHERE workspace_id = $1`, ws); n != len(fx) {
 		t.Fatalf("calls rows = %d, want %d", n, len(fx))
 	}
-	sess, calls, err := s.Session(ctx, ws, "testkit-session")
+	sess, calls, _, err := s.Session(ctx, ws, "testkit-session")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestRealPostgresOneRowPerCallSessionAggregatedAndClosed(t *testing.T) {
 	// a second run of the same fixtures in a fresh hook is a new set of calls: ids are unique per call
 	h2 := newHook(t, s, nil)
 	driveAs(t, h2, tenantAuth{ws: ws}, "openai/chat-stream-text")
-	if sess2, _, _ := s.Session(ctx, ws, "testkit-session"); sess2.Calls != 6 {
+	if sess2, _, _, _ := s.Session(ctx, ws, "testkit-session"); sess2.Calls != 6 {
 		t.Fatalf("session after a second call = %+v", sess2)
 	}
 }

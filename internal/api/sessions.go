@@ -11,7 +11,7 @@ import (
 // write side belongs to internal/ledger (rule H4): nothing here can change a row.
 type Ledger interface {
 	ListSessions(ctx context.Context, q contract.SessionQuery) (contract.SessionPage, error)
-	Session(ctx context.Context, workspaceID, id string) (contract.SessionRecord, []contract.CallRecord, error)
+	Session(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, err error)
 	Stats(ctx context.Context, workspaceID string, from, to time.Time) (contract.Stats, error)
 }
 
@@ -74,12 +74,11 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	}
 	// The gateway authorized session:read on workspaceId before this runs; the store reads
 	// (workspace_id, id), so a session of another workspace is simply not found.
-	sess, calls, err := led.Session(c.Ctx, c.Query("workspaceId"), c.Path("id"))
+	sess, calls, truncated, err := led.Session(c.Ctx, c.Query("workspaceId"), c.Path("id"))
 	if err != nil {
 		return contract.SessionDetail{}, err
 	}
-	// the session row counts every call ever recorded; the read is capped, so fewer calls than that is a truncation
-	out := contract.SessionDetail{Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: sess.Calls > len(calls)}
+	out := contract.SessionDetail{Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: truncated}
 	for i, r := range calls {
 		out.Calls[i] = callView(r)
 	}

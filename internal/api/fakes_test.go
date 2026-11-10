@@ -141,8 +141,8 @@ func (emptyLedger) ListSessions(context.Context, contract.SessionQuery) (contrac
 	return contract.SessionPage{}, nil
 }
 
-func (emptyLedger) Session(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, error) {
-	return contract.SessionRecord{}, nil, nil
+func (emptyLedger) Session(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, bool, error) {
+	return contract.SessionRecord{}, nil, false, nil
 }
 
 func (emptyLedger) Stats(context.Context, string, time.Time, time.Time) (contract.Stats, error) {

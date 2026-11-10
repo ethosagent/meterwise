@@ -106,21 +106,24 @@ func sessionOf(r sessionRow) contract.SessionRecord {
 	}
 }
 
-// Session returns one session of a workspace and its calls in call order (at most 5000). A session
-// that does not exist in that workspace is not found, whoever asks.
-func (s *Store) Session(ctx context.Context, workspaceID, id string) (contract.SessionRecord, []contract.CallRecord, error) {
+// Session returns one session of a workspace and its calls in call order (at most 5000; truncated says
+// there were more). A session that does not exist in that workspace is not found, whoever asks.
+func (s *Store) Session(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, out []contract.CallRecord, truncated bool, err error) {
 	if !validID(workspaceID) {
-		return contract.SessionRecord{}, nil, contract.Invalid("workspaceId", "must be a workspace id")
+		return sess, nil, false, contract.Invalid("workspaceId", "must be a workspace id")
 	}
 	r, err := s.q.GetSession(ctx, sqlc.GetSessionParams{WorkspaceID: workspaceID, ID: id})
 	if err != nil {
-		return contract.SessionRecord{}, nil, queryErr(err)
+		return sess, nil, false, queryErr(err)
 	}
-	calls, err := s.q.ListSessionCalls(ctx, sqlc.ListSessionCallsParams{WorkspaceID: workspaceID, SessionID: id, MaxRows: maxSessionCalls})
+	calls, err := s.q.ListSessionCalls(ctx, sqlc.ListSessionCallsParams{WorkspaceID: workspaceID, SessionID: id, MaxRows: maxSessionCalls + 1})
 	if err != nil {
-		return contract.SessionRecord{}, nil, queryErr(err)
+		return sess, nil, false, queryErr(err)
 	}
-	out := make([]contract.CallRecord, len(calls))
+	if truncated = len(calls) > maxSessionCalls; truncated {
+		calls = calls[:maxSessionCalls]
+	}
+	out = make([]contract.CallRecord, len(calls))
 	for i, c := range calls {
 		out[i] = contract.CallRecord{
 			ID: c.ID, WorkspaceID: workspaceID, SessionID: id, CallIndex: int(c.CallIndex), StartedAt: ts(c.StartedAt), Provider: c.Provider,
@@ -130,7 +133,7 @@ func (s *Store) Session(ctx context.Context, workspaceID, id string) (contract.S
 			NotesInjected: int(c.NotesInjected),
 		}
 	}
-	return sessionOf(sessionRow(r)), out, nil
+	return sessionOf(sessionRow(r)), out, truncated, nil
 }
 
 // Stats sums a workspace's priced spend, calls and distinct sessions over [from, to) and per UTC
