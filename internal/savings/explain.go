@@ -89,14 +89,7 @@ func shown(s string) string {
 		}
 		return r
 	}, s)
-	s = strings.TrimSpace(s)
-	if len(s) > maxShown {
-		s = s[:maxShown]
-		for !utf8.ValidString(s) {
-			s = s[:len(s)-1]
-		}
-	}
-	return s
+	return contract.TruncateUTF8(strings.TrimSpace(s), maxShown)
 }
 
 func deref(p *string) string {
