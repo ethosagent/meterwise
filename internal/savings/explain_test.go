@@ -19,14 +19,14 @@ func TestExplain(t *testing.T) {
 		contain string
 	}{
 		{"none", nil, 0, "", "", ""},
-		{"a stored path is named", []contract.RepeatTarget{{Monitor: rr, Tool: "read", Path: "src/a.go", PathHash: "deadbeefcafe", Count: 4}}, 1, "src/a.go", "", "read src/a.go 4 times"},
-		{"no stored path: tool and the 8-hex hash prefix", []contract.RepeatTarget{{Monitor: rr, Tool: "read", PathHash: "DEADBEEFCAFE0123", Count: 3}}, 1, "", "deadbeef", "(hash deadbeef) 3 times"},
-		{"neither path nor hash: the tool only", []contract.RepeatTarget{{Monitor: dup, Tool: "grep", Count: 2}}, 1, "", "", "grep was called 2 times"},
-		{"duplicate with a hash", []contract.RepeatTarget{{Monitor: dup, Tool: "bash", PathHash: "0123456789", Count: 5}}, 1, "", "01234567", "(hash 01234567)"},
+		{"a stored path is named", []contract.RepeatTarget{{Monitor: rr, Tool: "read", Path: "src/a.go", PathHash: "deadbeefcafe", Count: 4}}, 1, "src/a.go", "", "read re-read src/a.go (monitor fired 4 times)"},
+		{"no stored path: tool and the 8-hex hash prefix", []contract.RepeatTarget{{Monitor: rr, Tool: "read", PathHash: "DEADBEEFCAFE0123", Count: 3}}, 1, "", "deadbeef", "(hash deadbeef; monitor fired 3 times)"},
+		{"neither path nor hash: the tool only", []contract.RepeatTarget{{Monitor: dup, Tool: "grep", Count: 2}}, 1, "", "", "grep repeated the same call (monitor fired 2 times)"},
+		{"duplicate with a hash", []contract.RepeatTarget{{Monitor: dup, Tool: "bash", PathHash: "0123456789", Count: 5}}, 1, "", "01234567", "(hash 01234567; monitor fired 5 times)"},
 		{"fewer than two repeats earns nothing", []contract.RepeatTarget{{Monitor: rr, Tool: "read", Path: "a", Count: 1}}, 0, "", "", ""},
 		{"a monitor that does not repeat work earns nothing", []contract.RepeatTarget{{Monitor: np, Tool: "read", Path: "a", Count: 9}}, 0, "", "", ""},
 		{"a nameless tool earns nothing", []contract.RepeatTarget{{Monitor: rr, Tool: " \x00 ", Count: 9}}, 0, "", "", ""},
-		{"control characters never reach the text", []contract.RepeatTarget{{Monitor: rr, Tool: "re\nad", Path: "a\x1b[31m/b", Count: 2}}, 1, "a[31m/b", "", "read a[31m/b 2"},
+		{"control characters never reach the text", []contract.RepeatTarget{{Monitor: rr, Tool: "re\nad", Path: "a\x1b[31m/b", Count: 2}}, 1, "a[31m/b", "", "read re-read a[31m/b (monitor fired 2 times)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

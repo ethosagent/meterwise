@@ -62,19 +62,23 @@ func suggestionOf(t contract.RepeatTarget) contract.Suggestion {
 
 // textOf fills the fixed template of the suggestion's monitor and target kind.
 func textOf(s contract.Suggestion) string {
+	const reuse = "Tell the agent to reuse the first result instead of calling it again."
+	const keep = "Tell the agent to keep what it needs from it in its plan."
+	// Count is how many times the monitor fired, not how many reads or calls each firing saw, so the text says
+	// "monitor fired" and never claims an exact repeat count.
 	switch {
 	case s.Monitor == contract.MonitorRepeatedRead && s.Path != nil:
-		return fmt.Sprintf("%s read %s %d times. Tell the agent to keep what it needs from the file in its plan, or to read only the lines it needs.", s.Tool, *s.Path, s.Count)
+		return fmt.Sprintf("%s re-read %s (monitor fired %d times). Tell the agent to keep what it needs from the file in its plan, or to read only the lines it needs.", s.Tool, *s.Path, s.Count)
 	case s.Monitor == contract.MonitorRepeatedRead && s.PathHash != nil:
-		return fmt.Sprintf("%s re-read the same file (hash %s) %d times. Tell the agent to keep what it needs from it in its plan.", s.Tool, *s.PathHash, s.Count)
+		return fmt.Sprintf("%s re-read the same file (hash %s; monitor fired %d times). %s", s.Tool, *s.PathHash, s.Count, keep)
 	case s.Monitor == contract.MonitorRepeatedRead:
-		return fmt.Sprintf("%s re-read the same file %d times. Tell the agent to keep what it needs from it in its plan.", s.Tool, s.Count)
+		return fmt.Sprintf("%s re-read the same file (monitor fired %d times). %s", s.Tool, s.Count, keep)
 	case s.Path != nil:
-		return fmt.Sprintf("%s was called %d times with the same arguments on %s. Tell the agent to reuse the first result instead of calling it again.", s.Tool, s.Count, *s.Path)
+		return fmt.Sprintf("%s repeated the same call on %s (monitor fired %d times). %s", s.Tool, *s.Path, s.Count, reuse)
 	case s.PathHash != nil:
-		return fmt.Sprintf("%s was called %d times with the same arguments (hash %s). Tell the agent to reuse the first result instead of calling it again.", s.Tool, s.Count, *s.PathHash)
+		return fmt.Sprintf("%s repeated the same call (hash %s; monitor fired %d times). %s", s.Tool, *s.PathHash, s.Count, reuse)
 	}
-	return fmt.Sprintf("%s was called %d times with the same arguments. Tell the agent to reuse the first result instead of calling it again.", s.Tool, s.Count)
+	return fmt.Sprintf("%s repeated the same call (monitor fired %d times). %s", s.Tool, s.Count, reuse)
 }
 
 // shown makes a stored name safe to put in a sentence: no control characters, trimmed, at most maxShown bytes.
