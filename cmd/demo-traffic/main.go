@@ -76,14 +76,29 @@ func (r fixedResolver) Resolve(_ context.Context, _ tollgate.Tenant, req *http.R
 	return tollgate.Provider{Name: name, Wire: wire, BaseURL: r.base}, "/" + rest, nil
 }
 
-func run(ctx context.Context, cfg config, out io.Writer) error {
+// checkConfig refuses bad input before any database or proxy work starts.
+func checkConfig(cfg config) error {
 	if cfg.dsn == "" {
 		return errors.New("set DATABASE_URL (see `make db-up`)")
 	}
 	if cfg.rounds < 1 || cfg.rounds > 1000 {
 		return errors.New("-rounds must be between 1 and 1000")
 	}
-	if err := validateScript(script); err != nil {
+	return validateScript(script)
+}
+
+// newHook loads the price table and builds the ledger hook that writes into st.
+func newHook(ctx context.Context, st *store.Store) (*ledger.Hook, error) {
+	pricer := savings.NewTablePricer(nil)
+	if err := (&ledger.PriceLoader{Source: st, Pricer: pricer}).Load(ctx); err != nil {
+		return nil, fmt.Errorf("load pricing: %w", err)
+	}
+	privacyOn := true
+	return ledger.New(ctx, ledger.Options{Writer: st, Pricer: pricer, PrivacyMode: &privacyOn})
+}
+
+func run(ctx context.Context, cfg config, out io.Writer) error {
+	if err := checkConfig(cfg); err != nil {
 		return err
 	}
 	st, err := store.Open(ctx, cfg.dsn)
@@ -95,12 +110,7 @@ func run(ctx context.Context, cfg config, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	pricer := savings.NewTablePricer(nil)
-	if err := (&ledger.PriceLoader{Source: st, Pricer: pricer}).Load(ctx); err != nil {
-		return fmt.Errorf("load pricing: %w", err)
-	}
-	privacyOn := true
-	hook, err := ledger.New(ctx, ledger.Options{Writer: st, Pricer: pricer, PrivacyMode: &privacyOn})
+	hook, err := newHook(ctx, st)
 	if err != nil {
 		return err
 	}

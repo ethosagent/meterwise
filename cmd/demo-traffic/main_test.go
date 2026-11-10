@@ -73,3 +73,24 @@ func TestAnUnknownScenarioFailsFastAndTheShippedScriptIsValid(t *testing.T) {
 		t.Fatalf("an unknown scenario must be refused by name, got %v", err)
 	}
 }
+
+func TestCheckConfigRefusesBadInputBeforeAnyWork(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  config
+		want string
+	}{
+		{"ok", config{dsn: "postgres://x", rounds: 1}, ""},
+		{"max rounds", config{dsn: "postgres://x", rounds: 1000}, ""},
+		{"no dsn", config{rounds: 1}, "DATABASE_URL"},
+		{"zero rounds", config{dsn: "postgres://x"}, "-rounds"},
+		{"too many rounds", config{dsn: "postgres://x", rounds: 1001}, "-rounds"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkConfig(tc.cfg)
+			if (tc.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tc.want)) {
+				t.Fatalf("checkConfig = %v, want error containing %q", err, tc.want)
+			}
+		})
+	}
+}
