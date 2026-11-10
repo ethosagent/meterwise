@@ -162,6 +162,11 @@ func (d *Directory) lookup(ctx context.Context, k ckey) (*centry, error) {
 	}
 }
 
+// join returns the flight to wait on. A caller that missed the cache before the in-flight read
+// finished reaches join after that read filled the cache and left the map; run fills the cache
+// before it takes fmu to leave, so the cache is re-checked here under fmu and answers such a late
+// caller with an already-completed flight instead of a second Postgres read. A bust moves the
+// generation and drops the entry, so it still leads to a fresh read.
 func (d *Directory) join(k ckey) (f *flight, leader bool) {
 	d.fmu.Lock()
 	defer d.fmu.Unlock()
@@ -169,9 +174,25 @@ func (d *Directory) join(k ckey) (f *flight, leader bool) {
 	if cur, ok := d.flights[k]; ok && cur.seen == seen {
 		return cur, false
 	}
+	now := d.now()
+	if e, ok := d.c.get(k, now); ok {
+		return doneFlight(seen, e, e.err), false
+	}
+	if k.kind == kindPublic {
+		if n, ok := d.neg.get(k.id, now); ok {
+			return doneFlight(seen, nil, n.err), false
+		}
+	}
 	f = &flight{done: make(chan struct{}), seen: seen}
 	d.flights[k] = f
 	return f, true
+}
+
+// doneFlight is a completed flight carrying a cached answer.
+func doneFlight(seen uint64, e *centry, err error) *flight {
+	f := &flight{done: make(chan struct{}), seen: seen, e: e, err: err}
+	close(f.done)
+	return f
 }
 
 // run reads Postgres once for the flight, files the answer in the right cache and wakes the waiters.
