@@ -1,0 +1,10 @@
+{
+  "description": "the response opens with the passage the previous turn opened with",
+  "ring": [
+    {"Index": 1, "Tools": ["grep"], "ArgsHashes": [1]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [2], "ShinglesFrom": "The agent considered the failing build and traced the error back through every module until it found the stale cache entry that broke the linker step and then it decided to clear that cache and run the full build once more to be certain"}
+  ],
+  "session_calls": 3,
+  "stream": {"text": "The agent considered the failing build and traced the error back through every module until it found the stale cache entry that broke the linker step and then it decided to clear that cache and run the full build once more to be certain"},
+  "expect": {"fires": true, "evidence": {"matchedCalls": [2, 3], "hash": "@shingle:The agent considered the failing build and traced", "count": 44, "threshold": 40}}
+}

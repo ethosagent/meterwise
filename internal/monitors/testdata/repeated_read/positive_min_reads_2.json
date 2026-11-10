@@ -1,0 +1,10 @@
+{
+  "description": "minReads 2 fires on the second read",
+  "ring": [
+    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [31], "ReadHashes": [5]},
+    {"Index": 2, "Tools": ["read_file"], "ArgsHashes": [32], "ReadHashes": [5]}
+  ],
+  "session_calls": 3,
+  "config": {"repeated_read": {"minReads": 2}},
+  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 2], "tool": "read_file", "pathHash": "@5", "count": 2, "threshold": 2}}
+}

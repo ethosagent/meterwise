@@ -1,0 +1,6 @@
+{
+  "description": "the first call past the budget",
+  "ring": [],
+  "session_calls": 41,
+  "expect": {"fires": true, "evidence": {"count": 41, "threshold": 40}}
+}

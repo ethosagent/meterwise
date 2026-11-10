@@ -1,0 +1,10 @@
+{
+  "description": "phrases are matched as whole words: waiting, factually and hmmm do not count",
+  "ring": [
+    {"Index": 1, "Tools": ["read_file"], "ArgsHashes": [1]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [2]}
+  ],
+  "session_calls": 3,
+  "stream": {"text": "Waiting for factually correct hmmm output while holding on tight", "tools": ["read_file"]},
+  "expect": {"fires": false}
+}

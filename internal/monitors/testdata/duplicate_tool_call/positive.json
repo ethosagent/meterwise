@@ -1,0 +1,10 @@
+{
+  "description": "the pending call repeats an earlier identical call with only a search in between",
+  "ring": [
+    {"Index": 1, "Tools": ["get_weather"], "ArgsHashes": [11]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [12]},
+    {"Index": 3, "Tools": ["get_weather"], "ArgsHashes": [11]}
+  ],
+  "session_calls": 4,
+  "expect": {"fires": true, "evidence": {"matchedCalls": [1, 3], "tool": "get_weather", "argsHash": "@11", "count": 2, "threshold": 2}}
+}

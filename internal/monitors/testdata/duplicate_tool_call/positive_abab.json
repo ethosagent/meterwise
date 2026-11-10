@@ -1,0 +1,12 @@
+{
+  "description": "A-B-A-B alternation fires although maxRepeats 3 is not reached by any single call",
+  "ring": [
+    {"Index": 5, "Tools": ["list_dir"], "ArgsHashes": [21]},
+    {"Index": 6, "Tools": ["get_weather"], "ArgsHashes": [22]},
+    {"Index": 7, "Tools": ["list_dir"], "ArgsHashes": [21]},
+    {"Index": 8, "Tools": ["get_weather"], "ArgsHashes": [22]}
+  ],
+  "session_calls": 9,
+  "config": {"duplicate_tool_call": {"maxRepeats": 3, "abab": true}},
+  "expect": {"fires": true, "evidence": {"matchedCalls": [5, 6, 7, 8], "tool": "get_weather", "argsHash": "@22", "count": 2, "threshold": 2}}
+}

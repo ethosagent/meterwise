@@ -1,0 +1,12 @@
+{
+  "description": "the earlier identical call is outside the look-back window",
+  "ring": [
+    {"Index": 1, "Tools": ["get_weather"], "ArgsHashes": [11]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [12]},
+    {"Index": 3, "Tools": ["grep"], "ArgsHashes": [13]},
+    {"Index": 4, "Tools": ["get_weather"], "ArgsHashes": [11]}
+  ],
+  "session_calls": 5,
+  "config": {"duplicate_tool_call": {"lookBack": 1}},
+  "expect": {"fires": false}
+}

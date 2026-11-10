@@ -1,0 +1,7 @@
+{
+  "description": "a ten-token phrase said twice is under the 40-token threshold",
+  "ring": [],
+  "session_calls": 2,
+  "stream": {"text": "check the config file path again now please. check the config file path again now please."},
+  "expect": {"fires": false}
+}

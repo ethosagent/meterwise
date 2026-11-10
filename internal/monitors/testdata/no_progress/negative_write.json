@@ -1,0 +1,9 @@
+{
+  "description": "identical text but the older turn wrote a file: that is progress",
+  "ring": [
+    {"Index": 1, "Tools": ["edit_file"], "ArgsHashes": [41], "WroteHashes": [5], "TextHash": 77, "Shingles": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+    {"Index": 2, "Tools": ["grep"], "ArgsHashes": [42], "TextHash": 78, "Shingles": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]}
+  ],
+  "session_calls": 3,
+  "expect": {"fires": false}
+}

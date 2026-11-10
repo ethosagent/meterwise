@@ -1,0 +1,12 @@
+{
+  "description": "the same alternation is ignored when abab is off and maxRepeats is 3",
+  "ring": [
+    {"Index": 5, "Tools": ["list_dir"], "ArgsHashes": [21]},
+    {"Index": 6, "Tools": ["get_weather"], "ArgsHashes": [22]},
+    {"Index": 7, "Tools": ["list_dir"], "ArgsHashes": [21]},
+    {"Index": 8, "Tools": ["get_weather"], "ArgsHashes": [22]}
+  ],
+  "session_calls": 9,
+  "config": {"duplicate_tool_call": {"maxRepeats": 3}},
+  "expect": {"fires": false}
+}
