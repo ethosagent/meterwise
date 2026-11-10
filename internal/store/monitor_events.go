@@ -113,10 +113,14 @@ func (s *Store) eventRecord(r sqlc.ListSessionMonitorEventsRow) contract.Monitor
 
 // SessionMonitorEvents returns a session's monitor events in call order (at most contract.MonitorEventCap).
 func (s *Store) SessionMonitorEvents(ctx context.Context, workspaceID, sessionID string) ([]contract.MonitorEventRecord, error) {
+	return s.eventsWith(ctx, s.q, workspaceID, sessionID)
+}
+
+func (s *Store) eventsWith(ctx context.Context, q *sqlc.Queries, workspaceID, sessionID string) ([]contract.MonitorEventRecord, error) {
 	if !validID(workspaceID) {
 		return nil, contract.Invalid("workspaceId", "must be a workspace id")
 	}
-	rows, err := s.q.ListSessionMonitorEvents(ctx, sqlc.ListSessionMonitorEventsParams{
+	rows, err := q.ListSessionMonitorEvents(ctx, sqlc.ListSessionMonitorEventsParams{
 		WorkspaceID: workspaceID, SessionID: sessionID, MaxRows: contract.MonitorEventCap,
 	})
 	if err != nil {

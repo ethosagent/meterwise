@@ -11,9 +11,9 @@ import (
 // write side belongs to internal/ledger (rule H4): nothing here can change a row.
 type Ledger interface {
 	ListSessions(ctx context.Context, q contract.SessionQuery) (contract.SessionPage, error)
-	Session(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, err error)
+	// SessionDetail reads the session, its calls and its monitor events from one snapshot.
+	SessionDetail(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, events []contract.MonitorEventRecord, err error)
 	Stats(ctx context.Context, workspaceID string, from, to time.Time) (contract.Stats, error)
-	SessionMonitorEvents(ctx context.Context, workspaceID, sessionID string) ([]contract.MonitorEventRecord, error)
 	MonitorStats(ctx context.Context, workspaceID string, from, to time.Time) ([]contract.MonitorStatRow, error)
 }
 
@@ -76,11 +76,7 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	}
 	// The gateway authorized session:read on workspaceId before this runs; the store reads
 	// (workspace_id, id), so a session of another workspace is simply not found.
-	sess, calls, truncated, err := led.Session(c.Ctx, c.Query("workspaceId"), c.Path("id"))
-	if err != nil {
-		return contract.SessionDetail{}, err
-	}
-	events, err := led.SessionMonitorEvents(c.Ctx, c.Query("workspaceId"), c.Path("id"))
+	sess, calls, truncated, events, err := led.SessionDetail(c.Ctx, c.Query("workspaceId"), c.Path("id"))
 	if err != nil {
 		return contract.SessionDetail{}, err
 	}

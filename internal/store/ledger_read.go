@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ethosagent/meterwise/internal/contract"
@@ -101,14 +102,36 @@ func sessionOf(r sessionRow) contract.SessionRecord {
 // Session returns one session of a workspace and its calls in call order (at most 5000; truncated says
 // there were more). A session that does not exist in that workspace is not found, whoever asks.
 func (s *Store) Session(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, out []contract.CallRecord, truncated bool, err error) {
+	return s.sessionWith(ctx, s.q, workspaceID, id)
+}
+
+// SessionDetail reads a session, its calls and its monitor events from one REPEATABLE READ, read-only
+// snapshot, so a call that lands between the reads can never show up in the events without its call row.
+func (s *Store) SessionDetail(ctx context.Context, workspaceID, id string) (sess contract.SessionRecord, calls []contract.CallRecord, truncated bool, events []contract.MonitorEventRecord, err error) {
+	err = pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		var err error
+		if sess, calls, truncated, err = s.sessionWith(ctx, q, workspaceID, id); err != nil {
+			return err
+		}
+		events, err = s.eventsWith(ctx, q, workspaceID, id)
+		return err
+	})
+	if err != nil {
+		return sess, nil, false, nil, queryErr(err) // a typed error from the reads passes through unchanged
+	}
+	return sess, calls, truncated, events, nil
+}
+
+func (s *Store) sessionWith(ctx context.Context, q *sqlc.Queries, workspaceID, id string) (sess contract.SessionRecord, out []contract.CallRecord, truncated bool, err error) {
 	if !validID(workspaceID) {
 		return sess, nil, false, contract.Invalid("workspaceId", "must be a workspace id")
 	}
-	r, err := s.q.GetSession(ctx, sqlc.GetSessionParams{WorkspaceID: workspaceID, ID: id})
+	r, err := q.GetSession(ctx, sqlc.GetSessionParams{WorkspaceID: workspaceID, ID: id})
 	if err != nil {
 		return sess, nil, false, queryErr(err)
 	}
-	calls, err := s.q.ListSessionCalls(ctx, sqlc.ListSessionCallsParams{WorkspaceID: workspaceID, SessionID: id, MaxRows: maxSessionCalls + 1})
+	calls, err := q.ListSessionCalls(ctx, sqlc.ListSessionCallsParams{WorkspaceID: workspaceID, SessionID: id, MaxRows: maxSessionCalls + 1})
 	if err != nil {
 		return sess, nil, false, queryErr(err)
 	}

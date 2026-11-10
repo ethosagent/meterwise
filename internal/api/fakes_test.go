@@ -145,12 +145,8 @@ func (emptyLedger) ListSessions(context.Context, contract.SessionQuery) (contrac
 	return contract.SessionPage{}, nil
 }
 
-func (emptyLedger) Session(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, bool, error) {
-	return contract.SessionRecord{}, nil, false, nil
-}
-
-func (emptyLedger) SessionMonitorEvents(context.Context, string, string) ([]contract.MonitorEventRecord, error) {
-	return nil, nil
+func (emptyLedger) SessionDetail(context.Context, string, string) (contract.SessionRecord, []contract.CallRecord, bool, []contract.MonitorEventRecord, error) {
+	return contract.SessionRecord{}, nil, false, nil, nil
 }
 
 func (emptyLedger) MonitorStats(context.Context, string, time.Time, time.Time) ([]contract.MonitorStatRow, error) {
