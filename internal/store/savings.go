@@ -60,7 +60,9 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		if first, err = q.CallStatus(ctx, sqlc.CallStatusParams{WorkspaceID: workspaceID, SinceTs: pgts(to)}); err != nil {
 			return err
 		}
-		acted, err = q.SavingsHasActed(ctx, workspaceID)
+		if acted = actedMoney(events); !acted { // acted money in the range already proves a monitor acted
+			acted, err = q.SavingsHasActed(ctx, workspaceID)
+		}
 		return err
 	})
 	if err != nil {
@@ -76,6 +78,16 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 	out.Days, out.Hero = daysAndHero(r, spend, events)
 	out.ByCause = causesOf(stats, tops)
 	return out, nil
+}
+
+// actedMoney is true when the range's totals row holds saved or likely money, which only acted events produce.
+func actedMoney(events []sqlc.SavingsEventsByDayRow) bool {
+	for _, e := range events {
+		if !e.Day.Valid && (e.SavedMicro != 0 || e.LikelyMicro != 0) {
+			return true
+		}
+	}
+	return false
 }
 
 func stateOf(hasCalls, acted bool) string {
