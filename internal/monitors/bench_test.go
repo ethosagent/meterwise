@@ -82,10 +82,9 @@ func beforeP99(t testing.TB, w tollgate.WireFormat, trials, n int) (best time.Du
 	return best, notes
 }
 
-const beforeBudget = time.Millisecond
-
 // instrumented reports whether the binary is built with the race detector or coverage, which slow every
-// call several times over; the gate runs with both, so absolute latency budgets only bind a plain `go test`.
+// call several times over; the gate runs with both, so its budgets are 10x the plain-`go test` ones
+// (the 1 ms target binds there; the gate only catches a path that blocks or went quadratic).
 func instrumented() bool {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -99,16 +98,29 @@ func instrumented() bool {
 	return false
 }
 
-func TestBeforeP99UnderOneMillisecondFor200Messages(t *testing.T) {
-	if testing.Short() || instrumented() {
-		t.Skip("absolute latency budget: needs a plain, non-short go test (no -race, no -cover)")
+// scaled returns d, or 10x d in an instrumented binary.
+func scaled(d time.Duration) time.Duration {
+	if instrumented() {
+		return 10 * d
 	}
+	return d
+}
+
+func TestBeforeP99UnderOneMillisecondFor200Messages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("latency measurement")
+	}
+	beforeBudget := scaled(time.Millisecond)
 	for _, w := range wires {
 		t.Run(string(w), func(t *testing.T) {
-			p99, notes := beforeP99(t, w, 5, 200)
+			trials, n := 5, 200
+			if instrumented() {
+				trials, n = 2, 100
+			}
+			p99, notes := beforeP99(t, w, trials, n)
 			t.Logf("%s: Before p99 = %v over a 201-message call that rebuilds its ring, fires and splices a note (budget %v)", w, p99, beforeBudget)
-			if notes != 5*200 {
-				t.Fatalf("the measured path must fire and note on every call, did %d of %d", notes, 5*200)
+			if notes != trials*n {
+				t.Fatalf("the measured path must fire and note on every call, did %d of %d", notes, trials*n)
 			}
 			if p99 >= beforeBudget {
 				t.Fatalf("Before p99 %v, budget %v", p99, beforeBudget)
@@ -220,8 +232,8 @@ func (r *ttfbRig) ttfb(t testing.TB, i int) time.Duration {
 // so machine noise hits both. The detectors read the stream on the tap, off the client path, so the
 // added median must stay inside a 1 ms smoke bound (the monitors' own Before is the only cost).
 func TestStreamDetectorsAddNothingToTTFB(t *testing.T) {
-	if testing.Short() || instrumented() {
-		t.Skip("latency comparison: needs a plain, non-short go test (no -race, no -cover)")
+	if testing.Short() {
+		t.Skip("latency comparison")
 	}
 	base := newTTFBRig(t, history.New(history.Options{}))
 	with := newTTFBRig(t, history.New(history.Options{}), newMon(monitors.Options{}))
@@ -231,9 +243,13 @@ func TestStreamDetectorsAddNothingToTTFB(t *testing.T) {
 	}
 	added := time.Hour
 	var pb, pw time.Duration
-	for trial := 0; trial < 5; trial++ {
+	trials, n := 5, 300
+	if instrumented() {
+		trials, n = 2, 100
+	}
+	for trial := 0; trial < trials; trial++ {
 		var db, dw []time.Duration
-		for i := 0; i < 300; i++ {
+		for i := 0; i < n; i++ {
 			db, dw = append(db, base.ttfb(t, i)), append(dw, with.ttfb(t, i))
 		}
 		if d := pct(dw, 0.5) - pct(db, 0.5); d < added {
@@ -241,7 +257,7 @@ func TestStreamDetectorsAddNothingToTTFB(t *testing.T) {
 		}
 	}
 	t.Logf("TTFB p50: history only %v, history+monitors %v, added %v", pb, pw, added)
-	if added >= time.Millisecond {
+	if added >= scaled(time.Millisecond) {
 		t.Fatalf("monitors added %v to the median TTFB", added)
 	}
 }
