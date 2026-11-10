@@ -48,10 +48,12 @@ type SessionList struct {
 	NextCursor *string       `json:"nextCursor"`
 }
 
-// SessionDetail is GET /api/sessions/{id}: the session and its calls in call order.
+// SessionDetail is GET /api/sessions/{id}: the session and its calls in call order. Truncated is true
+// when the session has more calls than Calls holds (the detail returns at most 5000).
 type SessionDetail struct {
-	Session SessionView `json:"session"`
-	Calls   []CallView  `json:"calls"`
+	Session   SessionView `json:"session"`
+	Calls     []CallView  `json:"calls"`
+	Truncated bool        `json:"truncated"`
 }
 
 // StatsDayView is one UTC day of the stats response; Day is YYYY-MM-DD.

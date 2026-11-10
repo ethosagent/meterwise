@@ -325,6 +325,7 @@ export interface SessionList {
 export interface SessionDetail {
   session: Session;
   calls: Call[];
+  truncated: boolean;
 }
 
 export interface StatsDay {

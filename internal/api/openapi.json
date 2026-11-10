@@ -817,11 +817,15 @@
           },
           "session": {
             "$ref": "#/components/schemas/Session"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "required": [
           "session",
-          "calls"
+          "calls",
+          "truncated"
         ],
         "type": "object"
       },

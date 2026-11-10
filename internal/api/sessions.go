@@ -78,7 +78,8 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 	if err != nil {
 		return contract.SessionDetail{}, err
 	}
-	out := contract.SessionDetail{Session: sessionView(sess), Calls: make([]contract.CallView, len(calls))}
+	// the session row counts every call ever recorded; the read is capped, so fewer calls than that is a truncation
+	out := contract.SessionDetail{Session: sessionView(sess), Calls: make([]contract.CallView, len(calls)), Truncated: sess.Calls > len(calls)}
 	for i, r := range calls {
 		out.Calls[i] = callView(r)
 	}
