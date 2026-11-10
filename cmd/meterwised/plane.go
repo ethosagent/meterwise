@@ -10,10 +10,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/config"
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/dataplane"
-	"github.com/ethosagent/meterwise/internal/history"
 	"github.com/ethosagent/meterwise/internal/ledger"
-	"github.com/ethosagent/meterwise/internal/monitors"
-	"github.com/ethosagent/meterwise/internal/monitors/wire"
 	"github.com/ethosagent/meterwise/internal/savings"
 	"github.com/ethosagent/meterwise/internal/store"
 	"github.com/ethosagent/meterwise/internal/wsauth"
@@ -113,13 +110,10 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 		return d, err
 	}
 	d.Sources = append(d.Sources, led)
-	// Order is load-bearing (plan 06, R2). wsauth stamps the tenant; history stamps the ring and the verdict
-	// pointer; monitors may short-circuit and fill the verdicts; the injected hooks follow; the ledger comes
-	// last, seals the verdicts in After and records.
-	hist := history.New(history.Options{MaxSessions: tollgate.DefaultLimits().MaxSessions, MaxBytes: rt.cfg.HistoryMaxBytes})
-	mon := monitors.New(monitors.Options{PrivacyMode: rt.cfg.PrivacyMode, Editor: wire.Editor{}, MaxSessions: tollgate.DefaultLimits().MaxSessions})
-	d.Sources = append(d.Sources, hist, mon)
-	d.Hooks = append(append([]tollgate.Hook{wsauth.Hook{}, hist, mon}, d.Hooks...), led)
+	// Order is load-bearing (plan 06, R2); dataplane.HookChain owns it.
+	hooks, srcs := dataplane.HookChain(dataplane.ChainOptions{PrivacyMode: rt.cfg.PrivacyMode, HistoryMaxBytes: rt.cfg.HistoryMaxBytes}, d.Hooks, led)
+	d.Sources = append(d.Sources, srcs...)
+	d.Hooks = hooks
 	rt.sources = d.Sources
 	return d, nil
 }
