@@ -3760,7 +3760,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200); filter by client (exact family) and outcome (completed|abandoned|open, else 422)",
+        "summary": "A workspace's sessions, newest first; page with the opaque cursor, bound with from/to (RFC 3339) and limit (1-200); filter by client (the stored family, e.g. opencode or openai-python; unknown means none) and outcome (completed|abandoned|open, else 422)",
         "x-permission": "session:read",
         "x-workspace-param": "id"
       }

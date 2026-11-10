@@ -26,7 +26,7 @@ func callRec(ws, id, sess string, idx int, at time.Time, cost *contract.MicroUSD
 		ID: id, OrgID: store.OrgID(), WorkspaceID: ws, SessionID: sess, CallIndex: idx, StartedAt: at, Provider: "openai", Model: "gpt-4o",
 		Wire: "openai.chat", Stream: true, Status: 200, Finish: "ok", Usage: contract.Usage{Input: 100, Output: 10, Cached: 5, Reasoning: 2},
 		Cost: cost, TTFBMs: 12, DurationMs: 340, ToolCalls: []string{"read_file"}, SessionSource: contract.SessionSourceHeader,
-		SessionStart: at, LastHadText: true, Client: "opencode/1.2",
+		SessionStart: at, LastHadText: true, Client: "opencode",
 	}
 }
 
@@ -52,7 +52,7 @@ func TestSessionsListDetailAndStats(t *testing.T) {
 	}
 	a := list.Items[1]
 	if a.Calls != 2 || a.InputTokens != 200 || a.CostUsd == nil || *a.CostUsd != 1_500_000 || a.Outcome != contract.OutcomeCompleted || a.ClosedAt == nil || a.Source != "header" ||
-		a.Client == nil || *a.Client != "opencode/1.2" || a.WorkspaceID != ws || a.SavedUsd != 0 || a.LikelySavedUsd != 0 {
+		a.Client == nil || *a.Client != "opencode" || a.WorkspaceID != ws || a.SavedUsd != 0 || a.LikelySavedUsd != 0 {
 		t.Fatalf("session a = %+v", a)
 	}
 	if !strings.Contains(string(raw), `"costUsd":"1.500000"`) || !strings.Contains(string(raw), `"savedUsd":"0.000000"`) {

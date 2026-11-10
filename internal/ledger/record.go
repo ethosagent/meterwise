@@ -109,16 +109,9 @@ func (h *Hook) reportUnpriced(ctx context.Context, provider, model string) {
 	}
 }
 
-// clientOf is the product token of the User-Agent (for example "opencode/1.2"), capped; no credential
-// header is ever read.
-func clientOf(c *tollgate.Call) string {
-	ua := c.Header.Get("User-Agent")
-	if ua == "" {
-		return ""
-	}
-	tok, _, _ := strings.Cut(ua, " ")
-	return clean(tok, 64)
-}
+// clientOf is the client family of the request ("opencode", "openai-python"; see ClientFamily), capped;
+// no credential header is ever read.
+func clientOf(c *tollgate.Call) string { return ClientFamily(c.Header) }
 
 // previewOf is the first user message, trimmed and capped at PreviewMax characters.
 func previewOf(msgs []tollgate.Message) string {

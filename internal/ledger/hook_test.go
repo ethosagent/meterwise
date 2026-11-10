@@ -51,7 +51,7 @@ func TestEveryCompletedCallIsOneRowWithTokensCostAndTools(t *testing.T) {
 	if text.Usage.Input != 12 || text.Usage.Output != 2 || text.Cost == nil || *text.Cost != 8 || text.Model != "gpt-4.1-mini" || !text.Stream || text.Status != 200 || text.Finish != "ok" || text.Wire != "openai.chat" {
 		t.Errorf("stream text call = %+v cost %v", text, text.Cost)
 	}
-	if text.TTFBMs < 0 || text.DurationMs < text.TTFBMs || text.Client != "Go-http-client/1.1" {
+	if text.TTFBMs < 0 || text.DurationMs < text.TTFBMs || text.Client != "go-http-client" {
 		t.Errorf("timing/client: %+v", text)
 	}
 	if !text.LastHadText || len(text.ToolCalls) != 0 {

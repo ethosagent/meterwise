@@ -98,7 +98,7 @@ func TestSavingsPayloads(t *testing.T) {
 	}
 
 	causes := decodeAs[contract.SavingsCauses](t, raws["causes"])
-	if len(causes.Causes) != 6 || len(causes.Clients) != 2 || causes.Clients[0].Client != "opencode/1.2" || causes.Clients[1].Client != "unknown" {
+	if len(causes.Causes) != 6 || len(causes.Clients) != 2 || causes.Clients[0].Client != "opencode" || causes.Clients[1].Client != "unknown" {
 		t.Fatalf("causes = %+v", causes)
 	}
 	if len(causes.Suggestions) != 1 || causes.Suggestions[0].Monitor != contract.MonitorRepeatedRead || causes.Suggestions[0].Path == nil || *causes.Suggestions[0].Path != "src/a.go" || causes.Suggestions[0].Count != 2 {
@@ -300,7 +300,7 @@ func TestSessionListClientAndOutcomeFilters(t *testing.T) {
 	admin := s.admin(t, "user_admin")
 	_, ws := s.defaultWorkspace(t, admin.tok)
 	s.seedSavings(t, ws)
-	for q, want := range map[string]int{"": 2, "?client=opencode/1.2": 1, "?client=unknown": 1, "?client=nobody": 0, "?outcome=open": 2, "?outcome=completed": 0, "?client=opencode/1.2&outcome=open": 1} {
+	for q, want := range map[string]int{"": 2, "?client=opencode": 1, "?client=unknown": 1, "?client=nobody": 0, "?outcome=open": 2, "?outcome=completed": 0, "?client=opencode&outcome=open": 1} {
 		list := decodeAs[contract.SessionList](t, s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/sessions"+q, "", 200))
 		if len(list.Items) != want {
 			t.Errorf("sessions%s = %d items, want %d", q, len(list.Items), want)
