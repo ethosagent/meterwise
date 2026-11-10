@@ -59,8 +59,7 @@ type Hook struct {
 	sess *sessStore
 	ctr  *counters
 
-	skipped, notesNotAdopted, blocks, notesInjected, notesDropped *atomic.Int64
-	degraded                                                      [blockReasons]*atomic.Int64 // by blockReason
+	skipped, notesNotAdopted, blocks, blocksDegraded, blocksCapped, notesInjected, notesDropped *atomic.Int64
 }
 
 // New builds a Hook.
@@ -80,9 +79,8 @@ func New(o Options) *Hook {
 	ctr := newCounters()
 	h := &Hook{opt: o, cfgs: newConfigMemo(), sess: newSessStore(o.MaxSessions), ctr: ctr,
 		skipped: ctr.of(ctrSkipped), notesNotAdopted: ctr.of(ctrNotesNotAdopted), blocks: ctr.of(ctrBlocks),
-		notesInjected: ctr.of(ctrNotesInjected), notesDropped: ctr.of(ctrNotesDropped)}
-	h.degraded[blockNoEarlier], h.degraded[blockWire] = ctr.of(ctrBlocksDegraded), ctr.of(ctrBlocksDegraded)
-	h.degraded[blockCapped] = ctr.of(ctrBlocksCapped)
+		notesInjected: ctr.of(ctrNotesInjected), notesDropped: ctr.of(ctrNotesDropped),
+		blocksDegraded: ctr.of(ctrBlocksDegraded), blocksCapped: ctr.of(ctrBlocksCapped)}
 	return h
 }
 

@@ -87,27 +87,6 @@ func (h *Hook) decide(c *tollgate.Call, st *callState, fired []contract.MonitorV
 	return plan{body: body, verdicts: fired, notes: len(held), held: held}
 }
 
-// blockReason is why a block did not happen, for the degrade counters.
-type blockReason int
-
-const (
-	blockOK        blockReason = iota
-	blockNoEarlier             // the request holds no earlier identical result to point at
-	blockCapped                // the subject was already blocked (or is being blocked) in this session
-	blockWire                  // the wire editor could not build the response
-	blockReasons
-)
-
-// blockable finds what a block of verdict v in call c points at: the earlier identical result in the
-// request (B1). It reads only the request; the session's cap and the wire are the caller's.
-func blockable(c *tollgate.Call, v contract.MonitorVerdict) (resultLoc, blockReason) {
-	loc, ok := earlierResult(c.Messages, matcher(c.Tenant.ID, v))
-	if !ok {
-		return resultLoc{}, blockNoEarlier
-	}
-	return loc, blockOK
-}
-
 // tryBlock answers the call itself with a terminal text turn that points at the earlier identical result
 // (B1): the agent ends its turn instead of running the tool again. At most one block per session and
 // subject: a later repeat of a subject already blocked degrades to a note (counted as capped). A block
@@ -119,23 +98,17 @@ func (h *Hook) tryBlock(c *tollgate.Call, key string, fired []contract.MonitorVe
 			continue
 		}
 		if !h.sess.reserve(key, blockKey(v)) {
-			h.degraded[blockCapped].Add(1)
+			h.blocksCapped.Add(1)
 			continue
 		}
-		loc, reason := blockable(c, v)
-		var resp *tollgate.Response
-		if reason == blockOK {
-			var err error
-			if resp, err = h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, blockText(v, loc)); err != nil {
-				reason = blockWire
+		// what a block points at: the earlier identical result in the request (B1); it reads only the request
+		if loc, ok := earlierResult(c.Messages, matcher(c.Tenant.ID, v)); ok {
+			if resp, err := h.opt.Editor.BlockResponse(c.Provider.Wire, c.Stream, blockText(v, loc)); err == nil {
+				return resp, i
 			}
 		}
-		if reason != blockOK {
-			h.sess.release(key, blockKey(v))
-			h.degraded[reason].Add(1)
-			continue
-		}
-		return resp, i
+		h.sess.release(key, blockKey(v)) // no earlier result, or the wire editor could not build the answer
+		h.blocksDegraded.Add(1)
 	}
 	return nil, -1
 }
