@@ -79,8 +79,8 @@ func TestVerdictsArePricedPerRulingR6(t *testing.T) {
 		saved  bool
 	}{
 		{1_000_000, 2_500_000, contract.ConfidenceCertain, true}, // 1M gpt-4o input tokens at $2.50/M
-		{100_000, 250_000, contract.ConfidenceLikely, true},
-		{50_000, 125_000, contract.ConfidenceLikely, false}, // observe: would-save, in neither number
+		{0, 0, contract.ConfidenceLikely, true},                  // the block already took the call's saving (M1)
+		{0, 0, contract.ConfidenceLikely, false},                 // observe: would-save, in neither number
 	}
 	for i, w := range want {
 		v := rec.Verdicts[i]
@@ -90,6 +90,57 @@ func TestVerdictsArePricedPerRulingR6(t *testing.T) {
 	}
 	if st["blocks_downgraded"] != int64(0) || st["invalid_verdicts"] != int64(0) {
 		t.Errorf("status = %v", st)
+	}
+}
+
+// perMonitor estimates per monitor so the attribution's choice is visible: duplicate 100k, read 200k,
+// no_progress 300k input tokens; block is certain, anything else likely.
+func perMonitor(v contract.MonitorVerdict) (contract.Usage, contract.Confidence) {
+	n := map[contract.MonitorName]int64{contract.MonitorDuplicateToolCall: 100_000, contract.MonitorRepeatedRead: 200_000, contract.MonitorNoProgress: 300_000}[v.Monitor]
+	if n == 0 {
+		return contract.Usage{}, contract.ConfidenceNone
+	}
+	if v.Action == contract.ModeBlock {
+		return contract.Usage{Input: n}, contract.ConfidenceCertain
+	}
+	return contract.Usage{Input: n}, contract.ConfidenceLikely
+}
+
+// TestOneCallIsAttributedOnce (M1): several monitors firing on one call describe one avoided call, so
+// exactly one verdict carries an estimate: the block (certain) if there is one, else the largest likely
+// estimate of a verdict that acted, else the largest would-save of an observed one. The rest record 0
+// and keep their evidence.
+func TestOneCallIsAttributedOnce(t *testing.T) {
+	dup, read, np := contract.MonitorDuplicateToolCall, contract.MonitorRepeatedRead, contract.MonitorNoProgress
+	note, obs, blk := contract.ModeNote, contract.ModeObserve, contract.ModeBlock
+	cases := []struct {
+		name string
+		vs   []contract.MonitorVerdict
+		want []int64 // EstTokens per verdict, in order
+	}{
+		{"block wins over larger likely", []contract.MonitorVerdict{mv(dup, blk, blk), mv(read, note, note), mv(np, note, note)}, []int64{100_000, 0, 0}},
+		{"two notes: only the larger", []contract.MonitorVerdict{mv(dup, note, note), mv(read, note, note), mv(np, obs, obs)}, []int64{0, 200_000, 0}},
+		{"observe only: one would-save", []contract.MonitorVerdict{mv(dup, obs, obs), mv(np, obs, obs)}, []int64{0, 300_000}},
+		{"a note beats a larger observe", []contract.MonitorVerdict{mv(dup, note, note), mv(np, obs, obs)}, []int64{100_000, 0}},
+		{"no estimate at all", []contract.MonitorVerdict{mv(contract.MonitorStepBudget, note, note)}, []int64{0}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := verdictCall("c1", tc.vs...)
+			rec, _ := run(t, func(o *ledger.Options) { o.Estimator = perMonitor }, c, false)
+			if len(rec.Verdicts) != len(tc.want) {
+				t.Fatalf("verdicts = %d, want %d", len(rec.Verdicts), len(tc.want))
+			}
+			for i, w := range tc.want {
+				v := rec.Verdicts[i]
+				if v.EstTokens != w || (w == 0) != (v.EstUSD == 0) {
+					t.Errorf("verdict %d (%s %s) = %d tokens %v USD, want %d tokens", i, v.Monitor, v.Action, v.EstTokens, v.EstUSD, w)
+				}
+				if v.Evidence.Count != 3 || v.Evidence.ArgsHash == "" {
+					t.Errorf("verdict %d lost its evidence: %+v", i, v.Evidence)
+				}
+			}
+		})
 	}
 }
 
