@@ -47,7 +47,7 @@ type fakeWriter struct {
 	closed  []string
 	batches []int
 	fail    func(recs []contract.CallRecord) error
-	// failClose, when set, is asked before every CloseSession; a non-nil error fails that attempt.
+	// failClose, when set, is asked before every CloseSessions attempt; a non-nil error fails that attempt.
 	failClose func() error
 	delay     time.Duration
 }
@@ -80,16 +80,18 @@ func (w *fakeWriter) WriteCalls(_ context.Context, recs []contract.CallRecord) (
 	return res, nil
 }
 
-func (w *fakeWriter) CloseSession(_ context.Context, ws, id string, _ time.Time) (bool, error) {
+func (w *fakeWriter) CloseSessions(_ context.Context, closes []contract.SessionClose) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.failClose != nil {
 		if err := w.failClose(); err != nil {
-			return false, err
+			return 0, err
 		}
 	}
-	w.closed = append(w.closed, ws+"/"+id)
-	return true, nil
+	for _, c := range closes {
+		w.closed = append(w.closed, c.WorkspaceID+"/"+c.SessionID)
+	}
+	return len(closes), nil
 }
 
 func (w *fakeWriter) snapshot() []contract.CallRecord {

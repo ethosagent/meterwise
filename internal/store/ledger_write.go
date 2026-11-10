@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/store/sqlc"
@@ -167,61 +166,104 @@ func (a *sessionAgg) add(r contract.CallRecord, end time.Time) {
 	}
 }
 
-func (a *sessionAgg) params(k sessionKey) sqlc.UpsertSessionParams {
-	var cost *contract.MicroUSD
+// sessionJSON is one element of the UpsertSessions array. Cost is omitted when no call of the batch was priced.
+type sessionJSON struct {
+	ID          string `json:"id"`
+	OrgID       string `json:"orgId"`
+	WorkspaceID string `json:"workspaceId"`
+	Source      string `json:"source"`
+	StartedUs   int64  `json:"startedUs"`
+	LastSeenUs  int64  `json:"lastSeenUs"`
+	Calls       int32  `json:"calls"`
+	Input       int64  `json:"input"`
+	Output      int64  `json:"output"`
+	Cost        *int64 `json:"cost,omitempty"`
+	Client      string `json:"client"`
+	Preview     string `json:"preview"`
+	LastFinish  string `json:"lastFinish"`
+	LastHadText bool   `json:"lastHadText"`
+}
+
+func (a *sessionAgg) json(k sessionKey) sessionJSON {
+	var cost *int64
 	if a.priced {
-		c := contract.MicroUSD(a.costMicro)
-		cost = &c
+		cost = &a.costMicro
 	}
-	return sqlc.UpsertSessionParams{
-		ID: k.id, OrgID: a.rec.OrgID, WorkspaceID: k.ws, Source: a.rec.SessionSource, StartedAt: pgts(a.started),
-		LastSeenAt: pgts(a.lastSeen), Calls: clampInt32(int64(a.calls)), InputTokens: a.in, OutputTokens: a.out, CostMicro: pgMicro(cost),
+	return sessionJSON{
+		ID: k.id, OrgID: a.rec.OrgID, WorkspaceID: k.ws, Source: a.rec.SessionSource, StartedUs: a.started.UnixMicro(),
+		LastSeenUs: a.lastSeen.UnixMicro(), Calls: clampInt32(int64(a.calls)), Input: a.in, Output: a.out, Cost: cost,
 		Client: a.client, Preview: a.preview, LastFinish: a.rec.Finish, LastHadText: a.rec.LastHadText,
 	}
 }
 
-// writeSessions upserts one row per session of the inserted calls, then touches last_call_at once per
-// workspace. Keys are sorted so concurrent batches lock rows in the same order.
+type touchJSON struct {
+	WorkspaceID string `json:"workspaceId"`
+	OrgID       string `json:"orgId"`
+	AtUs        int64  `json:"atUs"`
+}
+
+// writeSessions upserts the sessions of the inserted calls in one statement and moves last_call_at forward
+// in a second: two round trips per batch however many sessions and workspaces it holds. Entries are sorted
+// so concurrent batches lock rows in the same order.
 func (s *Store) writeSessions(ctx context.Context, q *sqlc.Queries, fresh []contract.CallRecord) error {
+	if len(fresh) == 0 {
+		return nil
+	}
 	aggs, touches := foldSessions(fresh)
 	keys := make([]sessionKey, 0, len(aggs))
 	for k := range aggs {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i].ws+"/"+keys[i].id < keys[j].ws+"/"+keys[j].id })
-	for _, k := range keys {
-		if err := q.UpsertSession(ctx, aggs[k].params(k)); err != nil {
-			return err
-		}
+	sessions := make([]sessionJSON, len(keys))
+	for i, k := range keys {
+		sessions[i] = aggs[k].json(k)
+	}
+	body, err := json.Marshal(sessions)
+	if err != nil {
+		return fail(ClassPool, "store: sessions are not JSON")
+	}
+	if err := q.UpsertSessions(ctx, body); err != nil {
+		return err
 	}
 	wss := make([]string, 0, len(touches))
 	for ws := range touches {
 		wss = append(wss, ws)
 	}
 	sort.Strings(wss)
-	for _, ws := range wss {
-		t := touches[ws]
-		if err := q.TouchWorkspaceLastCall(ctx, sqlc.TouchWorkspaceLastCallParams{At: pgts(t.at), WorkspaceID: ws, OrgID: t.org}); err != nil {
-			return err
+	ts := make([]touchJSON, len(wss))
+	for i, ws := range wss {
+		ts[i] = touchJSON{WorkspaceID: ws, OrgID: touches[ws].org, AtUs: touches[ws].at.UnixMicro()}
+	}
+	if body, err = json.Marshal(ts); err != nil {
+		return fail(ClassPool, "store: touches are not JSON")
+	}
+	return q.TouchWorkspacesLastCall(ctx, body)
+}
+
+type closeJSON struct {
+	WorkspaceID string `json:"workspaceId"`
+	ID          string `json:"id"`
+	AtUs        int64  `json:"atUs"`
+}
+
+// CloseSessions finalises quiet sessions in one statement: closed_at = at and the outcome heuristic (the
+// last call finished ok with assistant text: completed; otherwise abandoned). It returns how many rows
+// changed; an unknown, malformed or already closed session is not an error.
+func (s *Store) CloseSessions(ctx context.Context, closes []contract.SessionClose) (int, error) {
+	list := make([]closeJSON, 0, len(closes))
+	for _, c := range closes {
+		if validID(c.WorkspaceID) {
+			list = append(list, closeJSON{WorkspaceID: c.WorkspaceID, ID: c.SessionID, AtUs: c.At.UnixMicro()})
 		}
 	}
-	return nil
-}
-
-// CloseSession finalises a quiet session: closed_at = at and the outcome heuristic (the last call
-// finished ok with assistant text: completed; otherwise abandoned). It reports whether a row changed;
-// an unknown or already closed session is not an error.
-func (s *Store) CloseSession(ctx context.Context, workspaceID, sessionID string, at time.Time) (bool, error) {
-	if !validID(workspaceID) {
-		return false, nil
+	if len(list) == 0 {
+		return 0, nil
 	}
-	n, err := s.q.CloseSession(ctx, sqlc.CloseSessionParams{ClosedAt: pgts(at), WorkspaceID: workspaceID, ID: sessionID})
-	return n > 0, queryErr(err)
-}
-
-func pgMicro(m *contract.MicroUSD) pgtype.Int8 {
-	if m == nil {
-		return pgtype.Int8{}
+	body, err := json.Marshal(list)
+	if err != nil {
+		return 0, fail(ClassPool, "store: closes are not JSON")
 	}
-	return pgtype.Int8{Int64: int64(*m), Valid: true}
+	n, err := s.q.CloseSessions(ctx, body)
+	return int(n), queryErr(err)
 }

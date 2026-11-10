@@ -7,27 +7,21 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const closeSession = `-- name: CloseSession :execrows
-UPDATE sessions
-SET closed_at = $1::timestamptz,
-    outcome = CASE WHEN last_finish = 'ok' AND last_had_text THEN 'completed' ELSE 'abandoned' END
-WHERE workspace_id = $2::text::uuid AND id = $3::text AND closed_at IS NULL
+const closeSessions = `-- name: CloseSessions :execrows
+UPDATE sessions s
+SET closed_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond',
+    outcome = CASE WHEN s.last_finish = 'ok' AND s.last_had_text THEN 'completed' ELSE 'abandoned' END
+FROM jsonb_array_elements($1::jsonb) AS t(j)
+WHERE s.workspace_id = (t.j->>'workspaceId')::uuid AND s.id = t.j->>'id' AND s.closed_at IS NULL
 `
 
-type CloseSessionParams struct {
-	ClosedAt    pgtype.Timestamptz
-	WorkspaceID string
-	ID          string
-}
-
-// Finalise a quiet session: closed_at and the outcome heuristic (last finish ok and non-empty assistant
-// text is completed, anything else abandoned). An already closed session is left alone.
-func (q *Queries) CloseSession(ctx context.Context, arg CloseSessionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, closeSession, arg.ClosedAt, arg.WorkspaceID, arg.ID)
+// Finalise quiet sessions, one statement per flush (a JSON array of {workspaceId, id, atUs}): closed_at and the
+// outcome heuristic (last finish ok and non-empty assistant text is completed, anything else abandoned). An already
+// closed session is left alone.
+func (q *Queries) CloseSessions(ctx context.Context, closesJson []byte) (int64, error) {
+	result, err := q.db.Exec(ctx, closeSessions, closesJson)
 	if err != nil {
 		return 0, err
 	}
@@ -72,32 +66,30 @@ func (q *Queries) InsertCalls(ctx context.Context, callsJson []byte) ([]string, 
 	return items, nil
 }
 
-const touchWorkspaceLastCall = `-- name: TouchWorkspaceLastCall :exec
-UPDATE workspaces
-SET last_call_at = GREATEST(COALESCE(last_call_at, $1::timestamptz), $1::timestamptz)
-WHERE id = $2::text::uuid AND org_id = $3::text::uuid
+const touchWorkspacesLastCall = `-- name: TouchWorkspacesLastCall :exec
+UPDATE workspaces w
+SET last_call_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond'
+FROM jsonb_array_elements($1::jsonb) AS t(j)
+WHERE w.id = (t.j->>'workspaceId')::uuid AND w.org_id = (t.j->>'orgId')::uuid
+  AND (w.last_call_at IS NULL OR w.last_call_at < timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond')
 `
 
-type TouchWorkspaceLastCallParams struct {
-	At          pgtype.Timestamptz
-	WorkspaceID string
-	OrgID       string
-}
-
-// One coalesced touch per workspace per batch; never moves last_call_at backwards.
-func (q *Queries) TouchWorkspaceLastCall(ctx context.Context, arg TouchWorkspaceLastCallParams) error {
-	_, err := q.db.Exec(ctx, touchWorkspaceLastCall, arg.At, arg.WorkspaceID, arg.OrgID)
+// One statement per batch (a JSON array of {workspaceId, orgId, atUs}): each workspace's last_call_at moves to its
+// newest call end, and only forward (a batch of older calls writes nothing).
+func (q *Queries) TouchWorkspacesLastCall(ctx context.Context, touchesJson []byte) error {
+	_, err := q.db.Exec(ctx, touchWorkspacesLastCall, touchesJson)
 	return err
 }
 
-const upsertSession = `-- name: UpsertSession :exec
+const upsertSessions = `-- name: UpsertSessions :exec
 INSERT INTO sessions (id, org_id, workspace_id, source, started_at, last_seen_at, calls, input_tokens, output_tokens, cost_usd,
                       client, first_user_message_preview, last_finish, last_had_text)
-VALUES ($1::text, $2::text::uuid, $3::text::uuid, $4::text,
-        $5::timestamptz, $6::timestamptz, $7::int,
-        $8::bigint, $9::bigint, $10::bigint::numeric / 1000000,
-        NULLIF($11::text, ''), NULLIF($12::text, ''), $13::text,
-        $14::bool)
+SELECT r.j->>'id', (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'source',
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond',
+       timestamptz 'epoch' + (r.j->>'lastSeenUs')::bigint * interval '1 microsecond',
+       (r.j->>'calls')::int, (r.j->>'input')::bigint, (r.j->>'output')::bigint, (r.j->>'cost')::numeric / 1000000,
+       NULLIF(r.j->>'client', ''), NULLIF(r.j->>'preview', ''), r.j->>'lastFinish', (r.j->>'lastHadText')::bool
+FROM jsonb_array_elements($1::jsonb) AS r(j)
 ON CONFLICT (workspace_id, id) DO UPDATE SET
     calls = sessions.calls + EXCLUDED.calls,
     input_tokens = sessions.input_tokens + EXCLUDED.input_tokens,
@@ -113,42 +105,12 @@ ON CONFLICT (workspace_id, id) DO UPDATE SET
     last_seen_at = GREATEST(sessions.last_seen_at, EXCLUDED.last_seen_at)
 `
 
-type UpsertSessionParams struct {
-	ID           string
-	OrgID        string
-	WorkspaceID  string
-	Source       string
-	StartedAt    pgtype.Timestamptz
-	LastSeenAt   pgtype.Timestamptz
-	Calls        int32
-	InputTokens  int64
-	OutputTokens int64
-	CostMicro    pgtype.Int8
-	Client       string
-	Preview      string
-	LastFinish   string
-	LastHadText  bool
-}
-
-// The only INSERT into sessions (H4). The ledger passes the aggregate of the calls a batch really inserted
-// (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed session.
-// started_at is the keyset sort key of the session list: it is set by the first insert and never changes.
-func (q *Queries) UpsertSession(ctx context.Context, arg UpsertSessionParams) error {
-	_, err := q.db.Exec(ctx, upsertSession,
-		arg.ID,
-		arg.OrgID,
-		arg.WorkspaceID,
-		arg.Source,
-		arg.StartedAt,
-		arg.LastSeenAt,
-		arg.Calls,
-		arg.InputTokens,
-		arg.OutputTokens,
-		arg.CostMicro,
-		arg.Client,
-		arg.Preview,
-		arg.LastFinish,
-		arg.LastHadText,
-	)
+// The only INSERT into sessions (H4), one statement for every session of a batch (a JSON array with one object per
+// session, sorted so concurrent batches lock rows in one order). The ledger passes the aggregate of the calls a
+// batch really inserted (never a repeat), so adding to the stored counters is exact. A newer call reopens a closed
+// session. started_at is the keyset sort key of the session list: set by the first insert, never changed. A missing
+// "cost" is NULL (all calls unpriced). Money converts from micro-USD to numeric(14,6) here; times are unix microseconds.
+func (q *Queries) UpsertSessions(ctx context.Context, sessionsJson []byte) error {
+	_, err := q.db.Exec(ctx, upsertSessions, sessionsJson)
 	return err
 }

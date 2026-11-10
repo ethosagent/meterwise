@@ -16,7 +16,7 @@ import (
 // Writer is what the batcher needs from the store; *store.Store implements it and tests fake it.
 type Writer interface {
 	WriteCalls(ctx context.Context, recs []contract.CallRecord) (store.WriteResult, error)
-	CloseSession(ctx context.Context, workspaceID, sessionID string, at time.Time) (bool, error)
+	CloseSessions(ctx context.Context, closes []contract.SessionClose) (int, error)
 }
 
 // Options configures the hook. Zero values take the documented defaults.
@@ -216,9 +216,12 @@ func (q *queue) drain(ctx context.Context, buf []item) {
 // a single poison record cannot sink the rest.
 func (q *queue) flush(parent context.Context, buf []item, final bool) {
 	var calls []contract.CallRecord
+	var closes []contract.SessionClose
 	for _, it := range buf {
 		if it.call != nil {
 			calls = append(calls, *it.call)
+		} else {
+			closes = append(closes, contract.SessionClose{WorkspaceID: it.closeWS, SessionID: it.closeID, At: it.closeAt})
 		}
 	}
 	// one retry budget for the whole flush: an outage burns it once, not once per operation
@@ -228,23 +231,19 @@ func (q *queue) flush(parent context.Context, buf []item, final bool) {
 	if len(calls) > 0 {
 		q.writeCalls(ctx, calls, final, deadline)
 	}
-	for _, it := range buf {
-		if it.call != nil {
-			continue
-		}
-		q.closeSession(ctx, it, final, deadline)
+	if len(closes) > 0 {
+		q.closeSessions(ctx, closes, final, deadline)
 	}
 }
 
-// closeSession applies one session close with the retry policy of a call batch. A close that still
-// fails is counted in lost_closes: the session stays open until a later call or close touches it.
-func (q *queue) closeSession(ctx context.Context, it item, final bool, deadline time.Time) {
+// closeSessions applies the session closes of a flush in one statement with the retry policy of a call
+// batch. Closes that still fail are counted in lost_closes: those sessions stay open until a later call
+// or close touches them.
+func (q *queue) closeSessions(ctx context.Context, closes []contract.SessionClose, final bool, deadline time.Time) {
 	for attempt := 1; ; attempt++ {
-		ok, err := q.o.Writer.CloseSession(ctx, it.closeWS, it.closeID, it.closeAt)
+		n, err := q.o.Writer.CloseSessions(ctx, closes)
 		if err == nil {
-			if ok {
-				q.sessionsClosed.Add(1)
-			}
+			q.sessionsClosed.Add(int64(n))
 			q.ok()
 			return
 		}
@@ -253,7 +252,7 @@ func (q *queue) closeSession(ctx context.Context, it item, final bool, deadline 
 			break
 		}
 	}
-	q.lostCloses.Add(1)
+	q.lostCloses.Add(int64(len(closes)))
 }
 
 // again sleeps the backoff of a failed attempt and reports whether to try once more. While the database

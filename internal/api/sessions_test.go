@@ -41,8 +41,8 @@ func TestSessionsListDetailAndStats(t *testing.T) {
 		callRec(ws, "b1", "sess-b", 1, now.Add(-time.Hour), microp(250_000)),
 		callRec(ws, "old", "sess-old", 1, now.AddDate(0, 0, -20), microp(2_000_000)),
 	)
-	if ok, err := s.db.CloseSession(context.Background(), ws, "sess-a", now); err != nil || !ok {
-		t.Fatal(ok, err)
+	if n, err := s.db.CloseSessions(context.Background(), []contract.SessionClose{{WorkspaceID: ws, SessionID: "sess-a", At: now}}); err != nil || n != 1 {
+		t.Fatal(n, err)
 	}
 
 	raw := s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/sessions?limit=2", "", 200)

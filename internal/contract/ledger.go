@@ -48,6 +48,13 @@ type CallRecord struct {
 	Preview       string // first user message, at most 200 chars; "" unless capture is on and privacy mode is off
 }
 
+// SessionClose asks the ledger to finalise one quiet session.
+type SessionClose struct {
+	WorkspaceID string
+	SessionID   string
+	At          time.Time
+}
+
 // SessionRecord is one sessions row.
 type SessionRecord struct {
 	ID            string
