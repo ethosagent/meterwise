@@ -54,7 +54,7 @@ func TestStepZeroSeedsAreConsistent(t *testing.T) {
 		if !priced(r.provider, r.from) || !priced(r.provider, r.to) {
 			t.Errorf("route %s %s -> %s: both ends must have a pricing row", r.provider, r.from, r.to)
 		}
-		var maxTools int
+		var maxTools *int
 		if err := conn.QueryRow(ctx, `SELECT max_tools FROM router_model_capabilities WHERE provider = $1 AND model = $2`, r.provider, r.to).Scan(&maxTools); err != nil {
 			t.Errorf("route target %s/%s has no capability row: %v", r.provider, r.to, err)
 		}

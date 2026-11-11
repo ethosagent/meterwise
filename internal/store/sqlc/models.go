@@ -177,7 +177,7 @@ type RouterFeedback struct {
 type RouterModelCapability struct {
 	Provider           string
 	Model              string
-	MaxTools           int32
+	MaxTools           pgtype.Int4
 	SupportsJsonSchema bool
 	SupportsVision     bool
 	SupportsReasoning  bool

@@ -125,6 +125,20 @@ func parseColumns(body, file string) []column {
 	return cols
 }
 
+// addColumns records the columns every ALTER TABLE ... ADD COLUMN clause of up adds to m. One ALTER TABLE may add
+// several columns: its clauses split at top-level commas, so a comma inside CHECK (x IN ('a','b')) stays in its
+// column's definition.
+func addColumns(m *migration, up, file string) {
+	for _, a := range alterRe.FindAllStringSubmatch(up, -1) {
+		for _, clause := range topLevelCommas(a[2]) {
+			clause = strings.Join(strings.Fields(clause), " ")
+			if c := addColRe.FindStringSubmatch(clause); c != nil {
+				m.adds[a[1]] = append(m.adds[a[1]], column{Name: c[1], Def: c[2], Migration: file})
+			}
+		}
+	}
+}
+
 func parseMigration(file, sql string) migration {
 	m := migration{File: file, adds: map[string][]column{}}
 	if f := fileRe.FindStringSubmatch(file); f != nil {
@@ -149,16 +163,7 @@ func parseMigration(file, sql string) migration {
 		m.Created = append(m.Created, name)
 		m.tables = append(m.tables, table{Name: name, Feature: m.Feature, Migration: file})
 	}
-	for _, a := range alterRe.FindAllStringSubmatch(up, -1) {
-		// One ALTER TABLE may add several columns: split its clauses at top-level commas, so a comma inside
-		// CHECK (x IN ('a','b')) stays in its column's definition.
-		for _, clause := range topLevelCommas(a[2]) {
-			clause = strings.Join(strings.Fields(clause), " ")
-			if c := addColRe.FindStringSubmatch(clause); c != nil {
-				m.adds[a[1]] = append(m.adds[a[1]], column{Name: c[1], Def: c[2], Migration: file})
-			}
-		}
-	}
+	addColumns(&m, up, file)
 	touched := map[string]bool{}
 	for _, n := range m.Created {
 		touched[n] = true
