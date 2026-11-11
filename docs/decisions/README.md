@@ -32,6 +32,8 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0025](0025-savings-read-model-event-time-utc-buckets-no-materialised-view-until-the-bench-says-so.md) | Savings read model: event-time UTC buckets, no materialised view until the bench says so | Accepted |
 | [0026](0026-one-body-edit-protocol-internal-wire-and-the-09-11-hook-order.md) | One body-edit protocol (`internal/wire`) and the 09-11 hook order | Accepted |
 | [0027](0027-savings-causes-beyond-monitors-one-read-model.md) | Savings causes beyond monitors: one read model, trim and router in the headline, memory likely | Accepted |
+| [0029](0029-router-changes-one-field-the-customers-key-monitors-are-the-safety-net.md) | The router changes one field, on the customer's key; monitors are the safety net | Accepted |
+| [0030](0030-router-target-unavailable-and-deferred-model-masking.md) | Router: a refused target pauses the pair; model masking and the route header are deferred | Accepted |
 
 Template: [`template.md`](template.md).
 

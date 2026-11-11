@@ -40,7 +40,7 @@ export function EventCard({
       return (
         <>
           <Divider size="small" />
-          <RouteEvent call={event.call} />
+          <RouteEvent call={event.call} workspaceId={workspaceId} sessionId={detail.session.id} />
         </>
       );
     case "memory_hint":

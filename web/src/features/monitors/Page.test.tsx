@@ -35,7 +35,9 @@ describe("MonitorsPage", () => {
     expect(within(rr).getByText("$0.10")).toBeInTheDocument(); // likely
     expect(within(rr).getByText("2")).toBeInTheDocument(); // marked wrong
     expect(document.body.textContent).not.toContain("$0.40"); // saved + likely is never shown
-    expect(screen.getAllByRole("row")).toHaveLength(7); // header + six
+    const mapRows = within(screen.getByRole("table", { name: "Model map" })).getAllByRole("row");
+    const monitorRows = screen.getAllByRole("row").filter((r) => !mapRows.includes(r));
+    expect(monitorRows).toHaveLength(7); // header + six
   });
 
   it("observe rows show would-save as an outlined amber tag", async () => {
