@@ -18,7 +18,7 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 . scripts/lib.sh
-GATES=(fmt vet mod arch lint test vuln docs size sqlc migrate web generated)
+GATES=(fmt vet mod arch lint test bench vuln docs size sqlc migrate web generated)
 JSON=0
 while [ "$#" -gt 0 ]; do
   case "$1" in

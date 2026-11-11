@@ -190,6 +190,28 @@ red test "coverage below the floor" "below 75%" m_cov
 green test "no database reachable, local: skip is loud" "! SKIP test TestConfiguredDatabaseIsReachable" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI= COVERAGE_MIN=1
 red test "no database under CI=true fails closed" "unset under CI=true" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=true
 
+# ---- bench: a timing test over budget fails closed; a missing database is loud locally and fatal under CI
+m_overbudget() { gofile internal/config/zz_bench_test.go <<<'package config_test
+import (
+	"testing"
+	"time"
+
+	"github.com/ethosagent/meterwise/internal/nonet"
+)
+func TestSeededOverBudget(t *testing.T) {
+	nonet.SkipTiming(t)
+	start := time.Now()
+	time.Sleep(20 * time.Millisecond)
+	if took := time.Since(start); took > time.Millisecond {
+		t.Fatalf("seeded over budget: took %v, budget 1ms", took)
+	}
+}'; }
+red bench "a timing test over its budget" "seeded over budget" m_overbudget
+m_otherrecv() { m_overbudget; sed -i.bak 's/(t \*testing.T)/(tb *testing.T)/; s/SkipTiming(t)/SkipTiming(tb)/; s/t\.Fatalf/tb.Fatalf/' internal/config/zz_bench_test.go; rm -f internal/config/zz_bench_test.go.bak; }
+red bench "a timing test whose receiver is not named t is still discovered" "seeded over budget" m_otherrecv
+green bench "no database reachable, local: skip is loud" "! SKIP test TestAddedLatencyP99UnderBudgetWithPostgres" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=
+red bench "no database under CI=true fails closed" "unset under CI=true" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=true
+
 # ---- vuln
 m_vuln() { cat >>go.mod <<<'
 require gopkg.in/yaml.v2 v2.2.2'; gofile internal/config/vuln.go <<<'package config

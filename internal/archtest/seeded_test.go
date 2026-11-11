@@ -140,6 +140,14 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 		"web/src/zz.js":           "import x from 'left-pad-js'",
 		"web/src/tpl.mts":         "const m = await import(`tpl-pad`)",
 		"web/src/node.ts":         "import fs from 'node:fs'",
+		"web/src/multi.ts":        "import {\n  a,\n  b as c, // note\n} from 'multi-pad'",
+		"web/src/typed.ts":        "import type { T } from 'type-pad'\nexport type { U } from 'etype-pad'",
+		"web/src/side.ts":         "import 'side-pad'",
+		"web/src/req.ts":          "const r = require('req-pad')",
+		"web/src/star.ts":         "export * as ns from 'star-pad'",
+		"web/src/semi.ts":         "const a = 1; import s from 'semi-pad'",
+		"web/src/punct.ts":        "import {\n  a, // see: docs.example/x\n  b, /* note: ok */\n} from 'punct-pad'",
+		"web/src/nolf.ts":         "const a = 1\nimport d from 'second-pad'",
 	}
 	got := scanWeb(bad, `{"dependencies":{"react":"1","moment":"2"},"devDependencies":{"vite":"6"}}`)
 	if r := rules(got); !slices.Equal(r, []string{"H5"}) {
@@ -149,7 +157,7 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 	for _, v := range got {
 		text += v.Msg + "\n"
 	}
-	for _, want := range []string{"lodash", "leaves web/src", "left-pad", "absolute path", "@scope/pkg", `"moment"`, "left-pad-js", "tpl-pad", "node built-ins"} {
+	for _, want := range []string{"lodash", "leaves web/src", "left-pad", "absolute path", "@scope/pkg", `"moment"`, "left-pad-js", "tpl-pad", "node built-ins", "multi-pad", "type-pad", "etype-pad", "side-pad", "req-pad", "star-pad", "second-pad", "semi-pad", "punct-pad"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no finding mentions %s:\n%s", want, text)
 		}
@@ -161,6 +169,14 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 	}
 	if got := scanWeb(good, `{"devDependencies":{"typescript":"5","@biomejs/biome":"2"}}`); len(got) != 0 {
 		t.Fatalf("legal web imports flagged: %v", got)
+	}
+	// String text containing `from "..."` is not an import (H5 false positive).
+	text5 := map[string]string{
+		"web/src/s.test.tsx": "screen.getByRole(\"tab\", { name: \"Where it came from\" })\nawait screen.findByTestId(\"hero\")\n",
+		"web/src/t.ts":       "const s = \"data from 'lodash'\"\nconst u = `copied from \"left-pad\"`\n// moved from 'lodash'\nexport const v = 1 // from 'lodash'\n",
+	}
+	if got := scanWeb(text5, ""); len(got) != 0 {
+		t.Fatalf("string text flagged as an import: %v", got)
 	}
 	if got := scanWeb(nil, `{not json`); len(got) != 1 {
 		t.Fatalf("invalid package.json not reported: %v", got)

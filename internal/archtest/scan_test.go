@@ -137,7 +137,25 @@ var webAllow = []string{
 	"@testing-library/react", "@testing-library/dom", "@testing-library/jest-dom", "@testing-library/user-event",
 }
 
-var importRe = regexp.MustCompile("(?m)(?:\\bfrom\\s*|\\bimport\\s*\\(?\\s*|\\brequire\\(\\s*)[\"'`]([^\"'`]+)[\"'`]")
+// importRes match only real module specifiers, each with the specifier as
+// group 1. A bare `from "x"` is not enough: string text such as
+// `{ name: "Where it came from" }` must not read as an import.
+//
+//  1. a static statement at a line start or after `;`, `{` or `}`: `import ... from "x"` or
+//     `export ... from "x"`. The clause between the keyword and `from` is
+//     limited to identifiers, braces, commas, `*` and whitespace (so it spans
+//     lines but never a quote, `;` or `=`), plus line and block comments.
+//  2. a side-effect `import "x"` at the same anchors.
+//  3. a dynamic `import("x")`.
+//  4. `require("x")` (also covers `import x = require("x")`).
+//
+// Known limit: string-named members (`import { "a-b" as ab } from "x"`) are not matched.
+var importRes = []*regexp.Regexp{
+	regexp.MustCompile("(?m)(?:^|[;{}])[ \\t]*(?:import|export)\\b(?:[\\w$\\s{},*]|//[^\\n]*\\n|/\\*(?:[^*]|\\*+[^*/])*\\*+/)*?\\bfrom\\s*[\"'`]([^\"'`]+)[\"'`]"),
+	regexp.MustCompile("(?m)(?:^|[;{}])[ \\t]*import\\s*[\"'`]([^\"'`]+)[\"'`]"),
+	regexp.MustCompile("\\bimport\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]"),
+	regexp.MustCompile("\\brequire\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]"),
+}
 
 var webSource = regexp.MustCompile(`\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$`)
 
@@ -150,9 +168,11 @@ func scanWeb(files map[string]string, pkgJSON string) []Violation {
 		if !strings.HasPrefix(rel, "web/src/") || !webSource.MatchString(rel) {
 			continue
 		}
-		for _, m := range importRe.FindAllStringSubmatch(body, -1) {
-			if msg := checkWebImport(rel, m[1]); msg != "" {
-				add(msg)
+		for _, re := range importRes {
+			for _, m := range re.FindAllStringSubmatch(body, -1) {
+				if msg := checkWebImport(rel, m[1]); msg != "" {
+					add(msg)
+				}
 			}
 		}
 	}

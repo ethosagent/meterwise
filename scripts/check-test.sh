@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Gate: all tests, offline (-tags=offline, -mod=readonly, internal/nonet guard in
-# each package's TestMain), with the race detector and a total coverage floor.
+# each package's TestMain), with the race detector, -short and a total coverage floor.
+# -short skips the wall-clock timing tests (nonet.SkipTiming); check-bench.sh runs them serially.
 #   COVERAGE_MIN       minimum total statement coverage, percent (default 75)
 #   TEST_DATABASE_URL  loopback Postgres for database tests; when unset and docker
 #                      is available the compose Postgres is started (make db-up).

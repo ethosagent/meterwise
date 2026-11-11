@@ -63,6 +63,19 @@ func Install() (restore func()) {
 	}
 }
 
+// SkipTiming skips a test that asserts a wall-clock budget (a p99, a p95, a
+// "took less than N ms" limit) when the tests run with -short. The parallel,
+// race-instrumented `test` gate runs with -short, where machine load makes such
+// limits fail on noise; the serial `bench` gate (scripts/check-bench.sh) runs
+// without -short and so runs them. Call it first in every wall-time test.
+// Allocation counts and relative checks are deterministic and do not use it.
+func SkipTiming(t testing.TB) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("wall-clock timing budget: runs in the serial bench gate (scripts/check-bench.sh), not under -short")
+	}
+}
+
 // Run installs the guard, runs the package's tests and restores the guard.
 // Use: func TestMain(m *testing.M) { os.Exit(nonet.Run(m)) }
 func Run(m *testing.M) int {

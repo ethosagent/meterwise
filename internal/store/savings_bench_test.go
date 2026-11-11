@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/nonet"
 	"github.com/ethosagent/meterwise/internal/store"
 )
 
@@ -90,6 +91,7 @@ func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
 // TestSavingsReadsStayUnderBudgetAt50kCalls is the S7 bench: 100 runs of each read (the p95 tolerates five slow outliers) over a 30-day range.
 func TestSavingsReadsStayUnderBudgetAt50kCalls(t *testing.T) {
+	nonet.SkipTiming(t)
 	s, ctx := openMigrated(t), context.Background()
 	ws := newWS(t, s, "Bench", "BBBBBBBBBBBBBBBBBBBBBB")
 	seedBench(t, s, ws)

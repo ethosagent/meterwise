@@ -151,6 +151,11 @@ Tests are offline: `-tags=offline`, `GOFLAGS=-mod=readonly`, and each package's 
 which refuses non-loopback dials and DNS. Postgres on loopback is allowed. Clerk and provider upstreams exist only as
 mock twins. Without `TEST_DATABASE_URL` the database tests print `! SKIP`; under `CI=true` they fail instead.
 
+The `test` gate runs `-short` and in parallel, so wall-clock timing tests (p99/p95 and "took less than N ms" budgets)
+skip there: they call `nonet.SkipTiming(t)`. The `bench` gate (`scripts/run-checks.sh bench`) runs exactly those tests
+serially (`-p 1 -parallel 1`, no `-race`, no `-short`) with the budgets unchanged. A new timing test calls
+`nonet.SkipTiming(t)` first and `bench` picks it up. Run `bench` on a quiet machine: a high load average fails it on noise.
+
 ## Agent setup (outside the repo, not committed)
 
 Put this in `~/.claude/settings.json` so every session starts lean:

@@ -126,7 +126,7 @@ They are denied to whole-file reads in `.claude/settings.json` and `read-guard.s
 
 ## 8. Gates
 
-`fmt vet mod arch lint test vuln docs size sqlc migrate web generated`, run by `scripts/run-checks.sh`
+`fmt vet mod arch lint test bench vuln docs size sqlc migrate web generated`, run by `scripts/run-checks.sh`
 (local, pre-push and CI are the same script). `--fast` runs `fmt vet arch docs size sqlc`. Coverage floors:
 Go 75 %, web 70 %; raise, never lower. Dev tools (golangci-lint, govulncheck, sqlc, goose) are pinned in
 `tools/go.mod`; web tools in `web/package.json` with exact versions.
