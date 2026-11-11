@@ -41,7 +41,8 @@ func TestHookOnlyActsOnTheTwoWires(t *testing.T) {
 	if _, ok := result(c); !ok {
 		t.Fatal("openai.chat is trimmed")
 	}
-	for _, w := range []tollgate.WireFormat{tollgate.WirePassthrough} {
+	// openai.responses is DEFERRED (R12): tollgate v0.1.0 has no constant for it, so it is named by its wire string.
+	for _, w := range []tollgate.WireFormat{tollgate.WirePassthrough, tollgate.WireFormat("openai.responses")} {
 		s := newSession(t, h, w, contract.TrimModeLossless)
 		c := s.send(agentSteps()[:1])
 		if _, ok := result(c); ok || !bytes.Equal(c.Body, requestBody(t, w, agentSteps()[:1], -1, false)) {

@@ -66,7 +66,7 @@ export function TrimPreviewDrawer({
                   ? "Applied"
                   : "Not trimmed"}
             </Descriptions.Item>
-            <Descriptions.Item label="Trimmed text (all stages)">
+            <Descriptions.Item label="Trimmed-text bytes (all stages)">
               {`${formatTokens(p.bodyBefore)} → ${formatTokens(p.bodyAfter)} bytes`}
             </Descriptions.Item>
           </Descriptions>

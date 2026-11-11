@@ -37,6 +37,7 @@ describe("TrimEvent", () => {
     const drawer = within(await screen.findByRole("dialog"));
     expect(await drawer.findByText("Duplicate lines")).toBeInTheDocument();
     expect(drawer.getByText("Long logs and diffs")).toBeInTheDocument();
+    expect(drawer.getByText("Trimmed-text bytes (all stages)")).toBeInTheDocument();
     expect(drawer.getByText("5,800 → 2,400")).toBeInTheDocument();
     expect(drawer.getByText("line (×N)")).toBeInTheDocument();
     expect(drawer.getByText("… N lines folded; K errors kept …")).toBeInTheDocument();

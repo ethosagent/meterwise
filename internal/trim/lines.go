@@ -30,7 +30,7 @@ func jsonLen(s string) int {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		switch {
 		case r == utf8.RuneError && size == 1:
-			n += 3 // an invalid byte is written as the replacement character (three bytes), not as�
+			n += 3 // an invalid byte is written as the replacement character (three bytes), not as `\uXXXX` escapes
 		case r == ' ' || r == ' ':
 			n += 6
 		default:

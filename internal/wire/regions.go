@@ -19,7 +19,8 @@ var ErrBadEdit = errors.New("wire: bad region edit")
 // string (empty from the *Spans functions, see Decode). Msg is the index of the message (or of the tool for
 // ToolDescriptions) in its array. Tool is the tool's name, resolved from the assistant turn that called it.
 //
-// Protected means the string is in a system or developer message. Cached means it sits at or before the last
+// Protected means the string is in a system or developer message. ToolResultSpans and ToolResults never emit such a
+// region (protection comes from which spans they select), so a caller must not rely on this flag for it. Cached means it sits at or before the last
 // cache_control breakpoint (anthropic): the trim feature does not skip such a region (ruling A5: it protects the
 // system prompt and the tool definitions, and keeps every decision sticky so the cached prefix is byte-stable), but a
 // caller that wants the stricter rule has the flag.
