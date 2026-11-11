@@ -77,12 +77,13 @@ export function RouterPanel({
   const mode = settings.config.mode;
   const send = (body: Parameters<typeof patch.mutate>[0], what: string, done?: () => void) =>
     patch.mutate(body, {
-      onSuccess: done,
+      ...(done ? { onSuccess: done } : {}),
       onError: (e) => toast(e, `Could not update ${what}.`),
     });
   const addable = [...settings.suggestions, ...settings.defaults].filter(
     (p, i, all) =>
-      all.findIndex((q) => label(q) === label(p)) === i && !settings.effective.some((e) => sameFrom(e, p)),
+      all.findIndex((q) => label(q) === label(p)) === i &&
+      !settings.effective.some((e) => sameFrom(e, p)),
   );
   const chosen = addable.find((p) => label(p) === pick);
   const effectiveDefault = MODE_DEFAULT_BP[mode];
@@ -112,7 +113,8 @@ export function RouterPanel({
           onChange={(v) => setThreshold(v)}
         />
         <Typography.Text type="secondary">
-          basis points of the simplicity score; a call scoring at or under it may be rerouted. Empty is the mode's default.
+          basis points of the simplicity score; a call scoring at or under it may be rerouted. Empty
+          is the mode's default.
         </Typography.Text>
         <Button
           size="small"
@@ -148,7 +150,10 @@ export function RouterPanel({
                 aria-label={`Remove ${label(row)}`}
                 disabled={readOnly || patch.isPending}
                 onClick={() =>
-                  send({ map: settings.effective.filter((p) => !sameFrom(p, row)) }, "the model map")
+                  send(
+                    { map: settings.effective.filter((p) => !sameFrom(p, row)) },
+                    "the model map",
+                  )
                 }
               >
                 Remove
@@ -173,7 +178,8 @@ export function RouterPanel({
         <Button
           disabled={readOnly || !chosen || patch.isPending}
           onClick={() =>
-            chosen && send({ map: [...settings.effective, chosen] }, "the model map", () => setPick(null))
+            chosen &&
+            send({ map: [...settings.effective, chosen] }, "the model map", () => setPick(null))
           }
         >
           Add pair

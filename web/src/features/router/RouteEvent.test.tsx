@@ -41,6 +41,8 @@ describe("Route event", () => {
     if (!observed) throw new Error("fixture has no observe call");
     renderAt(<RouteEvent call={observed} workspaceId="ws_1" sessionId="sess_1" />);
     expect(screen.getByText("Would route")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Mark routed answer worse" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Mark routed answer worse" }),
+    ).not.toBeInTheDocument();
   });
 });

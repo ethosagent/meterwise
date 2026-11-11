@@ -41,7 +41,9 @@ export function useRouterStats(workspaceId: string | null, range: "7d" | "30d", 
     queryKey: workspaceScoped("router", workspaceId ?? "", "stats", range),
     enabled: enabled && workspaceId !== null,
     queryFn: () =>
-      apiFetch<RouterStats>(`/api/workspaces/${enc(workspaceId ?? "")}/router/stats?range=${range}`),
+      apiFetch<RouterStats>(
+        `/api/workspaces/${enc(workspaceId ?? "")}/router/stats?range=${range}`,
+      ),
   });
 }
 

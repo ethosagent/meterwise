@@ -74,8 +74,6 @@ func seedRouter(t *testing.T, s *store.Store, ws string) {
 	}
 }
 
-func bp(v int) *int { return &v }
-
 func TestRouterRowsAreTheSeededDefaultsAndCapabilities(t *testing.T) {
 	s := openMigrated(t)
 	routes, caps, err := s.RouterRows(context.Background())

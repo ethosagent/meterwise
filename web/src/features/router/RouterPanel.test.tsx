@@ -7,7 +7,10 @@ import { mockApi } from "../../test/mockApi";
 import { renderAt } from "../../test/render";
 import { RouterPanel } from "./RouterPanel";
 
-const settings = (over: Partial<RouterSettings["config"]> = {}, rest: Partial<RouterSettings> = {}): RouterSettings => ({
+const settings = (
+  over: Partial<RouterSettings["config"]> = {},
+  rest: Partial<RouterSettings> = {},
+): RouterSettings => ({
   ...ROUTER_SETTINGS,
   ...rest,
   config: { ...ROUTER_SETTINGS.config, mode: "conservative", ...over },
@@ -22,7 +25,9 @@ function show(s: RouterSettings, stats: RouterStats = ROUTER_STATS, readOnly = f
 describe("Router panel", () => {
   it("shows what routing saved and how many routed calls the provider refused", async () => {
     show(settings());
-    expect(await screen.findByText(/Saved \$0\.02 over the last 7 days: 10 of 40 calls \(25%\)/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Saved \$0\.02 over the last 7 days: 10 of 40 calls \(25%\)/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/1 routed call was refused by the provider/)).toBeInTheDocument();
     expect(screen.queryByText(/trip monitors more often/)).not.toBeInTheDocument();
   });
@@ -37,7 +42,11 @@ describe("Router panel", () => {
       wouldSaveUsd: "0.031000",
       unavailable: 0,
     });
-    expect(await screen.findByText(/Would save \$0\.03 over the last 7 days on 12 calls\. Nothing was rerouted/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /Would save \$0\.03 over the last 7 days on 12 calls\. Nothing was rerouted/,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("warns when the guardrail does", async () => {
@@ -45,8 +54,12 @@ describe("Router panel", () => {
       ...ROUTER_STATS,
       guardrail: { ...ROUTER_STATS.guardrail, cheapFireBp: 800, strongFireBp: 400, warn: true },
     });
-    expect(await screen.findByText("Routed calls trip monitors more often than the others")).toBeInTheDocument();
-    expect(screen.getByText(/fired on 8% of routed calls against 4% of the others/)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Routed calls trip monitors more often than the others"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/fired on 8% of routed calls against 4% of the others/),
+    ).toBeInTheDocument();
   });
 
   it("sends the threshold, and 0 (the mode default) when it is cleared", async () => {
@@ -67,7 +80,9 @@ describe("Router panel", () => {
   it("removes a pair by sending the map without it", async () => {
     const api = show(settings());
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Remove openai: gpt-4.1 → gpt-4.1-mini" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Remove openai: gpt-4.1 → gpt-4.1-mini" }),
+    );
     await waitFor(() => expect(api.callsTo("PATCH", /\/router$/)).toHaveLength(1));
     expect(api.callsTo("PATCH", /\/router$/)[0]?.body).toEqual({ map: [DEFAULT_PAIRS[1]] });
   });
@@ -75,14 +90,19 @@ describe("Router panel", () => {
   it("adds a suggested pair to the effective map and can reset to the defaults", async () => {
     const suggested = { provider: "openai", from: "gpt-4o", to: "gpt-4o-mini" };
     const api = show(
-      settings({ map: [DEFAULT_PAIRS[0] as never] }, { effective: [DEFAULT_PAIRS[0] as never], suggestions: [suggested] }),
+      settings(
+        { map: [DEFAULT_PAIRS[0] as never] },
+        { effective: [DEFAULT_PAIRS[0] as never], suggestions: [suggested] },
+      ),
     );
     const user = userEvent.setup();
     await user.click(await screen.findByRole("combobox", { name: "Add a model pair" }));
     await user.click(await screen.findByText("openai: gpt-4o → gpt-4o-mini (seen in your calls)"));
     await user.click(screen.getByRole("button", { name: "Add pair" }));
     await waitFor(() => expect(api.callsTo("PATCH", /\/router$/)).toHaveLength(1));
-    expect(api.callsTo("PATCH", /\/router$/)[0]?.body).toEqual({ map: [DEFAULT_PAIRS[0], suggested] });
+    expect(api.callsTo("PATCH", /\/router$/)[0]?.body).toEqual({
+      map: [DEFAULT_PAIRS[0], suggested],
+    });
     await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
     await waitFor(() => expect(api.callsTo("PATCH", /\/router$/)).toHaveLength(2));
     expect(api.callsTo("PATCH", /\/router$/)[1]?.body).toEqual({ resetMap: true });
