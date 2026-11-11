@@ -84,8 +84,15 @@ export function createSavingsMock(access: AccessMock, init: SavingsInit = {}): S
       if (refused) return refused;
       const client = q.get("client");
       const outcome = q.get("outcome");
+      const tag = q.get("tag");
+      const tagged = (s: (typeof sessions)[number]) =>
+        !tag ||
+        (tag === "trimmed" && s.trimTokens > 0) ||
+        (tag === "routed" && s.routedCalls > 0) ||
+        (tag === "remembered" && s.hints > 0);
       const items = sessions.filter(
-        (s) => (!client || s.client === client) && (!outcome || s.outcome === outcome),
+        (s) =>
+          (!client || s.client === client) && (!outcome || s.outcome === outcome) && tagged(s),
       );
       return json({ items, nextCursor: null });
     }

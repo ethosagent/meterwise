@@ -25,7 +25,7 @@ function List({ workspaceId }: { workspaceId: string }) {
           hasMore={q.hasNextPage}
           loadingMore={q.isFetchingNextPage}
           onMore={() => void q.fetchNextPage()}
-          filtered={filters.client !== "" || filters.outcome !== ""}
+          filtered={filters.client !== "" || filters.outcome !== "" || filters.tag !== ""}
         />
       ) : (
         <Skeleton active />

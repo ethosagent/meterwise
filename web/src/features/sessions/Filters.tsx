@@ -1,7 +1,7 @@
 import { Flex, Select, theme } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { useRangeParams } from "../../api/range";
-import { SESSION_OUTCOMES, type SessionFilters } from "../../api/sessions";
+import { SESSION_OUTCOMES, SESSION_TAGS, type SessionFilters } from "../../api/sessions";
 // Generated from contract.ClientFamilies: the filter options can never drift from what the ledger stores.
 import { CLIENT_FAMILIES } from "../../contract/generated";
 import { RangeControl } from "../../shell/RangeControl";
@@ -10,7 +10,9 @@ import { RangeControl } from "../../shell/RangeControl";
 export function useSessionFilters(): SessionFilters {
   const [params] = useSearchParams();
   const outcome = params.get("outcome") ?? "";
+  const tag = params.get("tag") ?? "";
   return {
+    tag: (SESSION_TAGS as readonly string[]).includes(tag) ? tag : "",
     client: params.get("client") ?? "",
     outcome: (SESSION_OUTCOMES as readonly string[]).includes(outcome) ? outcome : "",
   };
@@ -20,7 +22,7 @@ export function Filters({ filters }: { filters: SessionFilters }) {
   const { token } = theme.useToken();
   const { sel, setRange } = useRangeParams();
   const [, setParams] = useSearchParams();
-  const set = (key: "client" | "outcome", value: string | undefined) =>
+  const set = (key: "client" | "outcome" | "tag", value: string | undefined) =>
     setParams(
       (prev) => {
         const q = new URLSearchParams(prev);
@@ -50,6 +52,15 @@ export function Filters({ filters }: { filters: SessionFilters }) {
         value={filters.outcome || undefined}
         options={SESSION_OUTCOMES.map((o) => ({ value: o, label: o }))}
         onChange={(v) => set("outcome", v)}
+      />
+      <Select
+        allowClear
+        placeholder="Saver"
+        aria-label="Saver"
+        style={{ minWidth: token.controlHeightLG * 4 }}
+        value={filters.tag || undefined}
+        options={SESSION_TAGS.map((t) => ({ value: t, label: t }))}
+        onChange={(v) => set("tag", v)}
       />
     </Flex>
   );

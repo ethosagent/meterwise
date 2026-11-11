@@ -8,13 +8,16 @@ import { type RangeSel, rangeBounds, rangeKey } from "./range";
 export const SESSION_OUTCOMES = ["completed", "abandoned", "open"] as const;
 export type SessionOutcome = (typeof SESSION_OUTCOMES)[number];
 
+export const SESSION_TAGS = ["trimmed", "routed", "remembered"] as const;
+
 export interface SessionFilters {
   client: string;
   outcome: string;
+  tag: string;
 }
 
 export const sessionsKey = (workspaceId: string, sel: RangeSel, f: SessionFilters) =>
-  workspaceScoped("sessions", workspaceId, rangeKey(sel), f.client, f.outcome);
+  workspaceScoped("sessions", workspaceId, rangeKey(sel), f.client, f.outcome, f.tag);
 export const sessionDetailKey = (workspaceId: string, sessionId: string) =>
   workspaceScoped("session", workspaceId, sessionId);
 
@@ -36,6 +39,7 @@ export function useSessions(
       const q = new URLSearchParams({ ...rangeBounds(sel), limit: String(SESSIONS_PAGE) });
       if (filters.client) q.set("client", filters.client);
       if (filters.outcome) q.set("outcome", filters.outcome);
+      if (filters.tag) q.set("tag", filters.tag);
       if (pageParam) q.set("cursor", pageParam);
       return apiFetch<SessionList>(`/api/workspaces/${enc(workspaceId ?? "")}/sessions?${q}`);
     },

@@ -19,3 +19,7 @@
 - Endpoints (`api/sessions.ts`): `GET /api/workspaces/{id}/sessions`, `GET /api/sessions/{id}?workspaceId=`.
 - Permission: `session:read` on the active workspace (feedback needs the same). Without it: no-access and no request.
 - Tests: `Page.test.tsx`, `SessionDetailPage.test.tsx`, `routes.test.tsx` (through the real routes and nav).
+
+- Step events (`stepEvents.ts`, `EventCard.tsx`): a step lists trim, memory hint, route and monitor fire cards in hook order;
+  the saver cards live in `features/{trim,router,memory}/`. The list has a Tags column (Trimmed / Routed / Remembered)
+  and a `?tag=` filter.

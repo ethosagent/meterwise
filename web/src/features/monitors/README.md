@@ -5,6 +5,9 @@
 - Shows: the six monitors in API order. Per row: a `Segmented` mode (Observe / Nudge / Block), fires, **Saved**,
   **Likely saved** and **Would save** as three separate columns (never summed; would-save is an amber outlined tag),
   the count marked wrong, a "Turn on" shortcut on an observe row that has would-save, and a **Thresholds** `Drawer`.
+- **Savers** card (above the table): trimming, model routing and memory, one `SettingsRow` each with a `Segmented`
+  mode and its own PATCH (`api/{trim,router,memory}.ts`). Routing's acting modes and memory's Hint sit behind a
+  `Popconfirm`. Same `monitor_config` permissions as the table.
 - Block sits behind a `Popconfirm` (it answers the call itself); the mode only changes once it is confirmed.
 - `reasoning_loop` and `second_guessing` are observe-only in the UI: Nudge and Block are disabled with the tooltip
   "observe-only until tuned". The API still accepts every mode (Plan 06 ruling).

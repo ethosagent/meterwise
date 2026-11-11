@@ -1,0 +1,3 @@
+# router (web)
+
+The Model routing event card shown on a session step. Step 0 ships the card only; the feature owns the rest of this folder.

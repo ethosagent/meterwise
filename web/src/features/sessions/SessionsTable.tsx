@@ -61,6 +61,16 @@ export function SessionsTable({
           },
           { title: "Saved", render: (_, r) => formatUsd(r.savedUsd) },
           { title: "Likely saved", render: (_, r) => formatUsd(r.likelySavedUsd) },
+          {
+            title: "Tags",
+            render: (_, r) => (
+              <>
+                {r.trimTokens > 0 ? <Tag>Trimmed</Tag> : null}
+                {r.routedCalls > 0 ? <Tag>Routed</Tag> : null}
+                {r.hints > 0 ? <Tag>Remembered</Tag> : null}
+              </>
+            ),
+          },
           { title: "Outcome", render: (_, r) => <Tag>{r.outcome}</Tag> },
         ]}
       />

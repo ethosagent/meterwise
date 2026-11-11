@@ -2,8 +2,9 @@ import { Card, Flex, Tag, Typography, theme } from "antd";
 import { useEffect, useRef } from "react";
 import type { Call, SessionDetail } from "../../contract/generated";
 import { formatTokens, formatUsd } from "../../lib/money";
-import { EvidenceCard } from "./EvidenceCard";
-import { blockEventOf, eventsOf } from "./stepModel";
+import { EventCard } from "./EventCard";
+import { saverTags, stepEvents } from "./stepEvents";
+import { blockEventOf } from "./stepModel";
 
 /** The money of a step: a blocked call costs nothing, so it reads "saved $x" from its block event. */
 function StepCost({ call, detail }: { call: Call; detail: SessionDetail }) {
@@ -40,7 +41,8 @@ function Step({
   useEffect(() => {
     if (highlighted) ref.current?.scrollIntoView?.({ block: "center" });
   }, [highlighted]);
-  const events = eventsOf(detail, call.id);
+  const events = stepEvents(detail, call);
+  const tags = saverTags(call, detail.memoryHits.some((h) => h.callId === call.id));
   return (
     <div
       ref={ref}
@@ -65,6 +67,11 @@ function Step({
                 {call.notesInjected} {call.notesInjected === 1 ? "note" : "notes"} added
               </Tag>
             ) : null}
+            {tags.map((t) => (
+              <Tag key={t} color="processing">
+                {t}
+              </Tag>
+            ))}
             {[...new Set(call.toolCalls)].map((t) => (
               <Tag key={t}>{t}</Tag>
             ))}
@@ -77,14 +84,15 @@ function Step({
           </Flex>
         </Flex>
         {events.map((e) => (
-          <EvidenceCard
-            key={e.id}
+          <EventCard
+            key={e.key}
             event={e}
-            calls={detail.calls}
+            detail={detail}
             workspaceId={workspaceId}
-            sessionId={detail.session.id}
             highlighted={
-              highlightedEventId === e.id || (highlighted && highlightedEventId === null)
+              e.kind === "monitor_fire"
+                ? highlightedEventId === e.event.id || (highlighted && highlightedEventId === null)
+                : false
             }
           />
         ))}
