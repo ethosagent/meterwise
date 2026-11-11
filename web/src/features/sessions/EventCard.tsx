@@ -33,7 +33,7 @@ export function EventCard({
       return (
         <>
           <Divider size="small" />
-          <TrimEvent call={event.call} />
+          <TrimEvent call={event.call} workspaceId={workspaceId} />
         </>
       );
     case "route":

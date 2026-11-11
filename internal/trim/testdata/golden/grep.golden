@@ -1,0 +1,3 @@
+src/main.go:14:func lookup(k string) int {
+src/gen/table.go:11:	1: lookup("key1"), (×120)
+src/main.go:90:	return lookup(name)

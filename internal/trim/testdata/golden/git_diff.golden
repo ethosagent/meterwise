@@ -1,0 +1,22 @@
+diff --git a/pkg/engine.go b/pkg/engine.go
+index 3f2a1b0..9c8d7e6 100644
+--- a/pkg/engine.go
++++ b/pkg/engine.go
+@@ -100,30 +100,30 @@ func (e *Engine) Run() error {
+… 12 lines folded …
+         step112 := e.steps[12]
+         step113 := e.steps[13]
+-        limit := 10
++        limit := e.cfg.Limit
+         step114 := e.steps[14]
+         step115 := e.steps[15]
+… 13 lines folded …
+@@ -220,30 +220,30 @@ func (e *Engine) Run() error {
+… 12 lines folded …
+         step232 := e.steps[12]
+         step233 := e.steps[13]
+-        return nil
++        return e.flush()
+         step234 := e.steps[14]
+         step235 := e.steps[15]
+… 14 lines folded …

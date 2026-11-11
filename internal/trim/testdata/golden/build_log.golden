@@ -1,0 +1,31 @@
+make -C build all
+make[1]: Entering directory '/work/build'
+[1/300] CC src/mod_1.c
+… 83 lines folded; 4 errors kept …
+[85/300] CC src/mod_85.c
+[86/300] CC src/mod_86.c
+src/mod_87.c:12:5: error: expected ';' before '}' token
+[88/300] CC src/mod_88.c
+[89/300] CC src/mod_89.c
+… 50 lines folded; 4 errors kept …
+[140/300] CC src/mod_140.c
+[141/300] CC src/mod_141.c
+src/mod_142.c:40:9: error: 'cfg' undeclared (first use in this function)
+[143/300] CC src/mod_143.c
+[144/300] CC src/mod_144.c
+… 86 lines folded; 4 errors kept …
+[231/300] CC src/mod_231.c
+[232/300] CC src/mod_232.c
+src/mod_233.c:7:1: fatal error: missing.h: No such file or directory
+[234/300] CC src/mod_234.c
+[235/300] CC src/mod_235.c
+… 58 lines folded; 4 errors kept …
+[294/300] CC src/mod_294.c
+[295/300] CC src/mod_295.c
+[296/300] CC src/mod_296.c
+[297/300] CC src/mod_297.c
+[298/300] CC src/mod_298.c
+[299/300] CC src/mod_299.c
+[300/300] CC src/mod_300.c
+make[1]: Leaving directory '/work/build'
+make: *** [Makefile:12: all] Error 2
