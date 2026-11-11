@@ -32,6 +32,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0025](0025-savings-read-model-event-time-utc-buckets-no-materialised-view-until-the-bench-says-so.md) | Savings read model: event-time UTC buckets, no materialised view until the bench says so | Accepted |
 | [0026](0026-one-body-edit-protocol-internal-wire-and-the-09-11-hook-order.md) | One body-edit protocol (`internal/wire`) and the 09-11 hook order | Accepted |
 | [0027](0027-savings-causes-beyond-monitors-one-read-model.md) | Savings causes beyond monitors: one read model, trim and router in the headline, memory likely | Accepted |
+| [0028](0028-trimming-a-go-port-of-the-lossless-stages-sticky-per-region-decisions.md) | Trimming: a Go port of the lossless stages, sticky per-region decisions, byte-based estimate | Accepted |
 
 Template: [`template.md`](template.md).
 

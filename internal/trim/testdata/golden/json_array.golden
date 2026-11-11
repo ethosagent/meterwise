@@ -1,0 +1,13 @@
+[12]{active,email,id,name,note,score}:
+true,u1@example.com,1,user 1,null,1.5
+true,u2@example.com,2,user 2,null,2.5
+false,u3@example.com,3,user 3,null,3.5
+true,u4@example.com,4,"Doe, Jane",null,4.5
+true,u5@example.com,5,"say \"hi\"",null,5.5
+false,u6@example.com,6,"007",null,6.5
+true,u7@example.com,7,"true",null,7.5
+true,u8@example.com,8,user 8,"line1\nline2",8.5
+false,u9@example.com,9,user 9,null,9.5
+true,u10@example.com,10,user 10,null,10.5
+true,u11@example.com,11,user 11,null,11.5
+false,u12@example.com,12,user 12,null,12.5

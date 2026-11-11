@@ -1,0 +1,300 @@
+make -j8 all
+[  1/297] CC build/obj/module_001.o
+[  2/297] CC build/obj/module_002.o
+[  3/297] CC build/obj/module_003.o
+[  4/297] CC build/obj/module_004.o
+[  5/297] CC build/obj/module_005.o
+[  6/297] CC build/obj/module_006.o
+[  7/297] CC build/obj/module_007.o
+[  8/297] CC build/obj/module_008.o
+[  9/297] CC build/obj/module_009.o
+[ 10/297] CC build/obj/module_010.o
+[ 11/297] CC build/obj/module_011.o
+[ 12/297] CC build/obj/module_012.o
+[ 13/297] CC build/obj/module_013.o
+[ 14/297] CC build/obj/module_014.o
+[ 15/297] CC build/obj/module_015.o
+[ 16/297] CC build/obj/module_016.o
+[ 17/297] CC build/obj/module_017.o
+[ 18/297] CC build/obj/module_018.o
+[ 19/297] CC build/obj/module_019.o
+[ 20/297] CC build/obj/module_020.o
+[ 21/297] CC build/obj/module_021.o
+[ 22/297] CC build/obj/module_022.o
+[ 23/297] CC build/obj/module_023.o
+[ 24/297] CC build/obj/module_024.o
+[ 25/297] CC build/obj/module_025.o
+[ 26/297] CC build/obj/module_026.o
+[ 27/297] CC build/obj/module_027.o
+[ 28/297] CC build/obj/module_028.o
+[ 29/297] CC build/obj/module_029.o
+[ 30/297] CC build/obj/module_030.o
+[ 31/297] CC build/obj/module_031.o
+[ 32/297] CC build/obj/module_032.o
+[ 33/297] CC build/obj/module_033.o
+[ 34/297] CC build/obj/module_034.o
+[ 35/297] CC build/obj/module_035.o
+[ 36/297] CC build/obj/module_036.o
+[ 37/297] CC build/obj/module_037.o
+[ 38/297] CC build/obj/module_038.o
+[ 39/297] CC build/obj/module_039.o
+[ 40/297] CC build/obj/module_040.o
+[ 41/297] CC build/obj/module_041.o
+[ 42/297] CC build/obj/module_042.o
+[ 43/297] CC build/obj/module_043.o
+[ 44/297] CC build/obj/module_044.o
+[ 45/297] CC build/obj/module_045.o
+[ 46/297] CC build/obj/module_046.o
+[ 47/297] CC build/obj/module_047.o
+[ 48/297] CC build/obj/module_048.o
+[ 49/297] CC build/obj/module_049.o
+[ 50/297] CC build/obj/module_050.o
+[ 51/297] CC build/obj/module_051.o
+[ 52/297] CC build/obj/module_052.o
+[ 53/297] CC build/obj/module_053.o
+[ 54/297] CC build/obj/module_054.o
+[ 55/297] CC build/obj/module_055.o
+[ 56/297] CC build/obj/module_056.o
+[ 57/297] CC build/obj/module_057.o
+[ 58/297] CC build/obj/module_058.o
+[ 59/297] CC build/obj/module_059.o
+[ 60/297] CC build/obj/module_060.o
+src/net/conn.c:212:17: error: 'timeout_ms' undeclared (first use in this function)
+[ 61/297] CC build/obj/module_061.o
+[ 62/297] CC build/obj/module_062.o
+[ 63/297] CC build/obj/module_063.o
+[ 64/297] CC build/obj/module_064.o
+[ 65/297] CC build/obj/module_065.o
+[ 66/297] CC build/obj/module_066.o
+[ 67/297] CC build/obj/module_067.o
+[ 68/297] CC build/obj/module_068.o
+[ 69/297] CC build/obj/module_069.o
+[ 70/297] CC build/obj/module_070.o
+[ 71/297] CC build/obj/module_071.o
+[ 72/297] CC build/obj/module_072.o
+[ 73/297] CC build/obj/module_073.o
+[ 74/297] CC build/obj/module_074.o
+[ 75/297] CC build/obj/module_075.o
+[ 76/297] CC build/obj/module_076.o
+[ 77/297] CC build/obj/module_077.o
+[ 78/297] CC build/obj/module_078.o
+[ 79/297] CC build/obj/module_079.o
+[ 80/297] CC build/obj/module_080.o
+[ 81/297] CC build/obj/module_081.o
+[ 82/297] CC build/obj/module_082.o
+[ 83/297] CC build/obj/module_083.o
+[ 84/297] CC build/obj/module_084.o
+[ 85/297] CC build/obj/module_085.o
+[ 86/297] CC build/obj/module_086.o
+[ 87/297] CC build/obj/module_087.o
+[ 88/297] CC build/obj/module_088.o
+[ 89/297] CC build/obj/module_089.o
+[ 90/297] CC build/obj/module_090.o
+[ 91/297] CC build/obj/module_091.o
+[ 92/297] CC build/obj/module_092.o
+[ 93/297] CC build/obj/module_093.o
+[ 94/297] CC build/obj/module_094.o
+[ 95/297] CC build/obj/module_095.o
+[ 96/297] CC build/obj/module_096.o
+[ 97/297] CC build/obj/module_097.o
+[ 98/297] CC build/obj/module_098.o
+[ 99/297] CC build/obj/module_099.o
+[100/297] CC build/obj/module_100.o
+[101/297] CC build/obj/module_101.o
+[102/297] CC build/obj/module_102.o
+[103/297] CC build/obj/module_103.o
+[104/297] CC build/obj/module_104.o
+[105/297] CC build/obj/module_105.o
+[106/297] CC build/obj/module_106.o
+[107/297] CC build/obj/module_107.o
+[108/297] CC build/obj/module_108.o
+[109/297] CC build/obj/module_109.o
+[110/297] CC build/obj/module_110.o
+[111/297] CC build/obj/module_111.o
+[112/297] CC build/obj/module_112.o
+[113/297] CC build/obj/module_113.o
+[114/297] CC build/obj/module_114.o
+[115/297] CC build/obj/module_115.o
+[116/297] CC build/obj/module_116.o
+[117/297] CC build/obj/module_117.o
+[118/297] CC build/obj/module_118.o
+[119/297] CC build/obj/module_119.o
+[120/297] CC build/obj/module_120.o
+[121/297] CC build/obj/module_121.o
+[122/297] CC build/obj/module_122.o
+[123/297] CC build/obj/module_123.o
+[124/297] CC build/obj/module_124.o
+[125/297] CC build/obj/module_125.o
+[126/297] CC build/obj/module_126.o
+[127/297] CC build/obj/module_127.o
+[128/297] CC build/obj/module_128.o
+[129/297] CC build/obj/module_129.o
+[130/297] CC build/obj/module_130.o
+[131/297] CC build/obj/module_131.o
+[132/297] CC build/obj/module_132.o
+[133/297] CC build/obj/module_133.o
+[134/297] CC build/obj/module_134.o
+[135/297] CC build/obj/module_135.o
+[136/297] CC build/obj/module_136.o
+[137/297] CC build/obj/module_137.o
+[138/297] CC build/obj/module_138.o
+[139/297] CC build/obj/module_139.o
+[140/297] CC build/obj/module_140.o
+[141/297] CC build/obj/module_141.o
+[142/297] CC build/obj/module_142.o
+[143/297] CC build/obj/module_143.o
+[144/297] CC build/obj/module_144.o
+[145/297] CC build/obj/module_145.o
+[146/297] CC build/obj/module_146.o
+[147/297] CC build/obj/module_147.o
+[148/297] CC build/obj/module_148.o
+[149/297] CC build/obj/module_149.o
+[150/297] CC build/obj/module_150.o
+src/store/page.c:88:9: error: implicit declaration of function 'page_flush' [-Werror=implicit-function-declaration]
+[151/297] CC build/obj/module_151.o
+[152/297] CC build/obj/module_152.o
+[153/297] CC build/obj/module_153.o
+[154/297] CC build/obj/module_154.o
+[155/297] CC build/obj/module_155.o
+[156/297] CC build/obj/module_156.o
+[157/297] CC build/obj/module_157.o
+[158/297] CC build/obj/module_158.o
+[159/297] CC build/obj/module_159.o
+[160/297] CC build/obj/module_160.o
+[161/297] CC build/obj/module_161.o
+[162/297] CC build/obj/module_162.o
+[163/297] CC build/obj/module_163.o
+[164/297] CC build/obj/module_164.o
+[165/297] CC build/obj/module_165.o
+[166/297] CC build/obj/module_166.o
+[167/297] CC build/obj/module_167.o
+[168/297] CC build/obj/module_168.o
+[169/297] CC build/obj/module_169.o
+[170/297] CC build/obj/module_170.o
+[171/297] CC build/obj/module_171.o
+[172/297] CC build/obj/module_172.o
+[173/297] CC build/obj/module_173.o
+[174/297] CC build/obj/module_174.o
+[175/297] CC build/obj/module_175.o
+[176/297] CC build/obj/module_176.o
+[177/297] CC build/obj/module_177.o
+[178/297] CC build/obj/module_178.o
+[179/297] CC build/obj/module_179.o
+[180/297] CC build/obj/module_180.o
+[181/297] CC build/obj/module_181.o
+[182/297] CC build/obj/module_182.o
+[183/297] CC build/obj/module_183.o
+[184/297] CC build/obj/module_184.o
+[185/297] CC build/obj/module_185.o
+[186/297] CC build/obj/module_186.o
+[187/297] CC build/obj/module_187.o
+[188/297] CC build/obj/module_188.o
+[189/297] CC build/obj/module_189.o
+[190/297] CC build/obj/module_190.o
+[191/297] CC build/obj/module_191.o
+[192/297] CC build/obj/module_192.o
+[193/297] CC build/obj/module_193.o
+[194/297] CC build/obj/module_194.o
+[195/297] CC build/obj/module_195.o
+[196/297] CC build/obj/module_196.o
+[197/297] CC build/obj/module_197.o
+[198/297] CC build/obj/module_198.o
+[199/297] CC build/obj/module_199.o
+[200/297] CC build/obj/module_200.o
+[201/297] CC build/obj/module_201.o
+[202/297] CC build/obj/module_202.o
+[203/297] CC build/obj/module_203.o
+[204/297] CC build/obj/module_204.o
+[205/297] CC build/obj/module_205.o
+[206/297] CC build/obj/module_206.o
+[207/297] CC build/obj/module_207.o
+[208/297] CC build/obj/module_208.o
+[209/297] CC build/obj/module_209.o
+[210/297] CC build/obj/module_210.o
+[211/297] CC build/obj/module_211.o
+[212/297] CC build/obj/module_212.o
+[213/297] CC build/obj/module_213.o
+[214/297] CC build/obj/module_214.o
+[215/297] CC build/obj/module_215.o
+[216/297] CC build/obj/module_216.o
+[217/297] CC build/obj/module_217.o
+[218/297] CC build/obj/module_218.o
+[219/297] CC build/obj/module_219.o
+[220/297] CC build/obj/module_220.o
+[221/297] CC build/obj/module_221.o
+[222/297] CC build/obj/module_222.o
+[223/297] CC build/obj/module_223.o
+[224/297] CC build/obj/module_224.o
+[225/297] CC build/obj/module_225.o
+[226/297] CC build/obj/module_226.o
+[227/297] CC build/obj/module_227.o
+[228/297] CC build/obj/module_228.o
+[229/297] CC build/obj/module_229.o
+[230/297] CC build/obj/module_230.o
+[231/297] CC build/obj/module_231.o
+[232/297] CC build/obj/module_232.o
+[233/297] CC build/obj/module_233.o
+[234/297] CC build/obj/module_234.o
+[235/297] CC build/obj/module_235.o
+[236/297] CC build/obj/module_236.o
+[237/297] CC build/obj/module_237.o
+[238/297] CC build/obj/module_238.o
+[239/297] CC build/obj/module_239.o
+[240/297] CC build/obj/module_240.o
+src/api/route.c:301:5: error: expected ';' before '}' token
+[241/297] CC build/obj/module_241.o
+[242/297] CC build/obj/module_242.o
+[243/297] CC build/obj/module_243.o
+[244/297] CC build/obj/module_244.o
+[245/297] CC build/obj/module_245.o
+[246/297] CC build/obj/module_246.o
+[247/297] CC build/obj/module_247.o
+[248/297] CC build/obj/module_248.o
+[249/297] CC build/obj/module_249.o
+[250/297] CC build/obj/module_250.o
+[251/297] CC build/obj/module_251.o
+[252/297] CC build/obj/module_252.o
+[253/297] CC build/obj/module_253.o
+[254/297] CC build/obj/module_254.o
+[255/297] CC build/obj/module_255.o
+[256/297] CC build/obj/module_256.o
+[257/297] CC build/obj/module_257.o
+[258/297] CC build/obj/module_258.o
+[259/297] CC build/obj/module_259.o
+[260/297] CC build/obj/module_260.o
+[261/297] CC build/obj/module_261.o
+[262/297] CC build/obj/module_262.o
+[263/297] CC build/obj/module_263.o
+[264/297] CC build/obj/module_264.o
+[265/297] CC build/obj/module_265.o
+[266/297] CC build/obj/module_266.o
+[267/297] CC build/obj/module_267.o
+[268/297] CC build/obj/module_268.o
+[269/297] CC build/obj/module_269.o
+[270/297] CC build/obj/module_270.o
+[271/297] CC build/obj/module_271.o
+[272/297] CC build/obj/module_272.o
+[273/297] CC build/obj/module_273.o
+[274/297] CC build/obj/module_274.o
+[275/297] CC build/obj/module_275.o
+[276/297] CC build/obj/module_276.o
+[277/297] CC build/obj/module_277.o
+[278/297] CC build/obj/module_278.o
+[279/297] CC build/obj/module_279.o
+[280/297] CC build/obj/module_280.o
+[281/297] CC build/obj/module_281.o
+[282/297] CC build/obj/module_282.o
+[283/297] CC build/obj/module_283.o
+[284/297] CC build/obj/module_284.o
+[285/297] CC build/obj/module_285.o
+[286/297] CC build/obj/module_286.o
+[287/297] CC build/obj/module_287.o
+[288/297] CC build/obj/module_288.o
+[289/297] CC build/obj/module_289.o
+[290/297] CC build/obj/module_290.o
+[291/297] CC build/obj/module_291.o
+[292/297] CC build/obj/module_292.o
+[293/297] CC build/obj/module_293.o
+[294/297] CC build/obj/module_294.o
+[295/297] CC build/obj/module_295.o
+[296/297] CC build/obj/module_296.o

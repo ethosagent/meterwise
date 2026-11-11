@@ -1,18 +1,13 @@
 import { Alert, Card, Divider, Flex, Skeleton, theme } from "antd";
 import { useMemoryConfig, usePatchMemory } from "../../api/memory";
 import { usePatchRouter, useRouterConfig } from "../../api/router";
-import { usePatchTrim, useTrimConfig } from "../../api/trim";
+import { useTrimConfig } from "../../api/trim";
 import { useErrorToast } from "../../api/useErrorToast";
 import { useToastOnError } from "../../api/useToastOnError";
+import { TrimSettings } from "../trim/TrimSettings";
 import { type ModeConfirm, type ModeOption, ModeSegment } from "./ModeSegment";
 import { SettingsRow } from "./SettingsRow";
 
-const TRIM_MODES: ModeOption[] = [
-  { value: "off", label: "Off" },
-  { value: "observe", label: "Observe" },
-  { value: "lossless", label: "Lossless" },
-  { value: "aggressive", label: "Aggressive" },
-];
 const ROUTER_MODES: ModeOption[] = [
   { value: "off", label: "Off" },
   { value: "observe", label: "Observe" },
@@ -61,7 +56,6 @@ export function SaversCard({ workspaceId, readOnly }: { workspaceId: string; rea
   const trim = useTrimConfig(workspaceId, true);
   const router = useRouterConfig(workspaceId, true);
   const memory = useMemoryConfig(workspaceId, true);
-  const patchTrim = usePatchTrim(workspaceId);
   const patchRouter = usePatchRouter(workspaceId);
   const patchMemory = usePatchMemory(workspaceId);
   useToastOnError(trim.error, "Could not load the trim settings.");
@@ -77,19 +71,7 @@ export function SaversCard({ workspaceId, readOnly }: { workspaceId: string; rea
   return (
     <Card title="Savers" aria-label="Savers">
       <Flex vertical gap={token.marginMD}>
-        <SettingsRow
-          title="Trimming"
-          about="Shrinks bulky tool output (repeated lines, long logs, big JSON) before it is sent. Observe measures without changing anything."
-        >
-          <ModeSegment
-            label="Trimming mode"
-            value={trim.data.mode}
-            options={TRIM_MODES}
-            readOnly={readOnly}
-            busy={patchTrim.isPending}
-            onChange={(mode) => patchTrim.mutate({ mode }, fail("trimming"))}
-          />
-        </SettingsRow>
+        <TrimSettings workspaceId={workspaceId} readOnly={readOnly} />
         <Divider style={{ margin: 0 }} />
         <SettingsRow
           title="Model routing"

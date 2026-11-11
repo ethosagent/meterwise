@@ -24,20 +24,20 @@ func names(hs []tollgate.Hook) []string {
 	return out
 }
 
-func TestHookChainDefaultOrderIsWsauthHistoryMonitorsInjectedLedger(t *testing.T) {
+func TestHookChainDefaultOrderIsWsauthHistoryTrimMonitorsInjectedLedger(t *testing.T) {
 	hooks, sources := dataplane.HookChain(dataplane.ChainOptions{PrivacyMode: true}, []tollgate.Hook{namedHook{name: "extra"}}, namedHook{name: "ledger"})
-	want := []string{"wsauth", "history", "monitors", "extra", "ledger"}
+	want := []string{"wsauth", "history", "trim", "monitors", "extra", "ledger"}
 	if got := names(hooks); !reflect.DeepEqual(got, want) {
 		t.Fatalf("chain = %v, want %v", got, want)
 	}
-	if len(sources) != 2 {
-		t.Fatalf("status sources = %d, want history and monitors", len(sources))
+	if len(sources) != 3 {
+		t.Fatalf("status sources = %d, want history, trim and monitors", len(sources))
 	}
 }
 
 func TestHookChainWithoutInjectedHooks(t *testing.T) {
 	hooks, _ := dataplane.HookChain(dataplane.ChainOptions{}, nil, namedHook{name: "ledger"})
-	if got, want := names(hooks), []string{"wsauth", "history", "monitors", "ledger"}; !reflect.DeepEqual(got, want) {
+	if got, want := names(hooks), []string{"wsauth", "history", "trim", "monitors", "ledger"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("chain = %v, want %v", got, want)
 	}
 }

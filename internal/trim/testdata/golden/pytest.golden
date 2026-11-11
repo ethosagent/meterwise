@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-8.2.0
+collected 151 items
+… 149 lines folded; 5 errors kept …
+tests/test_orders.py::test_case_149 PASSED [ 98%]
+tests/test_orders.py::test_case_150 PASSED [ 99%]
+tests/test_orders.py::test_total_with_tax FAILED [100%]
+
+=================================== FAILURES ===================================
+______________________________ test_total_with_tax _____________________________
+
+    def test_total_with_tax():
+>       assert total(100, 0.2) == 120
+E       assert 119.99 == 120
+E        +  where 119.99 = total(100, 0.2)
+
+tests/test_orders.py:88: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_total_with_tax - assert 119.99 == 120
+========================= 1 failed, 150 passed in 3.21s ========================

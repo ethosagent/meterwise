@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "app.py", line 20, in <module>
+    main()
+  File "app.py", line 6, in walk
+    return walk(node.next)
+(previous 2 lines ×60)
+RecursionError: maximum recursion depth exceeded
