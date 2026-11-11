@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { RouterSettings, RouterConfigPatch } from "../contract/generated";
+import type { RouterConfigPatch, RouterSettings } from "../contract/generated";
 import { apiFetch } from "./client";
 import { workspaceScoped } from "./identity";
 import { enc, json, useInvalidatingMutation } from "./mutation";

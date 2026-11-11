@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { SAVER_DETAIL, SAVER_SESSION, SESSIONS } from "../../test/fixtures/sessions";
 import { mockApi } from "../../test/mockApi";
 import { renderAt } from "../../test/render";
-import { SessionDetailPage } from "./SessionDetailPage";
 import { SessionsPage } from "./Page";
+import { SessionDetailPage } from "./SessionDetailPage";
 
 describe("saver events on a session", () => {
   it("renders trim, route and memory cards on their steps with certain and would-save apart", async () => {

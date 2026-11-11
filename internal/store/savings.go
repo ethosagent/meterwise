@@ -179,6 +179,11 @@ func basisPoints(part, whole contract.MicroUSD) *int {
 // per-monitor tops when the caller read them), then trim and router from the calls branch, then memory. Memory's
 // money comes from memory_hits, which lands with the memory feature; until then its row is zero.
 func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow, callSav []sqlc.SavingsCallSaversRow) []contract.CauseCard {
+	return append(monitorCards(stats, tops), saverCards(callSav)...)
+}
+
+// monitorCards is one card per monitor stats row, with the per-monitor tops when the caller read them.
+func monitorCards(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow) []contract.CauseCard {
 	type top struct {
 		client, tool, path, hash string
 		repeats, toolN           int64
@@ -198,7 +203,7 @@ func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow, 
 			by[m].path, by[m].hash, by[m].repeats = t.Val, t.Val2, t.N
 		}
 	}
-	out := make([]contract.CauseCard, 0, len(stats)+3)
+	out := make([]contract.CauseCard, 0, len(stats))
 	for _, st := range stats {
 		c := contract.CauseCard{CauseView: contract.CauseView{
 			Cause: contract.SavingsCause(st.Monitor), Kind: contract.KindMonitor, Fires: st.Fires, SavedUsd: st.Saved, LikelySavedUsd: st.Likely,
@@ -215,24 +220,29 @@ func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow, 
 		}
 		out = append(out, c)
 	}
+	return out
+}
+
+// saverCards is the trim, router and memory cards from the calls branch's totals row.
+func saverCards(callSav []sqlc.SavingsCallSaversRow) []contract.CauseCard {
 	var tot sqlc.SavingsCallSaversRow
 	for _, c := range callSav {
 		if !c.Day.Valid {
 			tot = c
 		}
 	}
-	return append(out,
-		contract.CauseCard{CauseView: contract.CauseView{
+	return []contract.CauseCard{
+		{CauseView: contract.CauseView{
 			Cause: contract.CauseTrim, Kind: contract.KindTrim, Fires: tot.TrimFires, SavedUsd: contract.MicroUSD(tot.TrimSavedMicro),
 			LikelySavedUsd: contract.MicroUSD(tot.TrimLikelyMicro), WouldSaveUsd: contract.MicroUSD(tot.TrimWouldMicro),
 			SavedTokens: tot.TrimSavedTokens, LikelySavedTokens: tot.TrimLikelyTokens, WouldSaveTokens: tot.TrimWouldTokens,
 		}},
-		contract.CauseCard{CauseView: contract.CauseView{
+		{CauseView: contract.CauseView{
 			Cause: contract.CauseRouter, Kind: contract.KindRouter, Fires: tot.RouterFires, SavedUsd: contract.MicroUSD(tot.RouterSavedMicro),
 			WouldSaveUsd: contract.MicroUSD(tot.RouterWouldMicro),
 		}},
-		contract.CauseCard{CauseView: contract.CauseView{Cause: contract.CauseMemory, Kind: contract.KindMemory}},
-	)
+		{CauseView: contract.CauseView{Cause: contract.CauseMemory, Kind: contract.KindMemory}},
+	}
 }
 
 func textPtr(s string) *string {

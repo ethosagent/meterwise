@@ -20,8 +20,8 @@ import { useCopy } from "../../api/useCopy";
 import { useToastOnError } from "../../api/useToastOnError";
 import type { CauseCard, ClientRow, Suggestion } from "../../contract/generated";
 import { formatBp, formatTokens, formatUsd, isPositiveMicro } from "../../lib/money";
-import { causeLabel, modeLabel } from "./causeMeta";
 import { ConfidenceTag } from "./ConfidenceTag";
+import { causeLabel, modeLabel } from "./causeMeta";
 
 /** The most repeated target of a cause: the path when one was stored, else the tool and the 8-hex hash prefix. */
 function topTarget(c: CauseCard): string | null {

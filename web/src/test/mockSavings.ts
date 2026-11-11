@@ -91,8 +91,7 @@ export function createSavingsMock(access: AccessMock, init: SavingsInit = {}): S
         (tag === "routed" && s.routedCalls > 0) ||
         (tag === "remembered" && s.hints > 0);
       const items = sessions.filter(
-        (s) =>
-          (!client || s.client === client) && (!outcome || s.outcome === outcome) && tagged(s),
+        (s) => (!client || s.client === client) && (!outcome || s.outcome === outcome) && tagged(s),
       );
       return json({ items, nextCursor: null });
     }

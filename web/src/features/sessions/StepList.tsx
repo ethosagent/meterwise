@@ -42,7 +42,10 @@ function Step({
     if (highlighted) ref.current?.scrollIntoView?.({ block: "center" });
   }, [highlighted]);
   const events = stepEvents(detail, call);
-  const tags = saverTags(call, detail.memoryHits.some((h) => h.callId === call.id));
+  const tags = saverTags(
+    call,
+    detail.memoryHits.some((h) => h.callId === call.id),
+  );
   return (
     <div
       ref={ref}

@@ -163,9 +163,7 @@ export const OVERVIEW_ACTIVE: SavingsOverview = {
   hero: HERO_ACTIVE,
   days: DAYS_7,
   byCause: CAUSES_ACTIVE,
-  upsell: [
-    { cause: "reasoning_loop", wouldSaveUsd: "0.200000", wouldSaveTokens: 24000, fires: 2 },
-  ],
+  upsell: [{ cause: "reasoning_loop", wouldSaveUsd: "0.200000", wouldSaveTokens: 24000, fires: 2 }],
 };
 
 const quietDays = DAYS_7.map((d) => day(d.day, ZERO, ZERO));

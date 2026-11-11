@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { MemorySettings, MemoryConfigPatch } from "../contract/generated";
+import type { MemoryConfigPatch, MemorySettings } from "../contract/generated";
 import { apiFetch } from "./client";
 import { workspaceScoped } from "./identity";
 import { enc, json, useInvalidatingMutation } from "./mutation";

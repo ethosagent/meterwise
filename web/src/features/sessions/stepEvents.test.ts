@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DETAIL, SAVER_DETAIL, call } from "../../test/fixtures/sessions";
+import { call, DETAIL, SAVER_DETAIL } from "../../test/fixtures/sessions";
 import { saverTags, stepEvents } from "./stepEvents";
 
 const callOf = (n: number) => {

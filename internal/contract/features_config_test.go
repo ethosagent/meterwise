@@ -186,7 +186,7 @@ func TestTrimPatchMergesAndReportsTouchedFields(t *testing.T) {
 
 func TestRouterAndMemoryPatches(t *testing.T) {
 	thr, zero := 3000, 0
-	rp := contract.RouterConfigPatch{Mode: new(contract.RouterMode(contract.RouterModeConservative)), ThresholdBp: &thr}
+	rp := contract.RouterConfigPatch{Mode: new(contract.RouterModeConservative), ThresholdBp: &thr}
 	c := rp.Apply(contract.DefaultRouterConfig())
 	if c.Mode != contract.RouterModeConservative || c.ThresholdBp == nil || *c.ThresholdBp != 3000 {
 		t.Fatalf("applied = %+v", c)
@@ -212,7 +212,7 @@ func TestRouterAndMemoryPatches(t *testing.T) {
 	if got := (contract.RouterConfigPatch{Mode: rp.Mode, ResetMap: new(true)}).Touched(); !reflect.DeepEqual(got, []string{"mode", "map"}) {
 		t.Fatalf("router touched = %v", got)
 	}
-	mp := contract.MemoryConfigPatch{Mode: new(contract.MemoryMode(contract.MemoryModeHint)), MaxHintsPerSession: new(2), Model: new("m")}
+	mp := contract.MemoryConfigPatch{Mode: new(contract.MemoryModeHint), MaxHintsPerSession: new(2), Model: new("m")}
 	m := mp.Apply(contract.DefaultMemoryConfig())
 	if m.Mode != contract.MemoryModeHint || m.MaxHintsPerSession != 2 || m.Model != "m" || m.ThresholdBp != 8200 {
 		t.Fatalf("memory applied = %+v", m)

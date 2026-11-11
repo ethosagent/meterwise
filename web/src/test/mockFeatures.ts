@@ -34,7 +34,9 @@ export function createFeaturesMock(access: AccessMock, init: FeaturesInit = {}):
   let memory = structuredClone(init.memory ?? MEMORY_SETTINGS);
 
   const route = (method: string, rawPath: string, body: Record<string, unknown>) => {
-    const m = /^\/api\/workspaces\/([^/?]+)\/(trim|router|memory)$/.exec(rawPath.split("?")[0] ?? "");
+    const m = /^\/api\/workspaces\/([^/?]+)\/(trim|router|memory)$/.exec(
+      rawPath.split("?")[0] ?? "",
+    );
     if (!m || (method !== "GET" && method !== "PATCH")) return undefined;
     const [, wsId = "", feature = ""] = m;
     if (!access.can("monitor_config", method === "GET" ? "read" : "write", wsId)) {
