@@ -188,9 +188,10 @@ func TestSavingsEmptyWorkspaceAndPaging(t *testing.T) {
 	if len(p2.Items) != 1 || p2.NextCursor != nil || p2.Items[0].EstSavedUsd != 500_000 {
 		t.Fatalf("page 2 = %+v", p2)
 	}
-	// a custom range ending yesterday excludes everything seeded just now
-	y := time.Now().UTC().AddDate(0, 0, -2).Format(time.DateOnly)
-	z := time.Now().UTC().AddDate(0, 0, -1).Format(time.DateOnly)
+	// a custom range ending two days ago excludes everything seeded (at most 3 h old). Ending it yesterday made the
+	// test fail between 00:00 and 03:00 UTC, when the seeded calls fall on yesterday's UTC date.
+	y := time.Now().UTC().AddDate(0, 0, -3).Format(time.DateOnly)
+	z := time.Now().UTC().AddDate(0, 0, -2).Format(time.DateOnly)
 	far := decodeAs[contract.SavingsOverview](t, s.must(t, admin.tok, "GET", "/api/workspaces/"+ws+"/savings/overview?range=custom&from="+y+"&to="+z, "", 200))
 	if far.Range != "custom" || len(far.Days) != 2 || far.Hero.SavedUsd != 0 || far.Hero.PaidUsd != 0 || far.From != y || far.To != z {
 		t.Fatalf("custom range = %+v", far)
