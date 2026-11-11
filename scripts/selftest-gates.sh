@@ -207,6 +207,8 @@ func TestSeededOverBudget(t *testing.T) {
 	}
 }'; }
 red bench "a timing test over its budget" "seeded over budget" m_overbudget
+m_otherrecv() { m_overbudget; sed -i.bak 's/(t \*testing.T)/(tb *testing.T)/; s/SkipTiming(t)/SkipTiming(tb)/; s/t\.Fatalf/tb.Fatalf/' internal/config/zz_bench_test.go; rm -f internal/config/zz_bench_test.go.bak; }
+red bench "a timing test whose receiver is not named t is still discovered" "seeded over budget" m_otherrecv
 green bench "no database reachable, local: skip is loud" "! SKIP test TestAddedLatencyP99UnderBudgetWithPostgres" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=
 red bench "no database under CI=true fails closed" "unset under CI=true" nop PATH="$STUBS:$PATH" TEST_DATABASE_URL= CI=true
 

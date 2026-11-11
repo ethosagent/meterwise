@@ -18,13 +18,14 @@ if [ -z "${TEST_DATABASE_URL:-}" ] && [ "${CI:-}" != "true" ]; then
   if dsn="$(ensure_pg)"; then export TEST_DATABASE_URL="$dsn"; else skip bench-db "no Postgres reachable and docker unavailable; database timing tests will SKIP"; fi
 fi
 
-files="$(grep -rl --include='*_test.go' 'nonet\.SkipTiming(t)' internal || true)"
-[ -n "$files" ] || { echo "✗ bench: no test calls nonet.SkipTiming(t); the timing tests are gone, not passing."; exit 1; }
+files="$(grep -rl --include='*_test.go' 'nonet\.SkipTiming(' internal cmd || true)"
+[ -n "$files" ] || { echo "✗ bench: no test calls nonet.SkipTiming(); the timing tests are gone, not passing."; exit 1; }
 names=() pkgs=()
 while IFS= read -r f; do
   pkgs+=("./$(dirname "$f")")
-  while IFS= read -r n; do names+=("$n"); done < <(awk '/^func Test/ { n=$2; sub(/\(.*/, "", n) } /nonet\.SkipTiming\(t\)/ { print n }' "$f")
+  while IFS= read -r n; do names+=("$n"); done < <(awk '/^func Test/ { n=$2; sub(/\(.*/, "", n) } /nonet\.SkipTiming\(/ { print n }' "$f")
 done <<<"$files"
+[ "${#names[@]}" -gt 0 ] || { echo "✗ bench: files call nonet.SkipTiming() but no Test function owns a call; the timing tests would not run."; exit 1; }
 u=() && while IFS= read -r l; do u+=("$l"); done < <(printf '%s\n' "${pkgs[@]}" | sort -u) && pkgs=("${u[@]}")
 u=() && while IFS= read -r l; do u+=("$l"); done < <(printf '%s\n' "${names[@]}" | sort -u) && names=("${u[@]}")
 re="^($(IFS='|'; echo "${names[*]}"))\$"
