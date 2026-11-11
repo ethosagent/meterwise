@@ -42,7 +42,7 @@ FROM (
     SELECT c.router_action, c.status, c.saved_usd_router,
            EXISTS (SELECT 1 FROM monitor_events m WHERE m.workspace_id = c.workspace_id AND m.call_id = c.id) AS fired
     FROM calls c
-    WHERE c.workspace_id = $1::text::uuid
+    WHERE c.workspace_id = $1::text::uuid AND NOT c.blocked
       AND c.started_at >= $2::timestamptz AND c.started_at < $3::timestamptz
 ) x
 `
@@ -69,6 +69,8 @@ type RouterCallStatsRow struct {
 // One row over [from_ts, to_ts): routed and observed calls, what they saved, and the guardrail counts. Cheap calls are
 // the routed ones the upstream answered (status under 400); strong calls are every other answered call. A call "fired"
 // when any monitor recorded an event on it. Unavailable counts routed calls the upstream refused (400, 403, 404).
+// A blocked call never reached an upstream and has no answer to compare, so it is left out of every count here (the
+// routed share's denominator, the strong baseline and the cheap calls alike).
 func (q *Queries) RouterCallStats(ctx context.Context, arg RouterCallStatsParams) (RouterCallStatsRow, error) {
 	row := q.db.QueryRow(ctx, routerCallStats, arg.WorkspaceID, arg.FromTs, arg.ToTs)
 	var i RouterCallStatsRow

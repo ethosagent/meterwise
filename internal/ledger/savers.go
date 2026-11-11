@@ -24,6 +24,8 @@ func (h *Hook) attachSavers(c *tollgate.Call, m tollgate.Metric, rec *contract.C
 	// still the router's decision, and the router stats count it as unavailable, so only the route is recorded for it
 	// (saved 0).
 	refused := noUsage && m.Status >= 400
+	// A blocked call is never recorded as routed, even when the router chose a target for it first: it got no answer
+	// from any model, so the router stats leave it out (classified neither cheap nor strong).
 	if rec.Blocked || (noUsage && !refused) {
 		return
 	}

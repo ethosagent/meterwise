@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethosagent/meterwise/internal/contract"
+	"github.com/ethosagent/meterwise/internal/dataplane"
+	"github.com/ethosagent/meterwise/internal/savings"
 	"github.com/ethosagent/meterwise/internal/store"
 )
 
@@ -73,5 +76,18 @@ func TestTheDefaultFlagsPlayNoRouterScenario(t *testing.T) {
 	stats, _, _ := routerStats(t, "")
 	if stats.RoutedCalls != 0 || stats.ObservedCalls != 0 {
 		t.Fatalf("router off yet %d routed, %d observed", stats.RoutedCalls, stats.ObservedCalls)
+	}
+}
+
+func TestDroppedRouterPairsAreReportedInTheDemoOutput(t *testing.T) {
+	_, st, _ := demoDB(t)
+	var out bytes.Buffer
+	var chain dataplane.ChainOptions
+	// An empty price table prices nothing, so every default pair is dropped and each one must be named.
+	if err := routerChain(context.Background(), st, savings.NewTablePricer(nil), &chain, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(chain.Router.Routes) != 0 || strings.Count(out.String(), "router pair dropped: ") != 6 || !strings.Contains(out.String(), "gpt-4.1 -> gpt-4.1-mini") {
+		t.Errorf("routes %d, output:\n%s", len(chain.Router.Routes), out.String())
 	}
 }

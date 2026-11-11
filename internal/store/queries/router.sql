@@ -30,6 +30,8 @@ LIMIT 200;
 -- One row over [from_ts, to_ts): routed and observed calls, what they saved, and the guardrail counts. Cheap calls are
 -- the routed ones the upstream answered (status under 400); strong calls are every other answered call. A call "fired"
 -- when any monitor recorded an event on it. Unavailable counts routed calls the upstream refused (400, 403, 404).
+-- A blocked call never reached an upstream and has no answer to compare, so it is left out of every count here (the
+-- routed share's denominator, the strong baseline and the cheap calls alike).
 SELECT COUNT(*)::bigint AS calls,
        COUNT(*) FILTER (WHERE router_action = 'routed')::bigint AS routed,
        COUNT(*) FILTER (WHERE router_action = 'observe')::bigint AS observed,
@@ -44,7 +46,7 @@ FROM (
     SELECT c.router_action, c.status, c.saved_usd_router,
            EXISTS (SELECT 1 FROM monitor_events m WHERE m.workspace_id = c.workspace_id AND m.call_id = c.id) AS fired
     FROM calls c
-    WHERE c.workspace_id = sqlc.arg(workspace_id)::text::uuid
+    WHERE c.workspace_id = sqlc.arg(workspace_id)::text::uuid AND NOT c.blocked
       AND c.started_at >= sqlc.arg(from_ts)::timestamptz AND c.started_at < sqlc.arg(to_ts)::timestamptz
 ) x;
 

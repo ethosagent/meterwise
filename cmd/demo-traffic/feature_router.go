@@ -19,12 +19,17 @@ import (
 // routerChain fills the router tables of the demo's hook chain, priced from the same table the ledger uses, the way
 // serve does (router.BuildTables over the seeded route and capability rows). The hook only acts on a workspace whose
 // router mode is not off, so loading the tables for every run changes nothing for the default flags.
-func routerChain(ctx context.Context, st *store.Store, pricer contract.Pricer, chain *dataplane.ChainOptions) error {
+func routerChain(ctx context.Context, st *store.Store, pricer contract.Pricer, chain *dataplane.ChainOptions, out io.Writer) error {
 	routes, caps, err := st.RouterRows(ctx)
 	if err != nil {
 		return err
 	}
-	chain.Router, _ = router.BuildTables(routes, caps, pricer, time.Now())
+	tables, dropped := router.BuildTables(routes, caps, pricer, time.Now())
+	chain.Router = tables
+	// Like serve, say which default pairs were left out and why, instead of silently routing fewer.
+	for _, d := range dropped {
+		fmt.Fprintf(out, "router pair dropped: %s %s -> %s (%s)\n", d.Pair.Provider, d.Pair.From, d.Pair.To, d.Reason)
+	}
 	return nil
 }
 

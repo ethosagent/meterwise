@@ -38,6 +38,7 @@ func fired(r contract.CallRecord) contract.CallRecord {
 //	cheap answered calls: 4 (r1: c1 fired, c2, c3 [dated source id]; r2: c4)          fire rate 1/4 = 2500 bp
 //	strong answered calls: 10 (p1: 4, p2: 4 with 1 fired, p3: 2) + observed o1 -> 11   fire rate 1/11 = 909 bp
 //	routed 404: c5 (unavailable), saved 0
+//	blocked: blka (fired), blkb, in session b: counted nowhere
 func seedRouter(t *testing.T, s *store.Store, ws string) {
 	t.Helper()
 	at := func(i int) time.Time { return day(9).Add(time.Duration(i) * time.Minute) }
@@ -60,6 +61,16 @@ func seedRouter(t *testing.T, s *store.Store, ws string) {
 			r = fired(r)
 		}
 		batch = append(batch, r)
+	}
+	// Blocked calls never got an answer: one that fired a monitor and one that did not. Neither may change a count,
+	// the routed share or either fire rate, whichever side of the guardrail it would have landed on.
+	for i, f := range []bool{true, false} {
+		b := rec(ws, "blk"+string(rune('a'+i)), "b", i+1, at(20+i), "blocked", false, nil)
+		b.Blocked, b.Usage = true, contract.Usage{}
+		if f {
+			b = fired(b)
+		}
+		batch = append(batch, b)
 	}
 	if _, err := s.WriteCalls(context.Background(), batch); err != nil {
 		t.Fatal(err)

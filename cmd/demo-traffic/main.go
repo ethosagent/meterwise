@@ -95,8 +95,8 @@ func newHook(ctx context.Context, st *store.Store) (*ledger.Hook, contract.Price
 }
 
 // buildChain fills the chain options the router and memory seams own.
-func buildChain(ctx context.Context, st *store.Store, pricer contract.Pricer, f *features) error {
-	if err := routerChain(ctx, st, pricer, &f.chain); err != nil {
+func buildChain(ctx context.Context, st *store.Store, pricer contract.Pricer, f *features, out io.Writer) error {
+	if err := routerChain(ctx, st, pricer, &f.chain, out); err != nil {
 		return fmt.Errorf("router: %w", err)
 	}
 	if err := memoryChain(ctx, st, &f.chain); err != nil {
@@ -131,7 +131,7 @@ func run(ctx context.Context, cfg config, out io.Writer) (result, error) {
 		return result{}, err
 	}
 	f := features{cfg: cfg}
-	if err := buildChain(ctx, st, pricer, &f); err != nil {
+	if err := buildChain(ctx, st, pricer, &f, out); err != nil {
 		return result{}, err
 	}
 	stamp := time.Now().UTC().Format("20060102T150405")

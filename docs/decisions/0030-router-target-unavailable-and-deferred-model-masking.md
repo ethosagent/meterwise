@@ -27,6 +27,9 @@ issue a second upstream request, so a replay on 400/403/404 cannot be done from 
 5. **`x-meterwise-route` is deferred.** There is no per-request opt-out header yet; the workspace mode is the switch.
 6. **Held reasons `score` and `edit_failed` are router-local.** They are not in `contract` (the shared reasons are
    `first_steps`, `escalated`, `error_retry`, `unavailable`, `not_in_map`, `unpriced`, `capability`).
+7. **Waiver: `router_feedback` has no `org_id`.** The table is scoped by `workspace_id` alone. A deployment has one
+   organization, so a workspace id already identifies the tenant. If multi-org arrives, an additive migration adds
+   the column; no schema change now.
 
 ## Consequences
 
