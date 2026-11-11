@@ -4,6 +4,7 @@ import { usePatchRouter, useRouterConfig } from "../../api/router";
 import { useTrimConfig } from "../../api/trim";
 import { useErrorToast } from "../../api/useErrorToast";
 import { useToastOnError } from "../../api/useToastOnError";
+import { RouterPanel } from "../router/RouterPanel";
 import { TrimSettings } from "../trim/TrimSettings";
 import { type ModeConfirm, type ModeOption, ModeSegment } from "./ModeSegment";
 import { SettingsRow } from "./SettingsRow";
@@ -50,7 +51,15 @@ const DISABLED_WHY: Record<string, string> = {
  * through its own PATCH and refreshes the savings figures. Routing's acting modes and memory's hint wait behind a
  * confirm. The figures and finer settings of each saver arrive with its feature.
  */
-export function SaversCard({ workspaceId, readOnly }: { workspaceId: string; readOnly: boolean }) {
+export function SaversCard({
+  workspaceId,
+  readOnly,
+  canStats,
+}: {
+  workspaceId: string;
+  readOnly: boolean;
+  canStats: boolean;
+}) {
   const { token } = theme.useToken();
   const toast = useErrorToast();
   const trim = useTrimConfig(workspaceId, true);
@@ -87,6 +96,12 @@ export function SaversCard({ workspaceId, readOnly }: { workspaceId: string; rea
             onChange={(mode) => patchRouter.mutate({ mode }, fail("model routing"))}
           />
         </SettingsRow>
+        <RouterPanel
+          workspaceId={workspaceId}
+          settings={router.data}
+          readOnly={readOnly}
+          canStats={canStats}
+        />
         <Divider style={{ margin: 0 }} />
         <SettingsRow
           title="Memory"

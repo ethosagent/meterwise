@@ -64,7 +64,7 @@ function Settings({ workspaceId }: { workspaceId: string }) {
         onMode={(monitor, mode) => send(monitor, { mode })}
         onThresholds={setEditing}
       />
-      <SaversCard workspaceId={workspaceId} readOnly={!canWrite} />
+      <SaversCard workspaceId={workspaceId} readOnly={!canWrite} canStats={canStats} />
       {editing ? (
         <ThresholdsDrawer
           monitor={editing}

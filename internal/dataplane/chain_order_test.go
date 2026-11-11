@@ -51,9 +51,9 @@ func TestOrderPutsEverySlotWhereTheADRSaysAndSkipsNilOnes(t *testing.T) {
 }
 
 // The seam the router owner replaces returns nil today (trim's is filled: feature_trim_test.go), so the default chain has no router.
-func TestFeatureSeamsAreOffInStepZero(t *testing.T) {
+func TestZeroChainOptionsBuildNoRouterOrMemoryHook(t *testing.T) {
 	if routerHook(ChainOptions{}) != nil {
-		t.Fatal("step 0 ships no router hook")
+		t.Fatal("zero ChainOptions must build no router hook")
 	}
 	if (ChainOptions{}).Router.Routes != nil || (ChainOptions{}).Memory != nil {
 		t.Fatal("zero ChainOptions must carry no router tables and no memory hook")

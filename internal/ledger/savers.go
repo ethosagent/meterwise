@@ -12,24 +12,38 @@ import (
 // attachSavers turns what the trim and router hooks left in Meta (a TrimResult, a RouteDecision) and the memory
 // hint into the call's saver fields (S0.8). The ledger stays the one writer (R5): the hooks only report.
 //
-// A blocked call, or one with no usage at all, never reached the upstream, so it records nothing here. Trim tokens
+// A blocked call, or one with no usage at all, never reached the upstream, so it records nothing here (but see the
+// refused routed call below). Trim tokens
 // follow R8 (the request's own measured bytes-per-token, else a quarter), and are certain only for OpenAI chat with
 // reported input tokens and a body that was really rewritten; everything else is likely. Router savings are the price
 // difference at the call's real usage and need both models priced. Observe records the would-save in the same
 // columns with its action, so it stays out of both savings numbers (non-negotiable 5).
 func (h *Hook) attachSavers(c *tollgate.Call, m tollgate.Metric, rec *contract.CallRecord) {
-	if rec.Blocked || (m.Usage.InputTokens <= 0 && m.Usage.OutputTokens <= 0 && m.Usage.CachedInputTokens <= 0 && m.Usage.ReasoningTokens <= 0) {
+	noUsage := m.Usage.InputTokens <= 0 && m.Usage.OutputTokens <= 0 && m.Usage.CachedInputTokens <= 0 && m.Usage.ReasoningTokens <= 0
+	// A routed call the upstream answered with an error (400/403/404 on the cheaper model, say) has no usage but is
+	// still the router's decision, and the router stats count it as unavailable, so only the route is recorded for it
+	// (saved 0).
+	refused := noUsage && m.Status >= 400
+	// A blocked call is never recorded as routed, even when the router chose a target for it first: it got no answer
+	// from any model, so the router stats leave it out (classified neither cheap nor strong).
+	if rec.Blocked || (noUsage && !refused) {
 		return
 	}
-	if tr, ok := trimOf(c.Meta[contract.MetaTrim]); ok {
-		h.attachTrim(c, tr, rec)
-	} else if c.Meta[contract.MetaTrim] != nil {
-		h.q.invalidSaverMeta.Add(1) // a value of the wrong Go type is dropped, never silently
+	if !refused {
+		h.attachTrimAndHint(c, rec)
 	}
 	if rd, ok := routeOf(c.Meta[contract.MetaRouter]); ok {
 		h.attachRoute(rd, rec)
 	} else if c.Meta[contract.MetaRouter] != nil {
 		h.q.invalidSaverMeta.Add(1)
+	}
+}
+
+func (h *Hook) attachTrimAndHint(c *tollgate.Call, rec *contract.CallRecord) {
+	if tr, ok := trimOf(c.Meta[contract.MetaTrim]); ok {
+		h.attachTrim(c, tr, rec)
+	} else if c.Meta[contract.MetaTrim] != nil {
+		h.q.invalidSaverMeta.Add(1) // a value of the wrong Go type is dropped, never silently
 	}
 	if mh, ok := hintOf(c.Meta[contract.MetaMemory]); ok && mh.Injected {
 		rec.HintInjected = true

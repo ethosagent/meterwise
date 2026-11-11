@@ -100,6 +100,9 @@ func newUpstream() *upstream {
 	u := &upstream{}
 	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u.hits.Add(1)
+		if routerUpstream(w, r) {
+			return
+		}
 		s, ok := scenarioByName(r.Header.Get(scenarioHeader))
 		if !ok {
 			http.Error(w, "unknown demo scenario", http.StatusNotFound)

@@ -3,23 +3,27 @@ import type {
   MemorySettings,
   RouterConfigPatch,
   RouterSettings,
+  RouterStats,
   TrimConfig,
   TrimConfigPatch,
 } from "../contract/generated";
 import { MEMORY_SETTINGS } from "./fixtures/memory";
-import { ROUTER_SETTINGS } from "./fixtures/router";
+import { ROUTER_SETTINGS, ROUTER_STATS } from "./fixtures/router";
 import { TRIM_CONFIG } from "./fixtures/trim";
 import { type AccessMock, forbidden, jsonResponse as json } from "./mockAccess";
 
 export interface FeaturesInit {
   trim?: TrimConfig;
   router?: RouterSettings;
+  routerStats?: RouterStats;
   memory?: MemorySettings;
 }
 
 export interface FeaturesMock {
   trim: () => TrimConfig;
   router: () => RouterSettings;
+  /** The verdict set on a call through POST .../router-feedback (undefined: never set). */
+  verdictOf: (callId: string) => string | null | undefined;
   memory: () => MemorySettings;
   route: (method: string, path: string, body: Record<string, unknown>) => Response | undefined;
 }
@@ -31,9 +35,25 @@ export interface FeaturesMock {
 export function createFeaturesMock(access: AccessMock, init: FeaturesInit = {}): FeaturesMock {
   let trim = structuredClone(init.trim ?? TRIM_CONFIG);
   let router = structuredClone(init.router ?? ROUTER_SETTINGS);
+  const routerStats = structuredClone(init.routerStats ?? ROUTER_STATS);
   let memory = structuredClone(init.memory ?? MEMORY_SETTINGS);
 
+  const verdicts = new Map<string, string | null>();
+
   const route = (method: string, rawPath: string, body: Record<string, unknown>) => {
+    const path = rawPath.split("?")[0] ?? "";
+    const stats = /^\/api\/workspaces\/([^/]+)\/router\/stats$/.exec(path);
+    if (stats && method === "GET") {
+      if (!access.can("savings", "read", stats[1] ?? "")) return forbidden("no matching grant");
+      return json({ ...routerStats, mode: router.config.mode });
+    }
+    const fb = /^\/api\/workspaces\/([^/]+)\/calls\/([^/]+)\/router-feedback$/.exec(path);
+    if (fb && method === "POST") {
+      if (!access.can("session", "read", fb[1] ?? "")) return forbidden("no matching grant");
+      const verdict = (body.verdict as string | null | undefined) ?? null;
+      verdicts.set(decodeURIComponent(fb[2] ?? ""), verdict);
+      return json({ callId: decodeURIComponent(fb[2] ?? ""), verdict });
+    }
     const m = /^\/api\/workspaces\/([^/?]+)\/(trim|router|memory)$/.exec(
       rawPath.split("?")[0] ?? "",
     );
@@ -65,5 +85,11 @@ export function createFeaturesMock(access: AccessMock, init: FeaturesInit = {}):
     return json(memory);
   };
 
-  return { trim: () => trim, router: () => router, memory: () => memory, route };
+  return {
+    trim: () => trim,
+    router: () => router,
+    verdictOf: (id) => verdicts.get(id),
+    memory: () => memory,
+    route,
+  };
 }
