@@ -138,6 +138,8 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 		"web/src/side.ts":         "import 'side-pad'",
 		"web/src/req.ts":          "const r = require('req-pad')",
 		"web/src/star.ts":         "export * as ns from 'star-pad'",
+		"web/src/semi.ts":         "const a = 1; import s from 'semi-pad'",
+		"web/src/punct.ts":        "import {\n  a, // see: docs.example/x\n  b, /* note: ok */\n} from 'punct-pad'",
 		"web/src/nolf.ts":         "const a = 1\nimport d from 'second-pad'",
 	}
 	got := scanWeb(bad, `{"dependencies":{"react":"1","moment":"2"},"devDependencies":{"vite":"6"}}`)
@@ -148,7 +150,7 @@ func TestSeededWebViolationsGoRed(t *testing.T) {
 	for _, v := range got {
 		text += v.Msg + "\n"
 	}
-	for _, want := range []string{"lodash", "leaves web/src", "left-pad", "absolute path", "@scope/pkg", `"moment"`, "left-pad-js", "tpl-pad", "node built-ins", "multi-pad", "type-pad", "etype-pad", "side-pad", "req-pad", "star-pad", "second-pad"} {
+	for _, want := range []string{"lodash", "leaves web/src", "left-pad", "absolute path", "@scope/pkg", `"moment"`, "left-pad-js", "tpl-pad", "node built-ins", "multi-pad", "type-pad", "etype-pad", "side-pad", "req-pad", "star-pad", "second-pad", "semi-pad", "punct-pad"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no finding mentions %s:\n%s", want, text)
 		}

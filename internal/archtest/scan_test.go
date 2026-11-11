@@ -141,16 +141,18 @@ var webAllow = []string{
 // group 1. A bare `from "x"` is not enough: string text such as
 // `{ name: "Where it came from" }` must not read as an import.
 //
-//  1. a static statement anchored at a line start: `import ... from "x"` or
+//  1. a static statement at a line start or after `;`, `{` or `}`: `import ... from "x"` or
 //     `export ... from "x"`. The clause between the keyword and `from` is
 //     limited to identifiers, braces, commas, `*` and whitespace (so it spans
 //     lines but never a quote, `;` or `=`), plus line and block comments.
-//  2. a side-effect `import "x"` at a line start.
+//  2. a side-effect `import "x"` at the same anchors.
 //  3. a dynamic `import("x")`.
 //  4. `require("x")` (also covers `import x = require("x")`).
+//
+// Known limit: string-named members (`import { "a-b" as ab } from "x"`) are not matched.
 var importRes = []*regexp.Regexp{
-	regexp.MustCompile("(?m)^[ \\t]*(?:import|export)\\b(?:[\\w$\\s{},*]|//[^\\n]*\\n|/\\*(?:[^*]|\\*+[^*/])*\\*+/)*?\\bfrom\\s*[\"'`]([^\"'`]+)[\"'`]"),
-	regexp.MustCompile("(?m)^[ \\t]*import\\s*[\"'`]([^\"'`]+)[\"'`]"),
+	regexp.MustCompile("(?m)(?:^|[;{}])[ \\t]*(?:import|export)\\b(?:[\\w$\\s{},*]|//[^\\n]*\\n|/\\*(?:[^*]|\\*+[^*/])*\\*+/)*?\\bfrom\\s*[\"'`]([^\"'`]+)[\"'`]"),
+	regexp.MustCompile("(?m)(?:^|[;{}])[ \\t]*import\\s*[\"'`]([^\"'`]+)[\"'`]"),
 	regexp.MustCompile("\\bimport\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]"),
 	regexp.MustCompile("\\brequire\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]"),
 }
