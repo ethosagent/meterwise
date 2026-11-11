@@ -28,7 +28,8 @@ APP_ENV=dev go run ./cmd/meterwised serve  # proxy :8080, API + web :8081, admin
 METERWISE_BASE_REF=build/all-plans scripts/run-checks.sh   # base branch for the migrate gate (default main)
 ```
 
-Gates: `fmt vet mod arch lint test vuln docs size sqlc migrate web generated`. The gate prints only
+Gates: `fmt vet mod arch lint test bench vuln docs size sqlc migrate web generated`. `test` runs `-short`; wall-clock
+timing tests call `nonet.SkipTiming(t)` and run serially in `bench`. The gate prints only
 failures (logs in `.logs/<gate>.log`) and prints `! SKIP <gate>: <reason>` when a gate has no inputs yet.
 
 ## Package map
