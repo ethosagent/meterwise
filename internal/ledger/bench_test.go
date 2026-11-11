@@ -17,6 +17,7 @@ import (
 	"github.com/ethosagent/tollgate/testkit"
 
 	"github.com/ethosagent/meterwise/internal/ledger"
+	"github.com/ethosagent/meterwise/internal/nonet"
 )
 
 type benchResolver struct{ base *url.URL }
@@ -108,10 +109,39 @@ func measure(t testing.TB, bare, with *proxyRig, trials, n int) (added time.Dura
 
 const addedP99Budget = 2 * time.Millisecond
 
-func TestAddedLatencyP99UnderBudgetWithFakeWriter(t *testing.T) {
-	if testing.Short() {
-		t.Skip("latency comparison")
+// The wall-time halves of two hook tests; their behavioural halves stay in hook_test.go.
+func TestBeforeTakesUnderOneMillisecond(t *testing.T) {
+	nonet.SkipTiming(t)
+	h := newHook(t, &fakeWriter{}, nil)
+	c := directCall("c1", "hi", nil, 3)
+	start := time.Now()
+	if _, err := h.Before(context.Background(), c); err != nil {
+		t.Fatal(err)
 	}
+	if took := time.Since(start); took > time.Millisecond {
+		t.Errorf("Before took %v, budget 1 ms", took)
+	}
+}
+
+func TestStuckWriterNeverBlocksTheRequestPath(t *testing.T) {
+	nonet.SkipTiming(t)
+	w := &fakeWriter{delay: 300 * time.Millisecond} // a database that is stuck
+	h := newHook(t, w, func(o *ledger.Options) { o.QueueSize = 5; o.BatchSize = 2; o.FlushInterval = time.Millisecond })
+	const n = 200
+	start := time.Now()
+	for i := range n {
+		complete(t, h, directCall("call-"+string(rune('A'+i%26))+strings.Repeat("x", i), "hi", nil, i+1))
+	}
+	if took := time.Since(start); took > 100*time.Millisecond {
+		t.Fatalf("%d After calls against a stuck writer took %v: the request path blocked", n, took)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = h.Close(ctx)
+}
+
+func TestAddedLatencyP99UnderBudgetWithFakeWriter(t *testing.T) {
+	nonet.SkipTiming(t)
 	h := newHook(t, &fakeWriter{}, nil)
 	bare, with := newProxyRig(t, wsID, nil, "openai/chat-stream-text"), newProxyRig(t, wsID, h, "openai/chat-stream-text")
 	added, b, w := measure(t, bare, with, 5, 400)
@@ -123,9 +153,7 @@ func TestAddedLatencyP99UnderBudgetWithFakeWriter(t *testing.T) {
 }
 
 func TestAddedLatencyP99UnderBudgetWithPostgres(t *testing.T) {
-	if testing.Short() {
-		t.Skip("latency comparison")
-	}
+	nonet.SkipTiming(t)
 	s, ws := pgStore(t)
 	h := newHook(t, s, func(o *ledger.Options) { o.FlushInterval = 250 * time.Millisecond })
 	bare, with := newProxyRig(t, ws, nil, "openai/chat-stream-text"), newProxyRig(t, ws, h, "openai/chat-stream-text")

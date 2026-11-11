@@ -98,13 +98,9 @@ func TestUnknownModelIsNullCostAndCounted(t *testing.T) {
 func TestBeforeStampsWithoutIO(t *testing.T) {
 	h := newHook(t, &fakeWriter{}, nil)
 	c := directCall("c1", "hi", nil, 3)
-	start := time.Now()
 	resp, err := h.Before(context.Background(), c)
 	if err != nil || resp != nil {
 		t.Fatalf("Before = %v, %v", resp, err)
-	}
-	if took := time.Since(start); took > time.Millisecond {
-		t.Errorf("Before took %v, budget 1 ms", took)
 	}
 	if len(c.Meta) != 1 { // one entry: the call state (start, index, stream facts)
 		t.Errorf("meta = %v", c.Meta)
@@ -132,13 +128,9 @@ func TestQueueNeverBlocksAndDropsAreCounted(t *testing.T) {
 	w := &fakeWriter{delay: 300 * time.Millisecond} // a database that is stuck
 	h := newHook(t, w, func(o *ledger.Options) { o.QueueSize = 5; o.BatchSize = 2; o.FlushInterval = time.Millisecond })
 	const n = 200
-	start := time.Now()
 	for i := range n {
 		c := directCall("call-"+string(rune('A'+i%26))+strings.Repeat("x", i), "hi", nil, i+1)
 		complete(t, h, c)
-	}
-	if took := time.Since(start); took > 100*time.Millisecond {
-		t.Fatalf("%d After calls against a stuck writer took %v: the request path blocked", n, took)
 	}
 	st := h.Status()
 	dropped, _ := st["dropped"].(int64)

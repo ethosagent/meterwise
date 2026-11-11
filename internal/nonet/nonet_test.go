@@ -64,6 +64,17 @@ func TestLoopbackStaysOpen(t *testing.T) {
 	}
 }
 
+func TestSkipTimingSkipsExactlyUnderShort(t *testing.T) {
+	var sub *testing.T
+	t.Run("probe", func(st *testing.T) {
+		sub = st
+		nonet.SkipTiming(st)
+	})
+	if got := sub.Skipped(); got != testing.Short() {
+		t.Fatalf("skipped = %v under -short = %v", got, testing.Short())
+	}
+}
+
 func TestRestore(t *testing.T) {
 	restore := nonet.Install()
 	restore()

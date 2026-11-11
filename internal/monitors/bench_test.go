@@ -21,6 +21,7 @@ import (
 	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/history"
 	"github.com/ethosagent/meterwise/internal/monitors"
+	"github.com/ethosagent/meterwise/internal/nonet"
 )
 
 // bigTranscript is a 201-message conversation: one user message and 100 assistant/tool pairs, the
@@ -119,9 +120,7 @@ func scaled(d time.Duration) time.Duration {
 }
 
 func TestBeforeP99UnderOneMillisecondFor200Messages(t *testing.T) {
-	if testing.Short() {
-		t.Skip("latency measurement")
-	}
+	nonet.SkipTiming(t)
 	const beforeBudget = time.Millisecond // binds a plain go test on a quiet machine; see below
 	for _, w := range wires {
 		t.Run(string(w), func(t *testing.T) {
@@ -247,9 +246,7 @@ func (r *ttfbRig) ttfb(t testing.TB, i int) time.Duration {
 // so machine noise hits both. The detectors read the stream on the tap, off the client path, so the
 // added median must stay inside a 1 ms smoke bound (the monitors' own Before is the only cost).
 func TestStreamDetectorsAddNothingToTTFB(t *testing.T) {
-	if testing.Short() {
-		t.Skip("latency comparison")
-	}
+	nonet.SkipTiming(t)
 	base := newTTFBRig(t, history.New(history.Options{}))
 	with := newTTFBRig(t, history.New(history.Options{}), newMon(monitors.Options{}))
 	for i := 0; i < 50; i++ {
