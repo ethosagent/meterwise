@@ -30,12 +30,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # re-prints every line starting with "! " on a green gate.
 skip() { echo "! SKIP $1: $2"; }
 
-# cover_gate runs the Go tests offline with the race detector and a coverage
+# cover_gate runs the Go tests offline with the race detector, -short (wall-clock timing
+# tests skip here and run in the serial bench gate) and a coverage
 # profile, and fails below COVERAGE_MIN (percent). Skipped tests are surfaced as
 # "! SKIP" lines so a green run never hides a test that did not run.
 cover_gate() {
   local prof="$REPO_ROOT/.logs/coverage.out" vlog="$REPO_ROOT/.logs/test-verbose.log" total rc=0
-  GOFLAGS=-mod=readonly go test -tags=offline -race -count=1 -v -coverprofile="$prof" -covermode=atomic ./... >"$vlog" 2>&1 || rc=$?
+  GOFLAGS=-mod=readonly go test -tags=offline -race -short -count=1 -v -coverprofile="$prof" -covermode=atomic ./... >"$vlog" 2>&1 || rc=$?
   # failures only; the full verbose log stays on disk
   { grep -E -- '^(--- FAIL|FAIL|panic:)|^\s+[a-z_]+\.go:[0-9]+' "$vlog" || true; } | head -n 80
   # a skipped test is printed as a visible "! SKIP" line, never swallowed
