@@ -127,7 +127,8 @@ func parseColumns(body, file string) []column {
 
 // addColumns records the columns every ALTER TABLE ... ADD COLUMN clause of up adds to m. One ALTER TABLE may add
 // several columns: its clauses split at top-level commas, so a comma inside CHECK (x IN ('a','b')) stays in its
-// column's definition.
+// column's definition. A ';' inside a string default, or a comma inside a quoted literal, is not supported; no
+// migration uses either.
 func addColumns(m *migration, up, file string) {
 	for _, a := range alterRe.FindAllStringSubmatch(up, -1) {
 		for _, clause := range topLevelCommas(a[2]) {

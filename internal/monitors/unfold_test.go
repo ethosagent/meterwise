@@ -43,7 +43,11 @@ func TestUnfoldedCallsAreNotWaste(t *testing.T) {
 			h := newMon(monitors.Options{})
 			msgs := weatherTranscript(3)
 			c := before(t, tollgate.WireOpenAIChat, tc.ring, readsAt2, 4, msgs)
-			if tc.unfold != nil {
+			switch {
+			case tc.unfold == nil:
+			case tc.viaPtr:
+				c.Meta[contract.MetaTrimUnfold] = &contract.TrimUnfold{ArgsHashes: tc.unfold}
+			default:
 				c.Meta[contract.MetaTrimUnfold] = contract.TrimUnfold{ArgsHashes: tc.unfold}
 			}
 			if _, err := h.Before(bg, c); err != nil {
