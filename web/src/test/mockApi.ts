@@ -18,6 +18,7 @@ import {
   forbidden,
   jsonResponse as json,
 } from "./mockAccess";
+import { createFeaturesMock, type FeaturesInit, type FeaturesMock } from "./mockFeatures";
 import { createSavingsMock, type SavingsInit, type SavingsMock } from "./mockSavings";
 import { createUrlMock, type UrlMock } from "./mockUrl";
 
@@ -74,6 +75,8 @@ export interface MockApi {
   url: UrlMock;
   /** The Plan 07 in-memory server: savings, sessions, feedback and monitor settings. */
   savings: SavingsMock;
+  /** The Plans 09-11 in-memory server: trim, router and memory settings. */
+  features: FeaturesMock;
   /** From now on every authenticated route answers 401 (the session ended). */
   expireSession: () => void;
 }
@@ -101,6 +104,8 @@ interface Options {
   setupStatus?: SetupStatus;
   /** Plan 07 state: savings payloads, sessions, monitor settings (defaults: test/fixtures). */
   savings?: SavingsInit;
+  /** Plans 09-11 state: trim, router and memory settings (defaults: test/fixtures). */
+  features?: FeaturesInit;
 }
 
 /** Stubs global fetch with the Plan 01 and Plan 02 endpoints, backed by a small in-memory server. */
@@ -130,6 +135,7 @@ export function mockApi(opts: Options = {}): MockApi {
     { audit: opts.audit, status: opts.setupStatus },
   );
   const savings = createSavingsMock(access, opts.savings);
+  const features = createFeaturesMock(access, opts.features);
   const notInvited = () => errorResponse(403, "not_invited", "no invitation");
   const notFound = () => errorResponse(404, "not_found", "no such thing");
 
@@ -164,6 +170,8 @@ export function mockApi(opts: Options = {}): MockApi {
     if (urlRoute) return urlRoute;
     const savingsRoute = savings.route(method, path, body);
     if (savingsRoute) return savingsRoute;
+    const featuresRoute = features.route(method, path, body);
+    if (featuresRoute) return featuresRoute;
     const ws = /^\/api\/workspaces\/([^/]+)(\/switch)?$/.exec(path);
     if (path === "/api/workspaces" && method === "GET") {
       listFetches++;
@@ -263,6 +271,7 @@ export function mockApi(opts: Options = {}): MockApi {
     access,
     url,
     savings,
+    features,
     calls,
     callsTo: (method, path) =>
       calls.filter(

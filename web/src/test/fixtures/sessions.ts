@@ -1,5 +1,6 @@
 import type {
   Call,
+  MemoryHitView,
   MonitorConfig,
   MonitorEvent,
   MonitorStats,
@@ -25,6 +26,9 @@ export function session(n: number, over: Partial<Session> = {}): Session {
     likelySavedUsd: "0.100000",
     outcome: "completed",
     client: "opencode",
+    trimTokens: 0,
+    routedCalls: 0,
+    hints: 0,
     ...over,
   };
 }
@@ -40,7 +44,7 @@ export const SESSIONS: Session[] = [
   session(3, { client: "claude-code", outcome: "open", closedAt: null, costUsd: null }),
 ];
 
-function call(n: number, over: Partial<Call> = {}): Call {
+export function call(n: number, over: Partial<Call> = {}): Call {
   return {
     id: `call_${n}`,
     callIndex: n,
@@ -61,6 +65,16 @@ function call(n: number, over: Partial<Call> = {}): Call {
     toolCalls: ["read_file"],
     blocked: false,
     notesInjected: 0,
+    trimAction: null,
+    trimConfidence: null,
+    trimTokens: 0,
+    savedUsdTrim: "0.000000",
+    routerAction: null,
+    routedFrom: null,
+    routedTo: null,
+    routerScoreBp: null,
+    savedUsdRouter: "0.000000",
+    hintInjected: false,
     ...over,
   };
 }
@@ -107,6 +121,7 @@ export const DETAIL: SessionDetail = {
   session: session(1),
   calls: CALLS,
   truncated: false,
+  memoryHits: [],
   monitorEvents: [EVENT_BLOCK, EVENT_NOTE],
   insight: {
     repeats: [
@@ -181,4 +196,63 @@ export const MONITOR_STATS: MonitorStats = {
     }
     return statsRow(m);
   }),
+};
+
+/** A session the savers touched: a trimmed call (certain), a trimmed call (likely), a routed call, an observed route and a hint. */
+export const SAVER_SESSION: Session = session(7, { trimTokens: 1500, routedCalls: 1, hints: 1 });
+
+export const MEMORY_HIT: MemoryHitView = {
+  id: "hit_1",
+  callId: "call_16",
+  traceId: "trace_1",
+  sourceSessionId: "sess_1",
+  similarityBp: 8700,
+  mode: "hint",
+  injected: true,
+  hint: "Last time the build failed on a missing go.sum entry; run go mod tidy first.",
+  feedback: null,
+  estSavedUsd: "0.050000",
+};
+
+export const SAVER_DETAIL: SessionDetail = {
+  session: SAVER_SESSION,
+  truncated: false,
+  monitorEvents: [],
+  insight: { repeats: [], suggestion: null },
+  memoryHits: [MEMORY_HIT],
+  calls: [
+    call(11, {
+      trimAction: "acted",
+      trimConfidence: "certain",
+      trimTokens: 1000,
+      savedUsdTrim: "0.002500",
+    }),
+    call(12, {
+      trimAction: "acted",
+      trimConfidence: "likely",
+      trimTokens: 500,
+      savedUsdTrim: "0.001500",
+    }),
+    call(13, {
+      trimAction: "observe",
+      trimConfidence: "likely",
+      trimTokens: 300,
+      savedUsdTrim: "0.000700",
+    }),
+    call(14, {
+      routerAction: "routed",
+      routedFrom: "gpt-4.1",
+      routedTo: "gpt-4.1-mini",
+      routerScoreBp: 1200,
+      savedUsdRouter: "0.003000",
+    }),
+    call(15, {
+      routerAction: "observe",
+      routedFrom: "gpt-4.1",
+      routedTo: "gpt-4.1-mini",
+      routerScoreBp: 900,
+      savedUsdRouter: "0.000900",
+    }),
+    call(16, { hintInjected: true }),
+  ],
 };

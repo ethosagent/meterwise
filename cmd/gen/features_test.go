@@ -57,3 +57,24 @@ func TestA204RouteHasNoResponseBodyInOpenAPI(t *testing.T) {
 		t.Fatalf("a 204 must not declare a body: %v", success)
 	}
 }
+
+func TestNullableTagMarksASliceThatCanBeNull(t *testing.T) {
+	type cfg struct {
+		Map  []string `json:"map" ts:"nullable"`
+		List []string `json:"list"`
+	}
+	ts, err := tsInterface(contract.DTO{Name: "Cfg", Type: reflect.TypeFor[cfg]()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ts, "map: string[] | null;") || !strings.Contains(ts, "list: string[];") {
+		t.Errorf("twin:\n%s", ts)
+	}
+	oa, err := objectSchema(contract.DTO{Name: "Cfg", Type: reflect.TypeFor[cfg]()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := oa["properties"].(map[string]any)["map"].(map[string]any)["oneOf"]; !ok {
+		t.Errorf("openapi: %v", oa)
+	}
+}

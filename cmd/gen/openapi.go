@@ -79,7 +79,7 @@ func objectSchema(d contract.DTO) (map[string]any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", d.Name, f.Name, err)
 		}
-		if f.Type.Kind() == reflect.Pointer && !optional {
+		if isNullable(f, optional) {
 			s = map[string]any{"oneOf": []any{s, map[string]any{"type": "null"}}} // sent as null
 		}
 		props[name] = s

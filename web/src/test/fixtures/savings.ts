@@ -1,25 +1,23 @@
-import type {
-  CauseView,
-  ClientRow,
-  SaveList,
-  SaveRow,
-  SavingsCauses,
-  SavingsDay,
-  SavingsHero,
-  SavingsOverview,
-  Suggestion,
+import {
+  type CauseCard,
+  type CauseKind,
+  type CauseView,
+  type ClientRow,
+  SAVINGS_CAUSES,
+  type SaveList,
+  type SaveRow,
+  type SavingsCause,
+  type SavingsCauses,
+  type SavingsDay,
+  type SavingsHero,
+  type SavingsOverview,
+  type Suggestion,
 } from "../../contract/generated";
 import { parseMicro } from "../../lib/money";
 
-/** The six monitors in the order the API sends them. */
-export const MONITOR_ORDER = [
-  "duplicate_tool_call",
-  "repeated_read",
-  "no_progress",
-  "step_budget",
-  "reasoning_loop",
-  "second_guessing",
-] as const;
+/** The nine causes in the order the API sends them: the six monitors, then trim, router, memory. */
+export const CAUSE_ORDER = SAVINGS_CAUSES;
+export const MONITOR_ORDER = CAUSE_ORDER.slice(0, 6);
 
 const ZERO = "0.000000";
 
@@ -27,12 +25,16 @@ function micro(v: bigint): string {
   return `${v / 1_000_000n}.${(v % 1_000_000n).toString().padStart(6, "0")}`;
 }
 
-/** A cause row with every figure zero; override what the test is about. */
-export function cause(monitor: string, over: Partial<CauseView> = {}): CauseView {
+const KIND_OF: Record<string, CauseKind> = { trim: "trim", router: "router", memory: "memory" };
+
+/** A cause row with every figure zero; override what the test is about. The three savers start Off. */
+export function cause(name: SavingsCause, over: Partial<CauseView> = {}): CauseView {
+  const kind = KIND_OF[name] ?? "monitor";
   return {
-    monitor,
-    mode: "observe",
-    confidence: "certain",
+    cause: name,
+    kind,
+    mode: kind === "monitor" ? "observe" : "off",
+    confidence: name === "memory" ? "likely" : "certain",
     fires: 0,
     savedUsd: ZERO,
     likelySavedUsd: ZERO,
@@ -40,6 +42,14 @@ export function cause(monitor: string, over: Partial<CauseView> = {}): CauseView
     savedTokens: 0,
     likelySavedTokens: 0,
     wouldSaveTokens: 0,
+    ...over,
+  };
+}
+
+/** A Causes-tab card: a cause row plus the most repeated client, tool and path (null when none). */
+export function causeCard(name: SavingsCause, over: Partial<CauseCard> = {}): CauseCard {
+  return {
+    ...cause(name),
     topClient: null,
     topTool: null,
     topPath: null,
@@ -47,6 +57,13 @@ export function cause(monitor: string, over: Partial<CauseView> = {}): CauseView
     topRepeatCount: 0,
     ...over,
   };
+}
+
+/** The overview's row for a card: the same figures without the Top* detail (R17). */
+export function viewOf(card: CauseCard): CauseView {
+  const { topClient, topTool, topPath, topPathHash, topRepeatCount, ...view } = card;
+  void [topClient, topTool, topPath, topPathHash, topRepeatCount];
+  return view;
 }
 
 /** A zero-filled UTC day; wouldHavePaid is paid + saved (certain only), as the server computes it. */
@@ -98,8 +115,8 @@ const HERO_EMPTY: SavingsHero = {
   unpricedCalls: 0,
 };
 
-export const CAUSES_ACTIVE: CauseView[] = [
-  cause("duplicate_tool_call", {
+export const CAUSE_CARDS_ACTIVE: CauseCard[] = [
+  causeCard("duplicate_tool_call", {
     mode: "block",
     fires: 5,
     savedUsd: "0.700000",
@@ -109,7 +126,7 @@ export const CAUSES_ACTIVE: CauseView[] = [
     topPath: "src/main.go",
     topRepeatCount: 4,
   }),
-  cause("repeated_read", {
+  causeCard("repeated_read", {
     mode: "block",
     fires: 3,
     savedUsd: "0.300000",
@@ -119,17 +136,22 @@ export const CAUSES_ACTIVE: CauseView[] = [
     topPathHash: "ab12cd34",
     topRepeatCount: 3,
   }),
-  cause("no_progress", {
+  causeCard("no_progress", {
     mode: "note",
     confidence: "likely",
     fires: 4,
     likelySavedUsd: "0.500000",
     likelySavedTokens: 60000,
   }),
-  cause("step_budget"),
-  cause("reasoning_loop", { fires: 2, wouldSaveUsd: "0.200000", wouldSaveTokens: 24000 }),
-  cause("second_guessing"),
+  causeCard("step_budget"),
+  causeCard("reasoning_loop", { fires: 2, wouldSaveUsd: "0.200000", wouldSaveTokens: 24000 }),
+  causeCard("second_guessing"),
+  causeCard("trim"),
+  causeCard("router"),
+  causeCard("memory"),
 ];
+
+export const CAUSES_ACTIVE: CauseView[] = CAUSE_CARDS_ACTIVE.map(viewOf);
 
 export const OVERVIEW_ACTIVE: SavingsOverview = {
   range: "7d",
@@ -142,12 +164,12 @@ export const OVERVIEW_ACTIVE: SavingsOverview = {
   days: DAYS_7,
   byCause: CAUSES_ACTIVE,
   upsell: [
-    { monitor: "reasoning_loop", wouldSaveUsd: "0.200000", wouldSaveTokens: 24000, fires: 2 },
+    { cause: "reasoning_loop", wouldSaveUsd: "0.200000", wouldSaveTokens: 24000, fires: 2 },
   ],
 };
 
 const quietDays = DAYS_7.map((d) => day(d.day, ZERO, ZERO));
-const quietCauses = MONITOR_ORDER.map((m) => cause(m));
+const quietCauses = CAUSE_ORDER.map((m) => cause(m));
 
 export const OVERVIEW_NO_CALLS: SavingsOverview = {
   ...OVERVIEW_ACTIVE,
@@ -171,13 +193,13 @@ export const OVERVIEW_COLLECTING: SavingsOverview = {
     wouldSaveTokens: 48000,
   },
   days: DAYS_7.map((d) => day(d.day, d.paidUsd, ZERO, ZERO, 5)),
-  byCause: MONITOR_ORDER.map((m) =>
+  byCause: CAUSE_ORDER.map((m) =>
     m === "duplicate_tool_call"
       ? cause(m, { fires: 3, wouldSaveUsd: "0.400000", wouldSaveTokens: 48000 })
       : cause(m),
   ),
   upsell: [
-    { monitor: "duplicate_tool_call", wouldSaveUsd: "0.400000", wouldSaveTokens: 48000, fires: 3 },
+    { cause: "duplicate_tool_call", wouldSaveUsd: "0.400000", wouldSaveTokens: 48000, fires: 3 },
   ],
 };
 
@@ -224,7 +246,7 @@ export const CAUSES_RESPONSE: SavingsCauses = {
   from: "2026-11-04",
   to: "2026-11-10",
   timezone: "UTC",
-  causes: CAUSES_ACTIVE,
+  causes: CAUSE_CARDS_ACTIVE,
   clients: CLIENTS,
   suggestions: SUGGESTIONS,
 };

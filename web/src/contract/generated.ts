@@ -727,7 +727,7 @@ export interface RoutePair {
 export interface RouterConfig {
   mode: string;
   thresholdBp: number | null;
-  map: RoutePair[];
+  map: RoutePair[] | null;
 }
 
 export interface RouterConfigPatch {

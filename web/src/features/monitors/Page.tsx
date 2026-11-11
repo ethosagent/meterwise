@@ -17,6 +17,7 @@ import { RangeControl } from "../../shell/RangeControl";
 import { WorkspaceGuard } from "../../shell/WorkspaceGuard";
 import { MonitorsTable } from "./MonitorsTable";
 import { type MonitorKey, type MonitorMode, monitorLabel } from "./monitorMeta";
+import { SaversCard } from "./SaversCard";
 import { ThresholdsDrawer } from "./ThresholdsDrawer";
 
 function Settings({ workspaceId }: { workspaceId: string }) {
@@ -63,6 +64,7 @@ function Settings({ workspaceId }: { workspaceId: string }) {
         onMode={(monitor, mode) => send(monitor, { mode })}
         onThresholds={setEditing}
       />
+      <SaversCard workspaceId={workspaceId} readOnly={!canWrite} />
       {editing ? (
         <ThresholdsDrawer
           monitor={editing}

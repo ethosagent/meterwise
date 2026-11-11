@@ -44,7 +44,7 @@ func (p RoutePair) valid() bool {
 type RouterConfig struct {
 	Mode        RouterMode  `json:"mode"`
 	ThresholdBp *int        `json:"thresholdBp"`
-	Map         []RoutePair `json:"map"`
+	Map         []RoutePair `json:"map" ts:"nullable"`
 }
 
 // DefaultRouterConfig is off, with the default threshold and the default map.

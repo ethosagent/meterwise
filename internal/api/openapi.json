@@ -1704,10 +1704,17 @@
       "RouterConfig": {
         "properties": {
           "map": {
-            "items": {
-              "$ref": "#/components/schemas/RoutePair"
-            },
-            "type": "array"
+            "oneOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RoutePair"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "mode": {
             "type": "string"

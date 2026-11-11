@@ -2,7 +2,7 @@ import { Card, Flex, Tag, Typography, theme } from "antd";
 import type { CSSProperties } from "react";
 import type { CauseView } from "../../contract/generated";
 import { formatUsd, isPositiveMicro, maxMicro, sharePct } from "../../lib/money";
-import { isMode, MODE_LABEL, monitorLabel } from "../monitors/monitorMeta";
+import { causeLabel, modeLabel } from "./causeMeta";
 
 type Kind = "certain" | "likely" | "would-save";
 
@@ -44,7 +44,7 @@ function Bar({ kind, amount, scale }: { kind: Kind; amount: string; scale: strin
   );
 }
 
-/** Savings by cause: each monitor's certain, likely and would-save amounts as three separately styled bars, never merged. */
+/** Savings by cause: each cause's certain, likely and would-save amounts as three separately styled bars, never merged. */
 export function CauseBars({ causes }: { causes: CauseView[] }) {
   const { token } = theme.useToken();
   const scale = maxMicro(causes.flatMap((c) => [c.savedUsd, c.likelySavedUsd, c.wouldSaveUsd]));
@@ -59,10 +59,10 @@ export function CauseBars({ causes }: { causes: CauseView[] }) {
           ];
           const shown = kinds.filter(([, v]) => isPositiveMicro(v));
           return (
-            <div key={c.monitor} data-testid={`cause-${c.monitor}`}>
+            <div key={c.cause} data-testid={`cause-${c.cause}`}>
               <Flex gap={token.marginXS} align="center">
-                <Typography.Text strong>{monitorLabel(c.monitor)}</Typography.Text>
-                <Tag>{isMode(c.mode) ? MODE_LABEL[c.mode] : c.mode}</Tag>
+                <Typography.Text strong>{causeLabel(c.cause)}</Typography.Text>
+                <Tag>{modeLabel(c.mode)}</Tag>
                 <Typography.Text type="secondary">
                   {c.fires} {c.fires === 1 ? "fire" : "fires"}
                 </Typography.Text>

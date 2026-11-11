@@ -18,26 +18,26 @@ import type { RangeSel } from "../../api/range";
 import { useSavingsCauses } from "../../api/savings";
 import { useCopy } from "../../api/useCopy";
 import { useToastOnError } from "../../api/useToastOnError";
-import type { CauseView, ClientRow, Suggestion } from "../../contract/generated";
+import type { CauseCard, ClientRow, Suggestion } from "../../contract/generated";
 import { formatBp, formatTokens, formatUsd, isPositiveMicro } from "../../lib/money";
-import { isMode, MODE_LABEL, monitorLabel } from "../monitors/monitorMeta";
+import { causeLabel, modeLabel } from "./causeMeta";
 import { ConfidenceTag } from "./ConfidenceTag";
 
 /** The most repeated target of a cause: the path when one was stored, else the tool and the 8-hex hash prefix. */
-function topTarget(c: CauseView): string | null {
+function topTarget(c: CauseCard): string | null {
   if (c.topPath) return c.topPath;
   if (c.topTool && c.topPathHash) return `${c.topTool} #${c.topPathHash.slice(0, 8)}`;
   return c.topTool;
 }
 
-function CauseCard({ cause }: { cause: CauseView }) {
+function CauseCardView({ cause }: { cause: CauseCard }) {
   const target = topTarget(cause);
   return (
     <Card
       size="small"
-      title={monitorLabel(cause.monitor)}
-      extra={<Tag>{isMode(cause.mode) ? MODE_LABEL[cause.mode] : cause.mode}</Tag>}
-      data-testid={`cause-card-${cause.monitor}`}
+      title={causeLabel(cause.cause)}
+      extra={<Tag>{modeLabel(cause.mode)}</Tag>}
+      data-testid={`cause-card-${cause.cause}`}
     >
       <Flex vertical gap="small">
         <div>
@@ -141,7 +141,7 @@ export function CausesTab({ workspaceId, sel }: { workspaceId: string; sel: Rang
   if (quiet) {
     return (
       <Card>
-        <Empty description="No monitor has fired in this range">
+        <Empty description="Nothing has fired in this range">
           <Link to="/setup">
             <Button>Go to Setup</Button>
           </Link>
@@ -153,8 +153,8 @@ export function CausesTab({ workspaceId, sel }: { workspaceId: string; sel: Rang
     <Flex vertical gap={token.marginLG}>
       <Row gutter={[token.marginMD, token.marginMD]}>
         {causes.map((c) => (
-          <Col key={c.monitor} xs={24} md={12} xl={8}>
-            <CauseCard cause={c} />
+          <Col key={c.cause} xs={24} md={12} xl={8}>
+            <CauseCardView cause={c} />
           </Col>
         ))}
       </Row>

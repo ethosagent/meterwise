@@ -86,6 +86,12 @@ func fieldInfo(f reflect.StructField) (name string, optional, skip bool) {
 	return name, strings.Contains(opts, "omitempty"), false
 }
 
+// isNullable reports whether a field can be sent as JSON null: a pointer without omitempty, or a field the contract
+// tags `ts:"nullable"` (a nil slice that means something other than an empty one, such as RouterConfig.Map).
+func isNullable(f reflect.StructField, optional bool) bool {
+	return !optional && (f.Type.Kind() == reflect.Pointer || f.Tag.Get("ts") == "nullable")
+}
+
 // jsonFields lists the fields encoding/json would emit for t, flattening embedded structs without a json tag
 // the way the encoder does, so CauseCard (an embedded CauseView plus extras) is one flat object in the twin.
 func jsonFields(t reflect.Type) []reflect.StructField {
@@ -113,8 +119,8 @@ func tsInterface(d contract.DTO) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("%s.%s: %w", d.Name, f.Name, err)
 		}
-		if f.Type.Kind() == reflect.Pointer && !optional {
-			ty += " | null" // a pointer without omitempty is sent as null
+		if isNullable(f, optional) {
+			ty += " | null" // a pointer without omitempty is sent as null, and so is a slice tagged ts:"nullable"
 		}
 		q := ""
 		if optional {
