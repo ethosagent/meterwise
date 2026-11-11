@@ -193,3 +193,14 @@ func TestInjectedHintIsRecordedAndAnInvalidTrimIsCounted(t *testing.T) {
 		t.Fatal("an observed hint was not injected")
 	}
 }
+
+func TestWrongTypedSaverMetaIsCounted(t *testing.T) {
+	c := directCall("w1", "hi", nil, 1)
+	c.Meta[contract.MetaTrim] = "not a TrimResult"
+	c.Meta[contract.MetaRouter] = 42
+	c.Meta[contract.MetaMemory] = struct{}{}
+	rec, st := runSavers(t, c, nil)
+	if rec.TrimAction != nil || rec.RouterAction != nil || rec.HintInjected || st["invalid_saver_meta"] != int64(3) {
+		t.Fatalf("rec %+v status %v", rec, st["invalid_saver_meta"])
+	}
+}

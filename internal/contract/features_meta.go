@@ -120,7 +120,8 @@ type RequestFeatures struct {
 	JSONSchema, Vision, Reasoning bool
 }
 
-// ModelCaps are a model's verified capabilities. MaxTools 0 means no tool definitions are allowed.
+// ModelCaps are a model's verified capabilities. MaxTools 0 means no tool definitions are allowed. The router fills it from the table (NULL there means the
+// page states no maximum) and applies its own cap constant.
 type ModelCaps struct {
 	MaxTools                      int
 	JSONSchema, Vision, Reasoning bool

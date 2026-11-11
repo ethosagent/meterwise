@@ -48,7 +48,7 @@ internal/archtest             standalone: standard library only, imported by nob
 | H1 | tollgate's public surface only: its root, `ext/**`, and `testkit` from tests. Never `internal/`, `cmd/` or anything else. |
 | H2 | Lower never imports higher (ranks above). Nothing imports a `cmd/*` or `archtest`. |
 | H3 | `history`, `monitors`, `savings`, `wire`, `trim`, `router` are pure: stdlib (no `net`, `database/sql`, `os/exec`), tollgate root, `contract`, `wire`. |
-| H4 | Only `ledger` and `audit` write `calls`, `sessions`, `monitor_events`, `audit_log` (INSERT, UPDATE, DELETE, MERGE, TRUNCATE, COPY over `.go`/`.sql`, comments ignored). |
+| H4 | Only `ledger` and `audit` write the ledger tables (`contract.LedgerTables`: `calls`, `sessions`, `monitor_events`, `audit_log`, `trim_events`) (INSERT, UPDATE, DELETE, MERGE, TRUNCATE, COPY over `.go`/`.sql`, comments ignored). |
 | H5 | `web/` imports `web/src/**` and the npm allowlist only (any JS/TS extension, template-literal imports included; `node:` only in tests); `package.json` declares nothing else. |
 | H6 | A third-party Go import needs an allowlist entry per layer in `law_test.go` and an ADR (0007). |
 | H7 | No `//go:build`, `// +build` or GOOS/GOARCH file suffix: a constraint can hide code from every gate. Allowlist per file with an ADR. |

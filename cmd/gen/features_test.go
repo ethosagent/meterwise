@@ -78,3 +78,26 @@ func TestNullableTagMarksASliceThatCanBeNull(t *testing.T) {
 		t.Errorf("openapi: %v", oa)
 	}
 }
+
+func TestMultiColumnAlterYieldsEveryColumnUntruncated(t *testing.T) {
+	sql := "-- feature: calls\n-- +goose Up\nALTER TABLE calls\n" +
+		"  ADD COLUMN trim_action text CHECK (trim_action IN ('acted','observe')),\n" +
+		"  ADD COLUMN IF NOT EXISTS trim_tokens bigint NOT NULL DEFAULT 0,\n" +
+		"  ADD COLUMN hint_injected boolean NOT NULL DEFAULT false;\n" +
+		"-- +goose Down\nALTER TABLE calls DROP COLUMN hint_injected;\n"
+	m := parseMigration("0018_calls.sql", sql)
+	got := m.adds["calls"]
+	if len(got) != 3 {
+		t.Fatalf("got %d columns, want 3: %+v", len(got), got)
+	}
+	want := map[string]string{
+		"trim_action":   "text CHECK (trim_action IN ('acted','observe'))",
+		"trim_tokens":   "bigint NOT NULL DEFAULT 0",
+		"hint_injected": "boolean NOT NULL DEFAULT false",
+	}
+	for _, c := range got {
+		if want[c.Name] != c.Def {
+			t.Errorf("%s: def %q, want %q", c.Name, c.Def, want[c.Name])
+		}
+	}
+}

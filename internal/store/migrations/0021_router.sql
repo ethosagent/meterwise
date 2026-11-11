@@ -1,13 +1,10 @@
 -- feature: router
 -- +goose Up
 -- Plan 10 (step 0): router feedback, the verified model capabilities and the default route map.
--- router_model_capabilities: one row per (provider, model) target, effective from a time. max_tools is the most
--- tool definitions the router will send the target; 0 means none (a request with any tool definition is not routed).
--- A capability the provider's page does not state is false (deny). Every row below carries the official page it was
--- read from and the date it was fetched (A3). max_tools 20 is a Meterwise policy cap, not a provider limit: no
--- provider page states a maximum, and OpenAI's function-calling guide only suggests "fewer than 20 functions"
--- (https://developers.openai.com/api/docs/guides/function-calling, fetched 2026-11-11); it is applied to targets
--- whose tool support is stated on their page.
+-- router_model_capabilities: one row per (provider, model) target, effective from a time. max_tools is NULL when the
+-- provider's page supports tool use and states no maximum (the router applies its own cap, a code constant), and 0 when
+-- no tool definition may be sent (a request with any tool is not routed). A capability the provider's page does not
+-- state is false (deny). Every row below carries the official page it was read from and the date it was fetched (A3).
 -- router_model_routes: the default pairs (copied into a workspace on edit, R10). Both ends are priced in 0012/0022.
 CREATE TABLE router_feedback (
     workspace_id uuid NOT NULL,
@@ -22,7 +19,7 @@ CREATE TABLE router_feedback (
 CREATE TABLE router_model_capabilities (
     provider             text NOT NULL CHECK (provider <> ''),
     model                text NOT NULL CHECK (model <> ''),
-    max_tools            integer NOT NULL CHECK (max_tools >= 0),
+    max_tools            integer CHECK (max_tools >= 0),
     supports_json_schema boolean NOT NULL,
     supports_vision      boolean NOT NULL,
     supports_reasoning   boolean NOT NULL,
@@ -49,10 +46,10 @@ CREATE TABLE router_model_routes (
 -- source: https://platform.claude.com/docs/en/models/haiku-4-5/overview, fetched 2026-11-11: Input text and images; Thinking:
 --   Extended; the page is a legacy-model page and states no tool use or JSON schema support, so max_tools 0 and json_schema false.
 INSERT INTO router_model_capabilities (provider, model, max_tools, supports_json_schema, supports_vision, supports_reasoning, effective_from) VALUES
-    ('openai',    'gpt-5-mini',        20, true,  true, true,  '2026-11-11T00:00:00Z'),
-    ('openai',    'gpt-4.1-mini',      20, true,  true, false, '2026-11-11T00:00:00Z'),
-    ('openai',    'gpt-4o-mini',       20, true,  true, false, '2026-11-11T00:00:00Z'),
-    ('anthropic', 'claude-sonnet-5-5', 20, false, true, true,  '2026-11-11T00:00:00Z'),
+    ('openai',    'gpt-5-mini',        NULL, true,  true, true,  '2026-11-11T00:00:00Z'),
+    ('openai',    'gpt-4.1-mini',      NULL, true,  true, false, '2026-11-11T00:00:00Z'),
+    ('openai',    'gpt-4o-mini',       NULL, true,  true, false, '2026-11-11T00:00:00Z'),
+    ('anthropic', 'claude-sonnet-5-5', NULL, false, true, true,  '2026-11-11T00:00:00Z'),
     ('anthropic', 'claude-haiku-4-5',   0, false, true, true,  '2026-11-11T00:00:00Z');
 
 INSERT INTO router_model_routes (provider, from_model, to_model) VALUES

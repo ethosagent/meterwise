@@ -111,7 +111,7 @@ func scanWriters(files map[string]string) []Violation {
 			m = writesLedgerUpdate.FindString(code)
 		}
 		if m != "" {
-			out = append(out, Violation{"H4", fmt.Sprintf("%s writes a ledger table (%q); only internal/ledger and internal/audit own calls, sessions, monitor_events, audit_log", rel, strings.Join(strings.Fields(m), " "))})
+			out = append(out, Violation{"H4", fmt.Sprintf("%s writes a ledger table (%q); only internal/ledger and internal/audit own the ledger tables (contract.LedgerTables)", rel, strings.Join(strings.Fields(m), " "))})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Msg < out[j].Msg })

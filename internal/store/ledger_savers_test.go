@@ -170,3 +170,36 @@ func TestWriteCallsRecordsSaversAndSumsThemIntoTheSession(t *testing.T) {
 		t.Errorf("session after a second batch = %+v", got)
 	}
 }
+
+// A real score of 0 bp is a score, not a missing one: it is stored as 0 and never as NULL.
+func TestRouterScoreOfZeroIsStoredAsZero(t *testing.T) {
+	ctx := context.Background()
+	dsn := pgtest.NewDatabase(t)
+	if _, err := store.Migrate(ctx, dsn); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	ws := newWS(t, s, "A", "AAAAAAAAAAAAAAAAAAAAAA")
+	r := routeRec(rec(ws, "z1", "sz", 1, base, "ok", false, mu(10)), contract.RouteRouted, 100)
+	zero := 0
+	r.RouterScoreBp = &zero
+	if _, err := s.WriteCalls(ctx, []contract.CallRecord{r}); err != nil {
+		t.Fatal(err)
+	}
+	var score *int32
+	if err := conn.QueryRow(ctx, `SELECT router_score_bp FROM calls WHERE workspace_id = $1 AND id = 'z1'`, ws).Scan(&score); err != nil {
+		t.Fatal(err)
+	}
+	if score == nil || *score != 0 {
+		t.Fatalf("score = %v, want 0", score)
+	}
+}

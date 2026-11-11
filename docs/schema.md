@@ -221,7 +221,16 @@ Owner: `calls` (created in `0013_calls.sql`)
 | `notes_injected` | `integer NOT NULL DEFAULT 0` | 0013_calls.sql |
 | `client` | `text` | 0013_calls.sql |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0013_calls.sql |
-| `trim_action` | `text CHECK (trim_action IN ('acted'` | 0018_calls.sql |
+| `trim_action` | `text CHECK (trim_action IN ('acted', 'observe'))` | 0018_calls.sql |
+| `trim_confidence` | `text CHECK (trim_confidence IN ('certain', 'likely'))` | 0018_calls.sql |
+| `trim_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (trim_tokens >= 0)` | 0018_calls.sql |
+| `saved_usd_trim` | `numeric(14,6) NOT NULL DEFAULT 0 CHECK (saved_usd_trim >= 0)` | 0018_calls.sql |
+| `router_action` | `text CHECK (router_action IN ('routed', 'observe'))` | 0018_calls.sql |
+| `routed_from` | `text` | 0018_calls.sql |
+| `routed_to` | `text` | 0018_calls.sql |
+| `router_score_bp` | `integer CHECK (router_score_bp BETWEEN 0 AND 10000)` | 0018_calls.sql |
+| `saved_usd_router` | `numeric(14,6) NOT NULL DEFAULT 0 CHECK (saved_usd_router >= 0)` | 0018_calls.sql |
+| `hint_injected` | `boolean NOT NULL DEFAULT false` | 0018_calls.sql |
 
 ## sessions
 
@@ -248,6 +257,8 @@ Owner: `sessions` (created in `0014_sessions.sql`)
 | `last_finish` | `text NOT NULL DEFAULT ''` | 0014_sessions.sql |
 | `last_had_text` | `boolean NOT NULL DEFAULT false` | 0014_sessions.sql |
 | `trim_tokens` | `bigint NOT NULL DEFAULT 0` | 0019_sessions.sql |
+| `routed_calls` | `integer NOT NULL DEFAULT 0` | 0019_sessions.sql |
+| `hints` | `integer NOT NULL DEFAULT 0` | 0019_sessions.sql |
 
 ## monitor_events
 
@@ -315,7 +326,7 @@ Owner: `router` (created in `0021_router.sql`)
 |---|---|---|
 | `provider` | `text NOT NULL CHECK (provider <> '')` | 0021_router.sql |
 | `model` | `text NOT NULL CHECK (model <> '')` | 0021_router.sql |
-| `max_tools` | `integer NOT NULL CHECK (max_tools >= 0)` | 0021_router.sql |
+| `max_tools` | `integer CHECK (max_tools >= 0)` | 0021_router.sql |
 | `supports_json_schema` | `boolean NOT NULL` | 0021_router.sql |
 | `supports_vision` | `boolean NOT NULL` | 0021_router.sql |
 | `supports_reasoning` | `boolean NOT NULL` | 0021_router.sql |

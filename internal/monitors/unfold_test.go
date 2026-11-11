@@ -27,14 +27,16 @@ func TestUnfoldedCallsAreNotWaste(t *testing.T) {
 		name      string
 		ring      fakeRing
 		unfold    []uint64
+		viaPtr    bool
 		wantFires int
 		wantSkips int64
 	}{
-		{"dup, hash listed", dupRing(), []uint64{parisHash}, 0, 1},
-		{"dup, another hash listed", dupRing(), []uint64{99}, 1, 0},
-		{"dup, empty list", dupRing(), nil, 1, 0},
-		{"read, hash listed", readRing(), []uint64{7}, 0, 2}, // both detectors would have fired
-		{"read, another hash listed", readRing(), []uint64{8}, 2, 0},
+		{"dup, hash listed", dupRing(), []uint64{parisHash}, false, 0, 1},
+		{"dup, another hash listed", dupRing(), []uint64{99}, false, 1, 0},
+		{"dup, empty list", dupRing(), nil, false, 1, 0},
+		{"read, hash listed", readRing(), []uint64{7}, false, 0, 2}, // both detectors would have fired
+		{"read, another hash listed", readRing(), []uint64{8}, false, 2, 0},
+		{"dup, hash listed through a pointer", dupRing(), []uint64{parisHash}, true, 0, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

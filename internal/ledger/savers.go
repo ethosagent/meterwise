@@ -23,12 +23,18 @@ func (h *Hook) attachSavers(c *tollgate.Call, m tollgate.Metric, rec *contract.C
 	}
 	if tr, ok := trimOf(c.Meta[contract.MetaTrim]); ok {
 		h.attachTrim(c, tr, rec)
+	} else if c.Meta[contract.MetaTrim] != nil {
+		h.q.invalidSaverMeta.Add(1) // a value of the wrong Go type is dropped, never silently
 	}
 	if rd, ok := routeOf(c.Meta[contract.MetaRouter]); ok {
 		h.attachRoute(rd, rec)
+	} else if c.Meta[contract.MetaRouter] != nil {
+		h.q.invalidSaverMeta.Add(1)
 	}
 	if mh, ok := hintOf(c.Meta[contract.MetaMemory]); ok && mh.Injected {
 		rec.HintInjected = true
+	} else if !ok && c.Meta[contract.MetaMemory] != nil {
+		h.q.invalidSaverMeta.Add(1)
 	}
 }
 

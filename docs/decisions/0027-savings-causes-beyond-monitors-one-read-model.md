@@ -26,6 +26,13 @@ tokens or money on calls that no monitor fired on, so they cannot live in that t
 6. **Sessions** carry `trimTokens`, `routedCalls` and `hints`, and the list filters by `tag`
    (`trimmed|routed|remembered`).
 
+7. **Settings patches (Decision):** `RouterConfigPatch` carries `ResetMap` (true returns the workspace to the
+   default map, since a PATCH cannot otherwise set `map` back to null) and `Touched()` (the fields a patch names,
+   for audit). Both go beyond the interface table and are in the generated twin.
+8. **Router capabilities:** the 0021 seed holds only what each provider page states. `max_tools` is NULL when a
+   page supports tool use and states no maximum, 0 when no tool may be sent. The tool-count cap is a constant in
+   the router package (wave 1), not seed data.
+
 ## Consequences
 
 - The 07 bench is re-run with the new branch: p95 stays under 300 ms at 50k calls (overview 86 ms,

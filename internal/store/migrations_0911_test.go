@@ -60,13 +60,13 @@ func TestStepZeroSeedsAreConsistent(t *testing.T) {
 		}
 	}
 	// the unverified capability is denied: claude-haiku-4-5's page states no tool use or JSON schema
-	var maxTools int
+	var maxTools *int
 	var schema bool
 	if err := conn.QueryRow(ctx, `SELECT max_tools, supports_json_schema FROM router_model_capabilities WHERE model = 'claude-haiku-4-5'`).Scan(&maxTools, &schema); err != nil {
 		t.Fatal(err)
 	}
-	if maxTools != 0 || schema {
-		t.Errorf("claude-haiku-4-5 = max_tools %d json_schema %v; unverified capabilities must be denied", maxTools, schema)
+	if maxTools == nil || *maxTools != 0 || schema {
+		t.Errorf("claude-haiku-4-5 = max_tools %v json_schema %v; unverified capabilities must be denied", maxTools, schema)
 	}
 	// the four new prices, exactly the rows of the interface table
 	want := map[string][3]int64{

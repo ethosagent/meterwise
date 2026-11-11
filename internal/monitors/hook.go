@@ -188,7 +188,15 @@ func (h *Hook) detect(c *tollgate.Call, ring contract.RingView, cfg contract.Mon
 // unfoldedCall reports whether the tool call whose result is pending is one the trim hook listed in
 // Meta[MetaTrimUnfold]: its earlier result was folded, so asking again is not waste.
 func unfoldedCall(c *tollgate.Call, ring contract.RingView) bool {
-	u, _ := c.Meta[contract.MetaTrimUnfold].(contract.TrimUnfold)
+	var u contract.TrimUnfold
+	switch v := c.Meta[contract.MetaTrimUnfold].(type) {
+	case contract.TrimUnfold:
+		u = v
+	case *contract.TrimUnfold:
+		if v != nil {
+			u = *v
+		}
+	}
 	calls := ring.Calls()
 	if len(u.ArgsHashes) == 0 || len(calls) == 0 {
 		return false

@@ -38,7 +38,8 @@ var (
 	featureRe = regexp.MustCompile(`(?m)^--\s*feature:\s*([a-z][a-z0-9_]*)\s*$`)
 	createRe  = regexp.MustCompile(`(?is)CREATE\s+(?:UNLOGGED\s+|TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` + id)
 	viewRe    = regexp.MustCompile(`(?is)CREATE\s+(?:MATERIALIZED\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + id)
-	addColRe  = regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?` + id + `\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?\s+([^;,]+)`)
+	alterRe   = regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?` + id + `\s+([^;]*)`)
+	addColRe  = regexp.MustCompile(`(?is)^ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-z_][a-z0-9_]*)"?\s+(.+)$`)
 	touchRes  = []*regexp.Regexp{
 		regexp.MustCompile(`(?is)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?` + id),
 		regexp.MustCompile(`(?is)DROP\s+(?:MATERIALIZED\s+)?(?:TABLE|VIEW)\s+(?:IF\s+EXISTS\s+)?` + id),
@@ -148,9 +149,15 @@ func parseMigration(file, sql string) migration {
 		m.Created = append(m.Created, name)
 		m.tables = append(m.tables, table{Name: name, Feature: m.Feature, Migration: file})
 	}
-	for _, a := range addColRe.FindAllStringSubmatch(up, -1) {
-		def := strings.Join(strings.Fields(a[3]), " ")
-		m.adds[a[1]] = append(m.adds[a[1]], column{Name: a[2], Def: def, Migration: file})
+	for _, a := range alterRe.FindAllStringSubmatch(up, -1) {
+		// One ALTER TABLE may add several columns: split its clauses at top-level commas, so a comma inside
+		// CHECK (x IN ('a','b')) stays in its column's definition.
+		for _, clause := range topLevelCommas(a[2]) {
+			clause = strings.Join(strings.Fields(clause), " ")
+			if c := addColRe.FindStringSubmatch(clause); c != nil {
+				m.adds[a[1]] = append(m.adds[a[1]], column{Name: c[1], Def: c[2], Migration: file})
+			}
+		}
 	}
 	touched := map[string]bool{}
 	for _, n := range m.Created {
