@@ -41,13 +41,13 @@ func writeMemoryHits(ctx context.Context, q *sqlc.Queries, fresh []contract.Call
 	if len(hits) == 0 {
 		return nil
 	}
-	byID := make(map[string]contract.CallRecord, len(fresh))
-	for _, r := range fresh {
-		byID[r.ID] = r
+	byCall := make(map[string]MemoryHit, len(hits)) // hits are few, records many: index the hits
+	for _, h := range hits {
+		byCall[h.CallID] = h
 	}
 	out := make([]hitJSON, 0, len(hits))
-	for _, h := range hits {
-		r, ok := byID[h.CallID]
+	for _, r := range fresh {
+		h, ok := byCall[r.ID]
 		if !ok || h.TraceID <= 0 || (h.Mode != contract.MemoryModeObserve && h.Mode != contract.MemoryModeHint) {
 			continue
 		}

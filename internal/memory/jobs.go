@@ -61,9 +61,9 @@ func newJobs(ctx context.Context, log *slog.Logger) *jobs {
 	return &jobs{ctx: ctx, log: log, qs: map[string]*wsq{}}
 }
 
-// enqueueCtx queues fn for the workspace and reports whether it was accepted. The job outlives ctx (the response is
+// enqueue queues fn for the workspace and reports whether it was accepted. The job outlives ctx (the response is
 // already sent when After runs); the worker that runs it is started with ctx's values and none of its cancellation.
-func (j *jobs) enqueueCtx(ctx context.Context, ws string, k jobKind, fn func(ctx context.Context) error) bool {
+func (j *jobs) enqueue(ctx context.Context, ws string, k jobKind, fn func(ctx context.Context) error) bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if j.closed || j.depth.Load() >= maxDepth {
@@ -104,13 +104,7 @@ func (j *jobs) work(ctx context.Context, ws string, q *wsq) {
 			j.depth.Add(-1)
 			j.run(ctx, jb)
 			j.active.Add(-1)
-			if !idle.Stop() {
-				select {
-				case <-idle.C:
-				default:
-				}
-			}
-			idle.Reset(idleExit)
+			idle.Reset(idleExit) // Go 1.23+ timers: Reset needs no drain
 		case <-idle.C:
 			j.mu.Lock()
 			if len(q.ch) == 0 {

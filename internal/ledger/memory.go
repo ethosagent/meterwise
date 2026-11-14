@@ -3,7 +3,6 @@ package ledger
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/ethosagent/tollgate"
 
@@ -44,9 +43,13 @@ func (q *queue) writeOnce(ctx context.Context, recs []contract.CallRecord, hits 
 	if !ok || len(hits) == 0 {
 		return q.o.Writer.WriteCalls(ctx, recs)
 	}
-	mine := make([]store.MemoryHit, 0, len(hits))
+	byCall := make(map[string]store.MemoryHit, len(hits)) // hits are few, records many: index the hits
 	for _, h := range hits {
-		if slices.ContainsFunc(recs, func(r contract.CallRecord) bool { return r.ID == h.CallID }) {
+		byCall[h.CallID] = h
+	}
+	mine := make([]store.MemoryHit, 0, len(hits))
+	for _, r := range recs {
+		if h, ok := byCall[r.ID]; ok {
 			mine = append(mine, h)
 		}
 	}

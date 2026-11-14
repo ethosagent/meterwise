@@ -67,7 +67,8 @@ func (e *Engine) budgetState() (capMicro contract.MicroUSD, paused int, spent co
 	return e.opt.SelfBudget, paused, spent
 }
 
-// recordUsage stores one model call of memory's own and refreshes the budget verdict.
+// recordUsage stores one model call of memory's own and adds its cost to the cached budget verdict in place, so the
+// verdict stays fresh and keeps its TTL.
 func (e *Engine) recordUsage(ctx context.Context, ws, kind, model string, u Usage) {
 	if u.Input == 0 && u.Output == 0 {
 		return
@@ -82,6 +83,10 @@ func (e *Engine) recordUsage(ctx context.Context, ws, kind, model string, u Usag
 		e.opt.Log.Debug("memory usage not recorded", "err", err.Error())
 	}
 	e.bud.mu.Lock()
-	delete(e.bud.m, ws)
+	if b, ok := e.bud.m[ws]; ok {
+		b.spent += cost
+		b.over = e.opt.SelfBudget > 0 && b.spent >= e.opt.SelfBudget
+		e.bud.m[ws] = b
+	}
 	e.bud.mu.Unlock()
 }

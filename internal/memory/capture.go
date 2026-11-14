@@ -21,7 +21,7 @@ const (
 // state and queues what the close calls for; it does no I/O itself.
 func (e *Engine) OnClosed(ctx context.Context, ws, id, outcome string, calls int) {
 	if outcome == contract.OutcomeCompleted {
-		e.jobs.enqueueCtx(ctx, ws, kindCredit, func(ctx context.Context) error { return e.credit(ctx, ws, id, calls) })
+		e.jobs.enqueue(ctx, ws, kindCredit, func(ctx context.Context) error { return e.credit(ctx, ws, id, calls) })
 	}
 	st := e.sess.take(ws, id)
 	if st == nil {
@@ -31,25 +31,28 @@ func (e *Engine) OnClosed(ctx context.Context, ws, id, outcome string, calls int
 	if !e.Keyed() || !st.capture || st.cfg.Mode == contract.MemoryModeOff {
 		return
 	}
-	if outcome == contract.OutcomeCompleted && calls >= minCalls && st.writes >= 1 {
-		sum, cfg := st.sum, st.cfg
-		e.jobs.enqueueCtx(ctx, ws, kindDistil, func(ctx context.Context) error {
-			if !e.stillCaptured(ctx, ws) {
-				return nil
-			}
-			return e.distil(ctx, ws, id, cfg, sum)
-		})
+	st.sum.Calls = st.calls
+	sum := st.sum
+	if outcome == contract.OutcomeCompleted && calls >= minCalls && st.wrote {
+		cfg := st.cfg
+		e.enqueueCaptured(ctx, ws, kindDistil, func(ctx context.Context) error { return e.distil(ctx, ws, id, cfg, sum) })
 		return
 	}
-	f := store.TraceFailure{WorkspaceID: ws, SessionID: id, Calls: calls, Signature: signatureOf(st.sum)}
-	if n := len(st.sum.Errors); n > 0 {
-		f.LastError = st.sum.Errors[n-1]
+	lastErr := ""
+	if n := len(sum.Errors); n > 0 {
+		lastErr = sum.Errors[n-1]
 	}
-	e.jobs.enqueueCtx(ctx, ws, kindFailure, func(ctx context.Context) error {
+	f := failureOf(ws, id, calls, sum, lastErr)
+	e.enqueueCaptured(ctx, ws, kindFailure, func(ctx context.Context) error { return e.opt.Store.InsertTraceFailure(ctx, f) })
+}
+
+// enqueueCaptured queues fn for the workspace, run only while the capture rule still holds when the job runs.
+func (e *Engine) enqueueCaptured(ctx context.Context, ws string, k jobKind, fn func(ctx context.Context) error) {
+	e.jobs.enqueue(ctx, ws, k, func(ctx context.Context) error {
 		if !e.stillCaptured(ctx, ws) {
 			return nil
 		}
-		return e.opt.Store.InsertTraceFailure(ctx, f)
+		return fn(ctx)
 	})
 }
 
@@ -69,8 +72,13 @@ func (e *Engine) stillCaptured(ctx context.Context, ws string) bool {
 	return true
 }
 
-func signatureOf(s Summary) contract.TraceSignature {
+func summarySignature(s Summary) contract.TraceSignature {
 	return contract.TraceSignature{Files: s.Files, Errors: s.Errors, Tools: s.Tools}
+}
+
+// failureOf is the light record of a session that left no trace.
+func failureOf(ws, id string, calls int, sum Summary, lastErr string) store.TraceFailure {
+	return store.TraceFailure{WorkspaceID: ws, SessionID: id, Calls: calls, Signature: summarySignature(sum), LastError: lastErr}
 }
 
 // distil turns a finished session into a stored trace: one model call, one embedding, one insert. A budget at its
@@ -108,7 +116,7 @@ func (e *Engine) distil(ctx context.Context, ws, id string, cfg contract.MemoryC
 }
 
 func (e *Engine) failure(ctx context.Context, ws, id string, sum Summary, why string) {
-	_ = e.opt.Store.InsertTraceFailure(ctx, store.TraceFailure{WorkspaceID: ws, SessionID: id, Calls: sum.Calls, Signature: signatureOf(sum), LastError: why})
+	_ = e.opt.Store.InsertTraceFailure(ctx, failureOf(ws, id, sum.Calls, sum, why))
 }
 
 // credit sets the likely credit of a completed session's injected hit: how much fewer calls the session took than the

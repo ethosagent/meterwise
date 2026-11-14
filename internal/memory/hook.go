@@ -24,19 +24,32 @@ func supported(w tollgate.WireFormat) bool {
 	return w == tollgate.WireOpenAIChat || w == tollgate.WireAnthropicMessages
 }
 
+// gate is the preamble both hook points share: the call is on a supported wire, in a session, memory is not off for
+// the workspace and capture is allowed. countPrivacy counts a privacy refusal (Before does, once per call). It does
+// no I/O.
+func (e *Engine) gate(c *tollgate.Call, countPrivacy bool) (contract.MemoryConfig, bool) {
+	if !supported(c.Provider.Wire) || c.Session.ID == "" {
+		return contract.MemoryConfig{}, false
+	}
+	cfg := e.config(c)
+	if cfg.Mode == contract.MemoryModeOff {
+		return cfg, false
+	}
+	if !e.mayCapture(c) {
+		if countPrivacy {
+			e.skippedPrivacy.Add(1)
+		}
+		return cfg, false
+	}
+	return cfg, true
+}
+
 // Before stamps Meta[memory] and, in hint mode, appends the one-line hint of the recalled trace. It never
 // short-circuits, and on any wire error it leaves the body as it came and counts edit_failed.
 func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, error) {
 	e := h.e
-	if !supported(c.Provider.Wire) || c.Session.ID == "" {
-		return nil, nil
-	}
-	cfg := e.config(c)
-	if cfg.Mode == contract.MemoryModeOff {
-		return nil, nil
-	}
-	if !e.mayCapture(c) {
-		e.skippedPrivacy.Add(1)
+	cfg, ok := e.gate(c, true)
+	if !ok {
 		return nil, nil
 	}
 	cand := e.sess.next(c.Tenant.ID, c.Session.ID, cfg.MaxHintsPerSession, c.Session.Calls)
@@ -65,19 +78,16 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 // After folds the call into the session summary, starts a recall when one is due and notes a used trace.
 func (h *Hook) After(ctx context.Context, c *tollgate.Call, _ tollgate.Metric) {
 	e := h.e
-	if !supported(c.Provider.Wire) || c.Session.ID == "" {
-		return
-	}
-	cfg := e.config(c)
-	if cfg.Mode == contract.MemoryModeOff || !e.mayCapture(c) {
+	cfg, ok := e.gate(c, false)
+	if !ok {
 		return
 	}
 	if mh, ok := c.Meta[contract.MetaMemory].(contract.MemoryHint); ok && mh.Injected {
 		ws, id := c.Tenant.ID, mh.TraceID
-		e.jobs.enqueueCtx(ctx, ws, kindTouch, func(ctx context.Context) error { return e.opt.Store.TouchTrace(ctx, ws, id) })
+		e.jobs.enqueue(ctx, ws, kindTouch, func(ctx context.Context) error { return e.opt.Store.TouchTrace(ctx, ws, id) })
 	}
 	if start, in := e.sess.observe(c, cfg, e.opt.Now()); start {
-		if !e.jobs.enqueueCtx(ctx, in.ws, kindRecall, func(ctx context.Context) error { return e.runRecall(ctx, in) }) {
+		if !e.jobs.enqueue(ctx, in.ws, kindRecall, func(ctx context.Context) error { return e.runRecall(ctx, in) }) {
 			e.sess.setCandidate(in.ws, in.id, nil)
 		}
 	}

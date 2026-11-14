@@ -15,27 +15,36 @@ type API struct{ e *Engine }
 // API returns the control-plane port of the engine.
 func (e *Engine) API() *API { return &API{e: e} }
 
-// Status says whether memory works for the workspace and, when not, why: no model key, privacy (capture is off, so
-// nothing may be read or stored), or the daily self budget.
-func (a *API) Status(ctx context.Context, workspaceID string) (bool, string, error) {
+// disabledReason says why memory does not work for the workspace, in the order the checks run: no model key,
+// privacy (capture is off, so nothing may be read or stored), the daily self budget. Empty means it works.
+func (a *API) disabledReason(ctx context.Context, workspaceID string) (string, error) {
 	e := a.e
 	if !e.Keyed() {
-		return false, contract.MemoryDisabledNoKey, nil
+		return contract.MemoryDisabledNoKey, nil
 	}
 	if e.opt.PrivacyMode == nil || *e.opt.PrivacyMode {
-		return false, contract.MemoryDisabledPrivacy, nil
+		return contract.MemoryDisabledPrivacy, nil
 	}
 	ok, err := e.opt.Store.WorkspaceCaptureAllowed(ctx, workspaceID)
 	if err != nil {
-		return false, "", err
+		return "", err
 	}
 	if !ok {
-		return false, contract.MemoryDisabledPrivacy, nil
+		return contract.MemoryDisabledPrivacy, nil
 	}
 	if e.overBudget(ctx, workspaceID) {
-		return false, contract.MemoryDisabledBudget, nil
+		return contract.MemoryDisabledBudget, nil
 	}
-	return true, "", nil
+	return "", nil
+}
+
+// Status says whether memory works for the workspace and, when not, why.
+func (a *API) Status(ctx context.Context, workspaceID string) (bool, string, error) {
+	why, err := a.disabledReason(ctx, workspaceID)
+	if err != nil {
+		return false, "", err
+	}
+	return why == "", why, nil
 }
 
 // Stats reads what memory did over the range; the handler fills Mode.

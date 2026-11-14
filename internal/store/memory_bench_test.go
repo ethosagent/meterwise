@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ethosagent/meterwise/internal/nonet"
+	"github.com/ethosagent/meterwise/internal/store"
 )
 
 // The recall query (workspace-scoped nearest traces) stays under 5 ms at p99 with 100 000 traces in the workspace
@@ -112,13 +113,8 @@ func TestRecallP99UnderFiveMillisecondsAt100kTraces(t *testing.T) {
 	}
 }
 
-// recallExplainSQL is nearestSQL of memory_recall.go under EXPLAIN ANALYZE (keep the two in step).
-const recallExplainSQL = `EXPLAIN (ANALYZE, FORMAT JSON) SELECT id, session_id::text, approach, fix, signature,
-       (1 - (embedding::vector(1536) <=> $1::text::vector(1536)))::float8
-FROM memory_traces
-WHERE workspace_id = $2::text::uuid AND confidence >= $3::real
-ORDER BY embedding::halfvec(1536) <=> $1::text::halfvec(1536)
-LIMIT $4::int`
+// recallExplainSQL is nearestSQL of memory_recall.go under EXPLAIN ANALYZE.
+const recallExplainSQL = `EXPLAIN (ANALYZE, FORMAT JSON) ` + store.NearestSQL
 
 // serverTimes runs the recall query for each literal under the recall settings and returns the Execution Time the
 // database reports, five passes over the literals.

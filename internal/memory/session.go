@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -12,16 +14,19 @@ import (
 
 // Per-session summary bounds. The summary is what the distiller is shown, so it is small by construction.
 const (
-	lastHintCall    = 3 // a hint is never given after this call, unless a new error started the recall (then the next call)
-	maxTaskChars    = 200
-	maxLastChars    = 300
-	maxToolNames    = 20
-	maxSummaryFiles = 10
-	maxErrorLines   = 5
-	maxErrorChars   = 160
-	maxToolArgs     = 64
-	idleTTL         = time.Hour
-	sweepEvery      = 256
+	lastHintCall     = 3            // a hint is never given after this call, unless a new error started the recall (then the next call)
+	firstRecallCall  = 1            // the first-call recall starts on this call
+	lastErrorRecall  = lastHintCall // an error-retry recall may start up to this call
+	retryRecallBelow = lastHintCall // a finished empty recall may be re-armed while the session has fewer calls than this
+	maxTaskChars     = 200
+	maxLastChars     = 300
+	maxToolNames     = 20
+	maxSummaryFiles  = 10
+	maxErrorLines    = 5
+	maxErrorChars    = 160
+	maxToolArgs      = 64
+	idleTTL          = time.Hour
+	sweepEvery       = 256
 )
 
 // candidate is a recalled trace waiting for the next Before: the hint is already rendered, so Before does no work.
@@ -51,7 +56,7 @@ type sess struct {
 	capture bool
 	cfg     contract.MemoryConfig
 	sum     Summary
-	writes  int
+	wrote   bool
 	recall  recallStage
 	cand    *candidate
 	used    map[int64]struct{}
@@ -172,19 +177,15 @@ func (s *sessions) observe(c *tollgate.Call, cfg contract.MemoryConfig, now time
 	errs := len(st.sum.Errors)
 	st.read(c.Messages)
 	newError := len(st.sum.Errors) > errs
-	if st.recall == recallNone && (st.calls <= 1 || (st.calls <= 3 && newError)) {
+	if st.recall == recallNone && (st.calls <= firstRecallCall || (st.calls <= lastErrorRecall && newError)) {
 		st.recall = recallPending
-		return true, recallInput{ws: st.ws, id: st.id, cfg: cfg, text: embedText(st.sum), used: usedOf(st), at: st.calls, errMove: st.calls > 1 && newError}
+		return true, recallInput{ws: st.ws, id: st.id, cfg: cfg, text: embedText(st.sum), used: usedOf(st), at: st.calls, errMove: st.calls > firstRecallCall && newError}
 	}
 	return false, recallInput{}
 }
 
 func usedOf(st *sess) map[int64]struct{} {
-	out := make(map[int64]struct{}, len(st.used))
-	for k := range st.used {
-		out[k] = struct{}{}
-	}
-	return out
+	return maps.Clone(st.used)
 }
 
 // setCandidate stores the recall's result and ends the pending stage.
@@ -207,7 +208,7 @@ func (s *sessions) setCandidate(ws, id string, c *candidate) {
 func (s *sessions) retryRecall(ws, id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if st := s.m[skey(ws, id)]; st != nil && st.recall == recallDone && st.cand == nil && st.calls < 3 {
+	if st := s.m[skey(ws, id)]; st != nil && st.recall == recallDone && st.cand == nil && st.calls < retryRecallBelow {
 		st.recall = recallNone
 	}
 }
@@ -235,7 +236,6 @@ func (st *sess) read(msgs []tollgate.Message) {
 		}
 	}
 	st.scanned = len(msgs)
-	st.sum.Calls = st.calls
 }
 
 func (st *sess) tool(tc tollgate.ToolCall) {
@@ -243,15 +243,14 @@ func (st *sess) tool(tc tollgate.ToolCall) {
 	if name == "" {
 		return
 	}
-	if !has(st.sum.Tools, name) && len(st.sum.Tools) < maxToolNames {
+	if !slices.Contains(st.sum.Tools, name) && len(st.sum.Tools) < maxToolNames {
 		st.sum.Tools = append(st.sum.Tools, name)
 	}
-	write := isWriteTool(name)
-	if write {
-		st.writes++
+	if isWriteTool(name) {
+		st.wrote = true
 	}
 	if p := contract.ToolPath([]byte(tc.Arguments)); p != "" && len(st.sum.Files) < maxSummaryFiles {
-		if p = clampText(p, 200); p != "" && !has(st.sum.Files, p) {
+		if p = clampText(p, 200); p != "" && !slices.Contains(st.sum.Files, p) {
 			st.sum.Files = append(st.sum.Files, p)
 		}
 	}
@@ -271,7 +270,7 @@ func (st *sess) errorOf(text string) {
 		l := strings.ToLower(line)
 		for _, w := range errorWords {
 			if strings.Contains(l, w) {
-				if e := clampText(line, maxErrorChars); e != "" && !has(st.sum.Errors, e) {
+				if e := clampText(line, maxErrorChars); e != "" && !slices.Contains(st.sum.Errors, e) {
 					st.sum.Errors = append(st.sum.Errors, e)
 				}
 				return
@@ -287,15 +286,6 @@ func isWriteTool(name string) bool {
 	n := strings.ToLower(name)
 	for _, w := range writeWords {
 		if strings.Contains(n, w) {
-			return true
-		}
-	}
-	return false
-}
-
-func has(v []string, s string) bool {
-	for _, x := range v {
-		if x == s {
 			return true
 		}
 	}

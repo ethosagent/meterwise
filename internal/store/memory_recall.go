@@ -40,9 +40,10 @@ func (s *Store) NearestTraces(ctx context.Context, workspaceID string, vec []flo
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.nearest(ctx, true, lit, workspaceID, minConf, clampInt32(int64(k)))
+	limit := clampInt32(int64(k))
+	out, err := s.nearest(ctx, true, lit, workspaceID, minConf, limit)
 	if err != nil && ctx.Err() == nil { // a pgvector older than 0.8 has no iterative scan: query untuned
-		out, err = s.nearest(ctx, false, lit, workspaceID, minConf, clampInt32(int64(k)))
+		out, err = s.nearest(ctx, false, lit, workspaceID, minConf, limit)
 	}
 	return out, queryErr(err)
 }
