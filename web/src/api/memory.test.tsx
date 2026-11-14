@@ -23,7 +23,9 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("memory mutations invalidate only what they change", () => {
   it("a hint feedback refreshes the session, the stats and the trace details, never the traces pages or settings", async () => {
-    const { spy, wrapper } = setup(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
+    const { spy, wrapper } = setup(
+      new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+    );
     const { result } = renderHook(() => useMemoryHitFeedback(WS, "s1"), { wrapper });
     result.current.mutate({ hitId: "9", feedback: "helpful" });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -40,7 +42,14 @@ describe("memory mutations invalidate only what they change", () => {
     result.current.mutate();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     const keys = invalidated(spy);
-    expect(keys).toEqual(expect.arrayContaining(["memory/w1/stats", "memory/w1/traces", "memory/w1/trace", "savings/w1"]));
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "memory/w1/stats",
+        "memory/w1/traces",
+        "memory/w1/trace",
+        "savings/w1",
+      ]),
+    );
     expect(keys).not.toContain("memory/w1");
     expect(keys).not.toContain("memory/w1/config");
   });

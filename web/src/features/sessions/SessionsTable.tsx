@@ -45,9 +45,7 @@ export function SessionsTable({
           {
             title: "Started (UTC)",
             render: (_, r) => (
-              <Link to={sessionPath(r.id)}>
-                {r.startedAt.replace("T", " ").replace("Z", "")}
-              </Link>
+              <Link to={sessionPath(r.id)}>{r.startedAt.replace("T", " ").replace("Z", "")}</Link>
             ),
           },
           { title: "Client", render: (_, r) => r.client ?? "unknown" },
