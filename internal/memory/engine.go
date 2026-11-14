@@ -66,6 +66,9 @@ type Options struct {
 	Log         *slog.Logger
 }
 
+// maxCfgs bounds the parsed-settings memo.
+const maxCfgs = 1024
+
 // Engine is the memory feature: the data-plane Hook, the control-plane API and the background jobs share it.
 type Engine struct {
 	opt  Options
@@ -74,7 +77,8 @@ type Engine struct {
 	sess *sessions
 	jobs *jobs
 	bud  *budgets
-	cfgs sync.Map // canonical settings JSON -> contract.MemoryConfig
+	cfgs sync.Map // canonical settings JSON -> contract.MemoryConfig, at most maxCfgs entries
+	ncfg atomic.Int64
 
 	editFailed, injected, observed, recalls, recallHits, skippedPrivacy, skippedBudget, pruned, noState atomic.Int64
 }
@@ -135,6 +139,10 @@ func (e *Engine) config(c *tollgate.Call) contract.MemoryConfig {
 		return v.(contract.MemoryConfig)
 	}
 	cfg := contract.ParseMemoryAttr(attr)
+	if e.ncfg.Add(1) > maxCfgs { // settings churn or hostile attributes: start the memo over rather than grow it
+		e.cfgs.Clear()
+		e.ncfg.Store(1)
+	}
 	e.cfgs.Store(attr, cfg)
 	return cfg
 }

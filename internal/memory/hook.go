@@ -20,23 +20,30 @@ type Hook struct {
 // Name identifies the hook.
 func (*Hook) Name() string { return "memory" }
 
+// metaConfig is the private Meta key under which Before leaves the workspace's resolved settings for After. It is not
+// a contract key: the ledger never reads it.
+const metaConfig = "memory.config"
+
 func supported(w tollgate.WireFormat) bool {
 	return w == tollgate.WireOpenAIChat || w == tollgate.WireAnthropicMessages
 }
 
 // gate is the preamble both hook points share: the call is on a supported wire, in a session, memory is not off for
-// the workspace and capture is allowed. countPrivacy counts a privacy refusal (Before does, once per call). It does
+// the workspace and capture is allowed. inBefore is Before: it counts a privacy refusal (once per call) and resolves the settings itself. It does
 // no I/O.
-func (e *Engine) gate(c *tollgate.Call, countPrivacy bool) (contract.MemoryConfig, bool) {
+func (e *Engine) gate(c *tollgate.Call, inBefore bool) (contract.MemoryConfig, bool) {
 	if !supported(c.Provider.Wire) || c.Session.ID == "" {
 		return contract.MemoryConfig{}, false
 	}
-	cfg := e.config(c)
+	cfg, stashed := c.Meta[metaConfig].(contract.MemoryConfig) // Before's reading, so After does not resolve it again
+	if !stashed || inBefore {
+		cfg = e.config(c)
+	}
 	if cfg.Mode == contract.MemoryModeOff {
 		return cfg, false
 	}
 	if !e.mayCapture(c) {
-		if countPrivacy {
+		if inBefore {
 			e.skippedPrivacy.Add(1)
 		}
 		return cfg, false
@@ -52,6 +59,10 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 	if !ok {
 		return nil, nil
 	}
+	if c.Meta == nil {
+		c.Meta = map[string]any{}
+	}
+	c.Meta[metaConfig] = cfg
 	cand := e.sess.next(c.Tenant.ID, c.Session.ID, cfg.MaxHintsPerSession, c.Session.Calls)
 	if cand == nil {
 		return nil, nil
@@ -67,9 +78,6 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 		e.injected.Add(1)
 	} else {
 		e.observed.Add(1)
-	}
-	if c.Meta == nil {
-		c.Meta = map[string]any{}
 	}
 	c.Meta[contract.MetaMemory] = mh
 	return nil, nil
