@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/ethosagent/meterwise/internal/memory"
 )
 
 // memoryRun plays the demo once with the given -memory mode and returns the database handle and workspace.
@@ -38,6 +40,20 @@ func TestHintDemoStoresATraceFromSessionAAndInjectsItIntoSessionB(t *testing.T) 
 	}
 	if res.clientCalls == 0 {
 		t.Error("nothing was sent")
+	}
+	// Through the whole chain, the upstream got the hint line exactly once: in session B's third request (the second
+	// carried the error that started the recall), and in none of session A's.
+	if len(res.memoryBodies) != 10 {
+		t.Fatalf("the upstream saw %d memory requests, want 10", len(res.memoryBodies))
+	}
+	for i, b := range res.memoryBodies {
+		want := 0
+		if i == 7 { // session B is requests 6-10; its third is the eighth
+			want = 1
+		}
+		if got := strings.Count(b, memory.HintPrefix); got != want {
+			t.Errorf("memory request %d carries %d hint lines, want %d", i+1, got, want)
+		}
 	}
 }
 

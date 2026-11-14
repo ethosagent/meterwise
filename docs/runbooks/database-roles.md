@@ -35,7 +35,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE meterwise_owner IN SCHEMA public
 
 Migration `0024_memory.sql` runs `CREATE EXTENSION IF NOT EXISTS vector` for the trace library (ADR 0031). pgvector is
 **not** a trusted extension: `SELECT trusted FROM pg_available_extension_versions WHERE name = 'vector'` is `f` for
-0.8.7 and its control file has no `trusted` line, so `meterwise_owner` (not a superuser) cannot create it. A
+0.8.7, and pgvector's own control file ([`vector.control` on its GitHub master](https://github.com/pgvector/pgvector/blob/master/vector.control), `default_version = '0.8.7'`) has no `trusted = true` line (checked 2026-11-14; a trusted extension declares it there), so `meterwise_owner` (not a superuser) cannot create it. A
 superuser does it once, in the application database:
 
 ```sql

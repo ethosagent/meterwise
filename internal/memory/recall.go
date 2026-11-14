@@ -15,10 +15,12 @@ const (
 
 // recallInput is what a recall job needs, copied out of the session so the job holds no lock.
 type recallInput struct {
-	ws, id string
-	cfg    contract.MemoryConfig
-	text   string
-	used   map[int64]struct{}
+	ws, id  string
+	cfg     contract.MemoryConfig
+	text    string
+	used    map[int64]struct{}
+	at      int  // the session's call count when the recall started
+	errMove bool // started by a new error rather than by the first call
 }
 
 func (s *sessions) evictions() int64 {
@@ -77,5 +79,5 @@ func pick(found []store.Candidate, in recallInput) *candidate {
 	}
 	sort.SliceStable(ok, func(i, j int) bool { return ok[i].Similarity > ok[j].Similarity })
 	b := ok[0]
-	return &candidate{traceID: b.ID, simBp: int(b.Similarity*10000 + 0.5), hint: RenderHint(b.Approach, b.Fix, b.Signature.Files)}
+	return &candidate{traceID: b.ID, simBp: int(b.Similarity*10000 + 0.5), hint: RenderHint(b.Approach, b.Fix, b.Signature.Files), at: in.at, errMove: in.errMove}
 }

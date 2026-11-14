@@ -99,7 +99,10 @@ func buildChain(ctx context.Context, st *store.Store, pricer contract.Pricer, le
 	if err := routerChain(ctx, st, pricer, &f.chain, out); err != nil {
 		return fmt.Errorf("router: %w", err)
 	}
-	f.mem = memoryChain(ctx, st, led, pricer, ws, f.cfg, &f.chain, out)
+	var err error
+	if f.mem, err = memoryChain(ctx, st, led, pricer, ws, f.cfg, &f.chain, out); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
 	return nil
 }
 

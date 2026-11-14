@@ -139,6 +139,16 @@ func TestVotesMoveConfidenceByTwoTenths(t *testing.T) {
 	if got, _ := s.NearestTraces(ctx, a, unit(0), 3, 0.6); len(got) != 0 {
 		t.Fatalf("a demoted trace (0.5) was still recalled: %+v", got)
 	}
+	// Three upvotes and no downvote promote it by 0.2 (0.7 -> 0.9).
+	fb(h1, "helpful")
+	fb(h2, "helpful")
+	if got := conf(); got != 7000 { // one downvote left, two upvotes: neither rule fires
+		t.Fatalf("two upvotes and a downvote: confidence %d bp, want 7000", got)
+	}
+	fb(h3, "helpful")
+	if got := conf(); got != 9000 {
+		t.Fatalf("three upvotes: confidence %d bp, want 9000", got)
+	}
 	// Another workspace cannot vote on this workspace's hit.
 	if _, err := s.SetMemoryHitFeedback(ctx, "BBBBBBBBBBBBBBBBBBBBBB", h1, new("helpful")); err == nil {
 		t.Fatal("feedback across workspaces must be not_found")

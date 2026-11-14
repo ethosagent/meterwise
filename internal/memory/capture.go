@@ -33,14 +33,40 @@ func (e *Engine) OnClosed(ctx context.Context, ws, id, outcome string, calls int
 	}
 	if outcome == contract.OutcomeCompleted && calls >= minCalls && st.writes >= 1 {
 		sum, cfg := st.sum, st.cfg
-		e.jobs.enqueueCtx(ctx, ws, kindDistil, func(ctx context.Context) error { return e.distil(ctx, ws, id, cfg, sum) })
+		e.jobs.enqueueCtx(ctx, ws, kindDistil, func(ctx context.Context) error {
+			if !e.stillCaptured(ctx, ws) {
+				return nil
+			}
+			return e.distil(ctx, ws, id, cfg, sum)
+		})
 		return
 	}
 	f := store.TraceFailure{WorkspaceID: ws, SessionID: id, Calls: calls, Signature: signatureOf(st.sum)}
 	if n := len(st.sum.Errors); n > 0 {
 		f.LastError = st.sum.Errors[n-1]
 	}
-	e.jobs.enqueueCtx(ctx, ws, kindFailure, func(ctx context.Context) error { return e.opt.Store.InsertTraceFailure(ctx, f) })
+	e.jobs.enqueueCtx(ctx, ws, kindFailure, func(ctx context.Context) error {
+		if !e.stillCaptured(ctx, ws) {
+			return nil
+		}
+		return e.opt.Store.InsertTraceFailure(ctx, f)
+	})
+}
+
+// stillCaptured re-checks the capture rule when a session closes: a session summarized while capture was on is not
+// stored if privacy has been switched on since (the strictest setting wins at the moment of writing). A failed read
+// counts as not allowed.
+func (e *Engine) stillCaptured(ctx context.Context, ws string) bool {
+	if e.opt.PrivacyMode == nil || *e.opt.PrivacyMode {
+		e.skippedPrivacy.Add(1)
+		return false
+	}
+	ok, err := e.opt.Store.WorkspaceCaptureAllowed(ctx, ws)
+	if err != nil || !ok {
+		e.skippedPrivacy.Add(1)
+		return false
+	}
+	return true
 }
 
 func signatureOf(s Summary) contract.TraceSignature {

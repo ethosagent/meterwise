@@ -21,6 +21,7 @@ type result struct {
 	clientCalls  int      // requests the clients sent to the proxy
 	upstreamHits int      // requests that reached the fake upstream (a blocked call never does)
 	sessions     []string // every session id played
+	memoryBodies []string // what the upstream received for the memory scenario, in order (session A, then session B)
 }
 
 // play runs the demo for one tenant: a fake upstream, the proxy in front of it, rounds of sessions, then
@@ -56,7 +57,7 @@ func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds
 		return result{}, err
 	}
 	f.mem.finish(ctx) // the sessions closed above queue their distillations or failure records
-	return result{clientCalls: c.sent, upstreamHits: int(up.hits.Load()), sessions: c.sessions}, nil
+	return result{clientCalls: c.sent, upstreamHits: int(up.hits.Load()), sessions: c.sessions, memoryBodies: up.memoryBodies()}, nil
 }
 
 // client sends the demo's requests and, after each, waits until the ledger has seen the call: an agent

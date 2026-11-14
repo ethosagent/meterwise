@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -93,6 +96,9 @@ func scenarioByName(name string) (scenario, bool) {
 type upstream struct {
 	*httptest.Server
 	hits atomic.Int64
+
+	mu     sync.Mutex
+	bodies []string // request bodies of the memory scenario, in arrival order
 }
 
 // newUpstream starts the loopback fake upstream.
@@ -100,6 +106,7 @@ func newUpstream() *upstream {
 	u := &upstream{}
 	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u.hits.Add(1)
+		u.keepMemoryBody(r)
 		if routerUpstream(w, r) {
 			return
 		}
@@ -124,4 +131,26 @@ func newUpstream() *upstream {
 		_, _ = w.Write([]byte(body))
 	}))
 	return u
+}
+
+// keepMemoryBody records what the proxy sent upstream for the memory scenario (recognised by its task text: the proxy
+// does not pass our session header on), in arrival order, so a test can see the hint line through the whole chain.
+func (u *upstream) keepMemoryBody(r *http.Request) {
+	b, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(b))
+	if !bytes.Contains(b, []byte(memoryTask)) {
+		return
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.bodies = append(u.bodies, string(b))
+}
+
+func (u *upstream) memoryBodies() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.bodies...)
 }

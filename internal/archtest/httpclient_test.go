@@ -15,7 +15,8 @@ import (
 var httpClientOwners = []string{"internal/memory/", "internal/identity/", "cmd/"}
 
 // scanHTTPClients applies H12: outside the owners, non-test Go code never names net/http's Client type and never
-// calls the package-level helpers that run on http.DefaultClient (Get, Post, PostForm, Head). A request our own key
+// calls the package-level helpers that run on http.DefaultClient (Get, Post, PostForm, Head), nor calls Do on a
+// client-named receiver. A request our own key
 // signs is the thing this keeps in one place; an unreviewed second client could send it, or provider traffic, elsewhere.
 func scanHTTPClients(files map[string]string) []Violation {
 	var rels []string
@@ -48,8 +49,39 @@ func httpClientOwner(rel string) bool {
 	return false
 }
 
+// clientDo names the first call of Do on a client-named receiver (c.Do, s.client.Do, deps.HTTPClient.Do), or "". A
+// package handed an *http.Client through a parameter or an interface never names the type, so the call is what shows it.
+func clientDo(f *ast.File) string {
+	var found string
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || found != "" {
+			return found == ""
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Do" {
+			return true
+		}
+		recv := ""
+		switch x := sel.X.(type) {
+		case *ast.Ident:
+			recv = x.Name
+		case *ast.SelectorExpr:
+			recv = x.Sel.Name
+		}
+		if r := strings.ToLower(recv); strings.Contains(r, "client") || r == "hc" {
+			found = recv + ".Do (a call on an HTTP client)"
+		}
+		return true
+	})
+	return found
+}
+
 // httpClientUse names the first http.Client, http.DefaultClient or http.Get-family use in f, or "".
 func httpClientUse(f *ast.File) string {
+	if what := clientDo(f); what != "" {
+		return what
+	}
 	local := ""
 	for _, im := range f.Imports {
 		if strings.Trim(im.Path.Value, `"`) != "net/http" {

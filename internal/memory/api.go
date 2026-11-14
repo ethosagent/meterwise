@@ -58,12 +58,15 @@ func (a *API) Trace(ctx context.Context, workspaceID, traceID string) (contract.
 	return a.e.opt.Store.TraceDetail(ctx, workspaceID, traceID)
 }
 
-// Forget removes every trace of the workspace and drops the recalled candidates still waiting in sessions, so a
-// forgotten trace is never injected afterwards.
+// Forget removes every trace of the workspace and, once that succeeded, drops the recalled candidates still waiting in
+// sessions, so a forgotten trace is never injected afterwards.
 func (a *API) Forget(ctx context.Context, workspaceID string) (int64, error) {
 	n, err := a.e.opt.Store.ForgetTraces(ctx, workspaceID)
+	if err != nil {
+		return 0, err // nothing was deleted: keep serving what is still stored
+	}
 	a.e.sess.dropWorkspace(workspaceID)
-	return n, err
+	return n, nil
 }
 
 // SetHitFeedback sets or clears the feedback of a hit through the ledger (the one writer of memory_hits), then

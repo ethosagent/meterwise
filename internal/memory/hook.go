@@ -39,18 +39,19 @@ func (h *Hook) Before(_ context.Context, c *tollgate.Call) (*tollgate.Response, 
 		e.skippedPrivacy.Add(1)
 		return nil, nil
 	}
-	cand := e.sess.next(c.Tenant.ID, c.Session.ID, cfg.MaxHintsPerSession)
+	cand := e.sess.next(c.Tenant.ID, c.Session.ID, cfg.MaxHintsPerSession, c.Session.Calls)
 	if cand == nil {
 		return nil, nil
 	}
 	mh := contract.MemoryHint{Mode: cfg.Mode, TraceID: cand.traceID, SimilarityBp: cand.simBp}
 	if cfg.Mode == contract.MemoryModeHint {
-		if body, err := wire.AppendNotes(c.Provider.Wire, c.Body, []string{cand.hint}); err != nil {
+		body, err := wire.AppendNotes(c.Provider.Wire, c.Body, []string{cand.hint})
+		if err != nil {
 			e.editFailed.Add(1)
-		} else {
-			c.Body, mh.Injected = body, true
-			e.injected.Add(1)
+			return nil, nil // not sent, so not a hit: it must not count as an observed one
 		}
+		c.Body, mh.Injected = body, true
+		e.injected.Add(1)
 	} else {
 		e.observed.Add(1)
 	}
@@ -100,6 +101,8 @@ func (h *Hook) Status() map[string]any {
 	out["recalls_with_hit"] = e.recallHits.Load()
 	out["skipped_privacy"] = e.skippedPrivacy.Load()
 	out["skipped_budget"] = e.skippedBudget.Load()
+	budgetCap, paused, spent := e.budgetState()
+	out["budget_cap_micro_usd"], out["budget_paused_workspaces"], out["budget_spent_micro_usd"] = int64(budgetCap), paused, int64(spent)
 	out["closed_without_state"] = e.noState.Load()
 	out["traces_pruned"] = e.pruned.Load()
 	return out

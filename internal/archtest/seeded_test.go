@@ -330,6 +330,8 @@ func TestSeededHTTPClientsGoRed(t *testing.T) {
 		"internal/savings/b.go": "package savings\nimport \"net/http\"\nfunc f() { _, _ = http.Get(\"x\") }\n",
 		"internal/api/c.go":     "package api\nimport h \"net/http\"\nvar c = h.DefaultClient\n",
 		"internal/store/d.go":   "package store\nimport \"net/http\"\ntype T struct{ c *http.Client }\n",
+		"internal/api/e.go":     "package api\ntype D struct{ HTTPClient interface{ Do() } }\nfunc f(d D) { d.HTTPClient.Do() }\n",
+		"internal/api/f.go":     "package api\nfunc g(client interface{ Do() }) { client.Do() }\n",
 	}
 	for name, body := range bad {
 		if got := scanHTTPClients(map[string]string{name: body}); len(got) != 1 || got[0].Rule != "H12" {
@@ -343,6 +345,8 @@ func TestSeededHTTPClientsGoRed(t *testing.T) {
 		"internal/ledger/a_test.go":  "package ledger\nimport \"net/http\"\nvar c = &http.Client{}\n",
 		"internal/api/handler.go":    "package api\nimport \"net/http\"\nfunc h(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }\n",
 		"internal/savings/shadow.go": "package savings\nfunc f() { http := struct{ Get func() }{}; http.Get() }\n",
+		"internal/store/once.go":     "package store\nimport \"sync\"\nvar o sync.Once\nfunc f() { o.Do(func() {}) }\n",
+		"cmd/x/main.go":              "package main\nfunc f(client interface{ Do() }) { client.Do() }\n",
 	}
 	if got := scanHTTPClients(good); len(got) != 0 {
 		t.Fatalf("legal files flagged: %v", got)

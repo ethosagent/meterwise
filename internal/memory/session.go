@@ -12,6 +12,7 @@ import (
 
 // Per-session summary bounds. The summary is what the distiller is shown, so it is small by construction.
 const (
+	lastHintCall    = 3 // a hint is never given after this call, unless a new error started the recall (then the next call)
 	maxTaskChars    = 200
 	maxLastChars    = 300
 	maxToolNames    = 20
@@ -28,6 +29,8 @@ type candidate struct {
 	traceID int64
 	simBp   int
 	hint    string
+	at      int  // the session's call count when the recall started
+	errMove bool // the recall was started by a new error (a retry moment), not by the first call
 }
 
 type recallStage int
@@ -141,7 +144,7 @@ func (s *sessions) dropWorkspace(ws string) {
 
 // next hands Before the session's recalled candidate when the session may still take a hint, and marks it used.
 // It reads and updates a few fields under the lock: no I/O.
-func (s *sessions) next(ws, id string, maxHints int) *candidate {
+func (s *sessions) next(ws, id string, maxHints, calls int) *candidate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := s.m[skey(ws, id)]
@@ -150,6 +153,9 @@ func (s *sessions) next(ws, id string, maxHints int) *candidate {
 	}
 	c := st.cand
 	st.cand = nil
+	if calls > lastHintCall && !(c.errMove && calls <= c.at+1) {
+		return nil // a slow recall: the moment has passed (plan 09 3.2), the hint is dropped, never late
+	}
 	st.hints++
 	st.used[c.traceID] = struct{}{}
 	return c
@@ -168,7 +174,7 @@ func (s *sessions) observe(c *tollgate.Call, cfg contract.MemoryConfig, now time
 	newError := len(st.sum.Errors) > errs
 	if st.recall == recallNone && (st.calls <= 1 || (st.calls <= 3 && newError)) {
 		st.recall = recallPending
-		return true, recallInput{ws: st.ws, id: st.id, cfg: cfg, text: embedText(st.sum), used: usedOf(st)}
+		return true, recallInput{ws: st.ws, id: st.id, cfg: cfg, text: embedText(st.sum), used: usedOf(st), at: st.calls, errMove: st.calls > 1 && newError}
 	}
 	return false, recallInput{}
 }

@@ -17,8 +17,9 @@ type budgets struct {
 }
 
 type budgetEntry struct {
-	at   time.Time
-	over bool
+	at    time.Time
+	over  bool
+	spent contract.MicroUSD
 }
 
 func newBudgets() *budgets { return &budgets{m: map[string]budgetEntry{}} }
@@ -43,9 +44,27 @@ func (e *Engine) overBudget(ctx context.Context, ws string) bool {
 	if len(e.bud.m) > 4096 {
 		e.bud.m = map[string]budgetEntry{}
 	}
-	e.bud.m[ws] = budgetEntry{at: now, over: over}
+	e.bud.m[ws] = budgetEntry{at: now, over: over, spent: spent}
 	e.bud.mu.Unlock()
 	return over
+}
+
+// budgetState is what /statusz shows of the daily budget: the cap per workspace, and, over the workspaces read in the
+// last day, how many are paused and what they spent (UTC day of the read; no workspace ids).
+func (e *Engine) budgetState() (capMicro contract.MicroUSD, paused int, spent contract.MicroUSD) {
+	now := e.opt.Now()
+	e.bud.mu.Lock()
+	defer e.bud.mu.Unlock()
+	for _, b := range e.bud.m {
+		if now.Sub(b.at) > 24*time.Hour {
+			continue
+		}
+		spent += b.spent
+		if b.over {
+			paused++
+		}
+	}
+	return e.opt.SelfBudget, paused, spent
 }
 
 // recordUsage stores one model call of memory's own and refreshes the budget verdict.

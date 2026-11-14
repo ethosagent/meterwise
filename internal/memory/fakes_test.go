@@ -31,9 +31,14 @@ type fakeStore struct {
 	baseline   store.Baseline
 	touched    []int64
 	nearest    int
+	hold       chan struct{} // when set, NearestTraces waits for it to close (a slow recall)
+	noCapture  bool          // the workspace has switched capture off
 }
 
 func (f *fakeStore) NearestTraces(_ context.Context, _ string, _ []float32, _ int, _ float32) ([]store.Candidate, error) {
+	if f.hold != nil {
+		<-f.hold
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nearest++
@@ -87,12 +92,16 @@ func (f *fakeStore) ForgetTraces(context.Context, string) (int64, error) { retur
 type fakeEmbedder struct {
 	mu    sync.Mutex
 	texts []string
+	err   error // when set, every embedding fails
 }
 
 func (e *fakeEmbedder) Embed(_ context.Context, _, text string) ([]float32, memory.Usage, error) {
 	e.mu.Lock()
 	e.texts = append(e.texts, text)
 	e.mu.Unlock()
+	if e.err != nil {
+		return nil, memory.Usage{}, e.err
+	}
 	v := make([]float32, store.EmbedDim)
 	v[0] = 1
 	return v, memory.Usage{Input: 10}, nil
@@ -182,7 +191,11 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-func (f *fakeStore) WorkspaceCaptureAllowed(context.Context, string) (bool, error) { return true, nil }
+func (f *fakeStore) WorkspaceCaptureAllowed(context.Context, string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.noCapture, nil
+}
 
 func (f *fakeStore) MemoryStats(context.Context, string, contract.SavingsRange, time.Time) (contract.MemoryStats, error) {
 	return contract.MemoryStats{}, nil

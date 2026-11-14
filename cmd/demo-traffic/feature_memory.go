@@ -37,9 +37,14 @@ type memoryDemo struct {
 // memoryChain builds the memory hook of the demo's chain when -memory is on (observe or hint) and tells the ledger
 // which sessions closed, so a finished session is distilled into a trace. memoryTenant opens the capture rule for
 // the demo's tenant. It returns nil, and leaves the slot empty, when memory is off.
-func memoryChain(ctx context.Context, st *store.Store, led *ledger.Hook, pricer contract.Pricer, ws string, cfg config, chain *dataplane.ChainOptions, out io.Writer) *memoryDemo {
+func memoryChain(ctx context.Context, st *store.Store, led *ledger.Hook, pricer contract.Pricer, ws string, cfg config, chain *dataplane.ChainOptions, out io.Writer) (*memoryDemo, error) {
 	if cfg.memory == "" || cfg.memory == "off" {
-		return nil
+		return nil, nil
+	}
+	// Memory reads and writes only where the workspace itself allows capture; the demo opts its workspace in (merging into
+	// the stored settings, so the saver and monitor modes set above stay).
+	if _, err := st.Pool().Exec(ctx, `UPDATE workspaces SET settings = settings || '{"capture": true, "privacyMode": false}'::jsonb WHERE id = $1::uuid`, ws); err != nil {
+		return nil, fmt.Errorf("open capture for the demo workspace: %w", err)
 	}
 	twin := newModelTwin(demoMemoryKey)
 	privacyOff := false
@@ -55,8 +60,8 @@ func memoryChain(ctx context.Context, st *store.Store, led *ledger.Hook, pricer 
 	eng.Start()
 	led.SetOnClosed(func(s ledger.ClosedSession) { eng.OnClosed(ctx, s.WorkspaceID, s.SessionID, s.Outcome, s.Calls) })
 	chain.Memory = eng.Hook()
-	fmt.Fprintf(out, "memory %s: model twin at %s (loopback; no model key involved), capture opened for this run's tenant\n", cfg.memory, twin.URL)
-	return &memoryDemo{eng: eng, twin: twin, st: st, ws: ws}
+	fmt.Fprintf(out, "memory %s: model twin at %s (loopback; no model key involved), capture switched on for workspace %s (settings capture=true, privacyMode=false stay after the run)\n", cfg.memory, twin.URL, ws)
+	return &memoryDemo{eng: eng, twin: twin, st: st, ws: ws}, nil
 }
 
 // memoryTenant opens the capture rule for the demo's tenant (workspace capture on, privacy mode off): memory reads and
