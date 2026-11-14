@@ -3,7 +3,7 @@
 name: meterwise
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16-trixie
     environment:
       POSTGRES_USER: meterwise
       POSTGRES_PASSWORD: meterwise
@@ -22,7 +22,7 @@ services:
   # Own database with a persistent named volume; the tmpfs `postgres` above stays the test database.
   appdb:
     profiles: [app]
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16-trixie
     environment:
       POSTGRES_USER: meterwise
       POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-meterwise}

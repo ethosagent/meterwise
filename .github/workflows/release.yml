@@ -14,7 +14,7 @@ jobs:
     # The full gate below needs Postgres (test and migrate gates), exactly as in ci.yml.
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16-trixie
         env:
           POSTGRES_USER: meterwise
           POSTGRES_PASSWORD: meterwise
