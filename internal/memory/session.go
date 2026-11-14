@@ -279,18 +279,9 @@ func (st *sess) errorOf(text string) {
 	}
 }
 
-var writeWords = []string{"write", "edit", "patch", "replace", "create", "append", "insert", "apply"}
-
-// isWriteTool reports whether a tool name looks like one that changes files.
-func isWriteTool(name string) bool {
-	n := strings.ToLower(name)
-	for _, w := range writeWords {
-		if strings.Contains(n, w) {
-			return true
-		}
-	}
-	return false
-}
+// isWriteTool reports whether a tool name changes files or runs commands, by the vocabulary monitors and history use
+// (contract.ClassifyTool): shell and git tools count, a name like replacement_info does not.
+func isWriteTool(name string) bool { return contract.ClassifyTool(name) == contract.ToolWrite }
 
 // embedText is what both capture and recall embed, so a task and its remembered solution live in the same space: the
 // first user message (at most 200 characters) and the error lines.
