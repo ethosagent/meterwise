@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"math/bits"
 	"time"
 
@@ -81,19 +82,42 @@ func failureOf(ws, id string, calls int, sum Summary, lastErr string) store.Trac
 	return store.TraceFailure{WorkspaceID: ws, SessionID: id, Calls: calls, Signature: summarySignature(sum), LastError: lastErr}
 }
 
-// distil turns a finished session into a stored trace: one model call, one embedding, one insert. A budget at its
-// limit, a model failure or a bad answer stores a failure record instead, never a half trace.
+// embedResult is the outcome of the trace embedding, which runs beside the distil call (their inputs are independent).
+type embedResult struct {
+	vec []float32
+	u   Usage
+	err error
+}
+
+// distil turns a finished session into a stored trace: one model call and one embedding (run together), one insert. A
+// budget at its limit, a model failure or a bad answer stores a failure record instead, never a half trace.
 func (e *Engine) distil(ctx context.Context, ws, id string, cfg contract.MemoryConfig, sum Summary) error {
 	if e.overBudget(ctx, ws) {
 		e.skippedBudget.Add(1)
 		return nil
 	}
 	dm, em := e.distilModel(cfg), e.embedModel(cfg)
+	emb := make(chan embedResult, 1)
+	go func() {
+		defer func() {
+			if recover() != nil {
+				emb <- embedResult{err: fmt.Errorf("%w: embedder panicked", errModel)}
+			}
+		}()
+		vec, u, err := e.opt.Embedder.Embed(ctx, em, embedText(Summary{Task: sum.Task, Errors: sum.Errors}))
+		emb <- embedResult{vec, u, err}
+	}()
 	tr, u, err := e.opt.Distiller.Distil(ctx, dm, sum)
+	er := <-emb
 	e.recordUsage(ctx, ws, "distil", dm, u)
+	e.recordUsage(ctx, ws, "embed", em, er.u)
 	if err != nil {
 		e.failure(ctx, ws, id, sum, "distil failed")
 		return err
+	}
+	if er.err != nil {
+		e.failure(ctx, ws, id, sum, "embed failed")
+		return er.err
 	}
 	tr = tr.clean()
 	if len(tr.Signature.Files) == 0 {
@@ -102,15 +126,9 @@ func (e *Engine) distil(ctx context.Context, ws, id string, cfg contract.MemoryC
 	if len(tr.Signature.Tools) == 0 {
 		tr.Signature.Tools = sum.Tools
 	}
-	vec, eu, err := e.opt.Embedder.Embed(ctx, em, embedText(Summary{Task: sum.Task, Errors: sum.Errors}))
-	e.recordUsage(ctx, ws, "embed", em, eu)
-	if err != nil {
-		e.failure(ctx, ws, id, sum, "embed failed")
-		return err
-	}
 	_, _, err = e.opt.Store.InsertTrace(ctx, store.NewTrace{
 		WorkspaceID: ws, SessionID: id, TaskSummary: tr.TaskSummary, Observations: tr.Observations, Approach: tr.Approach, Fix: tr.Fix,
-		Signature: tr.Signature, Confidence: tr.Confidence, PromptV: PromptVersion, EmbedModel: em, Embedding: vec,
+		Signature: tr.Signature, Confidence: tr.Confidence, PromptV: PromptVersion, EmbedModel: em, Embedding: er.vec,
 	})
 	return err
 }

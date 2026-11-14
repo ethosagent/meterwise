@@ -1,9 +1,12 @@
 package memory_test
 
 import (
+	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ethosagent/tollgate"
 
@@ -150,5 +153,72 @@ func TestCreditNeverExceedsOneAverageSession(t *testing.T) {
 	eventually(t, "the credit", func() bool { return len(r.led.got()) == 1 })
 	if got := r.led.got()[0]; got.usd != 10_000_000 || got.tokens != 10_000 {
 		t.Fatalf("credit = %+v, want the average session", got)
+	}
+}
+
+// meet is a Distiller and an Embedder that, once armed, only answer when the other one is in flight too.
+type meet struct {
+	armed   atomic.Bool
+	arrived atomic.Int32
+	both    chan struct{}
+}
+
+func (m *meet) wait() error {
+	if !m.armed.Load() {
+		return nil
+	}
+	if m.arrived.Add(1) == 2 {
+		close(m.both)
+	}
+	select {
+	case <-m.both:
+		return nil
+	case <-time.After(2 * time.Second):
+		return errors.New("the other model call never started")
+	}
+}
+
+type meetEmbedder struct {
+	*meet
+	memory.Embedder
+}
+
+func (m meetEmbedder) Embed(ctx context.Context, model, text string) ([]float32, memory.Usage, error) {
+	if err := m.wait(); err != nil {
+		return nil, memory.Usage{}, err
+	}
+	return m.Embedder.Embed(ctx, model, text)
+}
+
+type meetDistiller struct {
+	*meet
+	memory.Distiller
+}
+
+func (m meetDistiller) Distil(ctx context.Context, model string, s memory.Summary) (memory.Trace, memory.Usage, error) {
+	if err := m.wait(); err != nil {
+		return memory.Trace{}, memory.Usage{}, err
+	}
+	return m.Distiller.Distil(ctx, model, s)
+}
+
+func TestDistilAndEmbedRunTogether(t *testing.T) {
+	m := &meet{both: make(chan struct{})}
+	good := memory.Trace{TaskSummary: "fix", Approach: "read", Fix: "guard", Confidence: 0.9}
+	r := newRig(t, func(o *memory.Options) {
+		o.Embedder = meetEmbedder{m, &fakeEmbedder{}}
+		o.Distiller = meetDistiller{m, &fakeDistiller{out: good}}
+	})
+	session(t, r, attr(contract.MemoryModeHint, 1), 4)
+	m.armed.Store(true)
+	r.e.OnClosed(t.Context(), ws, "s1", contract.OutcomeCompleted, 5)
+	eventually(t, "the distil job", func() bool { return jobDone(r, "distil") == 1 })
+	r.st.mu.Lock()
+	defer r.st.mu.Unlock()
+	if len(r.st.traces) != 1 || len(r.st.failures) != 0 {
+		t.Fatalf("traces=%d failures=%d: distil and embed did not overlap", len(r.st.traces), len(r.st.failures))
+	}
+	if n := len(r.st.usage); n != 3 || !strings.HasPrefix(r.st.usage[1], "distil/") || !strings.HasPrefix(r.st.usage[2], "embed/") {
+		t.Fatalf("self usage = %v, want the distil row before the embed row", r.st.usage)
 	}
 }
