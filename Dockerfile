@@ -1,7 +1,7 @@
 # GO_VERSION must stay equal to the toolchain line in go.mod (scripts/check-docs.sh checks it).
 ARG GO_VERSION=1.27.4
 # One image: the meterwised binary plus the built web app (decision D1).
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:25-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -14,7 +14,7 @@ RUN npm run build:release \
 
 # Dev-only bundle for the local Docker stack (make up): the mock sign-in adapter is compiled in on purpose and
 # points at the Clerk twin's token mint. Never a dependency of the release stage below.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web-dev
+FROM --platform=$BUILDPLATFORM node:25-alpine AS web-dev
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
