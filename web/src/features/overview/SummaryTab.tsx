@@ -7,6 +7,7 @@ import { CauseBars } from "./CauseBars";
 import { Collecting, NoCalls } from "./EmptyStates";
 import { Hero } from "./Hero";
 import { HowWeCount } from "./HowWeCount";
+import { MemoryCard } from "./MemoryCard";
 import { SavesTable } from "./SavesTable";
 import { SpendChart } from "./SpendChart";
 import { Upsell } from "./Upsell";
@@ -31,6 +32,7 @@ export function SummaryTab({ workspaceId, sel }: { workspaceId: string; sel: Ran
       <Hero hero={data.hero} />
       <SpendChart days={data.days} />
       <CauseBars causes={data.byCause} />
+      <MemoryCard workspaceId={workspaceId} sel={sel} />
       <Upsell items={data.upsell} />
       {data.state === "active" ? (
         <SavesTable

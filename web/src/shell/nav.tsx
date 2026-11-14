@@ -1,6 +1,7 @@
 import {
   ApartmentOutlined,
   AppstoreOutlined,
+  BulbOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
   HistoryOutlined,
@@ -19,6 +20,7 @@ export type NavKey =
   | "setup"
   | "profile"
   | "workspace"
+  | "memory"
   | "organization"
   | "access";
 
@@ -84,6 +86,14 @@ export const SETTINGS_PAGES: readonly NavPage[] = [
     label: "Workspace",
     description: "This workspace's name, limits and privacy mode.",
     icon: <AppstoreOutlined />,
+    group: SETTINGS_LABEL,
+  },
+  {
+    key: "memory",
+    path: "/settings/memory",
+    label: "Memory",
+    description: "Solutions learned from past sessions, and where they helped.",
+    icon: <BulbOutlined />,
     group: SETTINGS_LABEL,
   },
   {

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useActiveWorkspace } from "./api/identity";
 import { AcceptInviteRoute, AuthGate, LoginRoute } from "./auth/AuthGate";
 import { AccessManagementPage } from "./features/access-management/Page";
+import { TracesPage } from "./features/memory/TracesPage";
 import { MonitorsPage } from "./features/monitors/Page";
 import { OrganizationPage } from "./features/organization/Page";
 import { OverviewPage } from "./features/overview/Page";
@@ -24,6 +25,7 @@ const PAGE_ELEMENTS: Record<NavKey, ReactElement> = {
   setup: <SetupPage />,
   profile: <ProfilePage />,
   workspace: <WorkspacePage />,
+  memory: <TracesPage />,
   organization: <OrganizationPage />,
   access: <AccessManagementPage />,
 };
@@ -35,6 +37,7 @@ const WORKSPACE_PAGES: readonly NavKey[] = [
   "monitors",
   "setup",
   "workspace",
+  "memory",
 ];
 
 /** With no readable workspace (Me.activeWorkspaceId is null) a workspace page is an explanation, not an error. */
