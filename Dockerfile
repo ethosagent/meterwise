@@ -1,5 +1,5 @@
 # GO_VERSION must stay equal to the toolchain line in go.mod (scripts/check-docs.sh checks it).
-ARG GO_VERSION=1.27.3
+ARG GO_VERSION=1.27.4
 # One image: the meterwised binary plus the built web app (decision D1).
 FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
