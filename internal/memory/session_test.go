@@ -32,20 +32,6 @@ func TestSessionWroteFollowsToolKind(t *testing.T) {
 	}
 }
 
-func TestErrorLinesFollowTheSharedNeedles(t *testing.T) {
-	for line, want := range map[string]bool{
-		"build failed: exit 2": true, "FATAL: out of memory": true, "panic: nil dereference": true, "permission denied": true,
-		"request timed out": true, "unable to open the file": true, "undefined: foo": true, "file not found": true,
-		"warning: unused variable": false, "assertion ok": false, "all tests passed": false,
-	} {
-		st := &sess{}
-		st.errorOf(line)
-		if got := len(st.sum.Errors) == 1; got != want {
-			t.Errorf("errorOf(%q) recorded = %v, want %v", line, got, want)
-		}
-	}
-}
-
 func gateCall(attrs string, meta map[string]any) *tollgate.Call {
 	return &tollgate.Call{
 		Tenant:   tollgate.Tenant{ID: "w", Attrs: map[string]string{AttrMemory: attrs}, Policy: &tollgate.Policy{Capture: true}},

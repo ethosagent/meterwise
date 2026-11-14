@@ -256,12 +256,8 @@ func (st *sess) tool(tc tollgate.ToolCall) {
 	}
 }
 
-// errorWords mark a tool result line as an error (lower case). They follow the signal needles of trim's window stage
-// (internal/trim/stage_window.go) minus the warning-only ones (warn, assert); keep the two lists in step by hand.
-var errorWords = []string{
-	"error", "fail", "fatal", "panic", "exception", "traceback",
-	"cannot ", "undefined", "not found", "denied", "segfault", "killed", "timed out", "timeout", "unable to",
-}
+// errorWords mark a tool result line as an error (lower case).
+var errorWords = []string{"error", "failed", "exception", "panic:", "traceback", "cannot ", "undefined:", "not found"}
 
 func (st *sess) errorOf(text string) {
 	if len(st.sum.Errors) >= maxErrorLines {
