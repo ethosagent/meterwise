@@ -42,6 +42,13 @@ type sessionAgg struct {
 // last_call_at touch per workspace. Replaying a batch changes nothing. It is the only writer of
 // calls and sessions (H4); internal/ledger is its only caller.
 func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (WriteResult, error) {
+	return s.WriteCallsWithHits(ctx, recs, nil)
+}
+
+// WriteCallsWithHits is WriteCalls plus the memory hits of the calls, written in the same transaction and only for
+// calls the batch really inserted (a replayed call adds no hit). hits are keyed by call id elsewhere in the batch; one
+// whose call is not in recs is ignored.
+func (s *Store) WriteCallsWithHits(ctx context.Context, recs []contract.CallRecord, hits []MemoryHit) (WriteResult, error) {
 	if len(recs) == 0 {
 		return WriteResult{}, nil
 	}
@@ -73,6 +80,9 @@ func (s *Store) WriteCalls(ctx context.Context, recs []contract.CallRecord) (Wri
 			return err
 		}
 		if err := writeTrimEvents(ctx, q, fresh); err != nil {
+			return err
+		}
+		if err := writeMemoryHits(ctx, q, fresh, hits); err != nil {
 			return err
 		}
 		return s.writeSessions(ctx, q, counted)
@@ -294,6 +304,41 @@ func (s *Store) CloseSessions(ctx context.Context, closes []contract.SessionClos
 	if err != nil {
 		return 0, fail(ClassPool, "store: closes are not JSON")
 	}
-	n, err := s.q.CloseSessions(ctx, body)
-	return int(n), queryErr(err)
+	rows, err := s.q.CloseSessions(ctx, body)
+	return len(rows), queryErr(err)
+}
+
+// ClosedSession is a session a close statement really closed: its outcome and call count at that moment.
+type ClosedSession struct {
+	WorkspaceID string
+	SessionID   string
+	Outcome     string
+	Calls       int
+}
+
+// CloseSessionsReturning is CloseSessions that also names the sessions it closed (not the ones already closed or
+// unknown), so the host can act once per real close.
+func (s *Store) CloseSessionsReturning(ctx context.Context, closes []contract.SessionClose) ([]ClosedSession, error) {
+	list := make([]closeJSON, 0, len(closes))
+	for _, c := range closes {
+		if validID(c.WorkspaceID) {
+			list = append(list, closeJSON{WorkspaceID: c.WorkspaceID, ID: c.SessionID, AtUs: c.At.UnixMicro()})
+		}
+	}
+	if len(list) == 0 {
+		return nil, nil
+	}
+	body, err := json.Marshal(list)
+	if err != nil {
+		return nil, fail(ClassPool, "store: closes are not JSON")
+	}
+	rows, err := s.q.CloseSessions(ctx, body)
+	if err != nil {
+		return nil, queryErr(err)
+	}
+	out := make([]ClosedSession, len(rows))
+	for i, r := range rows {
+		out[i] = ClosedSession{WorkspaceID: r.WorkspaceID, SessionID: r.ID, Outcome: r.Outcome, Calls: int(r.Calls)}
+	}
+	return out, nil
 }

@@ -248,6 +248,7 @@ func runOn(t *testing.T, dir string) []Violation {
 	out = append(out, scanTestMain(files)...)
 	out = append(out, scanModules(files)...)
 	out = append(out, scanInlineRoleChecks(files)...)
+	out = append(out, scanHTTPClients(files)...)
 	return out
 }
 

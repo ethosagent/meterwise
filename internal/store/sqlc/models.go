@@ -110,6 +110,70 @@ type Membership struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type MemoryHit struct {
+	ID             int64
+	OrgID          pgtype.UUID
+	WorkspaceID    pgtype.UUID
+	SessionID      string
+	CallID         string
+	TraceID        int64
+	SimilarityBp   int32
+	Mode           string
+	Injected       bool
+	Feedback       pgtype.Text
+	EstSavedTokens int64
+	EstSavedUsd    pgtype.Numeric
+	Ts             pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+}
+
+type MemorySelfUsage struct {
+	ID           int64
+	OrgID        pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	Kind         string
+	Model        string
+	InputTokens  int64
+	OutputTokens int64
+	CostUsd      pgtype.Numeric
+	CreatedAt    pgtype.Timestamptz
+}
+
+type MemoryTrace struct {
+	ID             int64
+	OrgID          pgtype.UUID
+	WorkspaceID    pgtype.UUID
+	SessionID      string
+	CreatedAt      pgtype.Timestamptz
+	TaskSummary    string
+	Observations   []byte
+	Approach       string
+	Fix            string
+	Signature      []byte
+	BaseConfidence float32
+	Confidence     pgtype.Float4
+	DistilPromptV  int32
+	EmbedModel     string
+	Embedding      interface{}
+	Uses           int32
+	Upvotes        int32
+	Downvotes      int32
+	LastUsedAt     pgtype.Timestamptz
+}
+
+type MemoryTraceFailure struct {
+	ID             int64
+	OrgID          pgtype.UUID
+	WorkspaceID    pgtype.UUID
+	SessionID      string
+	CreatedAt      pgtype.Timestamptz
+	Signature      []byte
+	LastError      string
+	MonitorSummary []byte
+	Calls          int32
+	CostUsd        pgtype.Numeric
+}
+
 type MonitorEvent struct {
 	ID             int64
 	OrgID          pgtype.UUID

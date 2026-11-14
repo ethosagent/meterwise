@@ -236,6 +236,8 @@ func TestSeededRepositoryGoesRedEndToEnd(t *testing.T) {
 		"cmd/meterwised/main.go": "// Command meterwised is the binary.\npackage main\nimport _ \"" + module + "/internal/identity/clerkmock\"\nfunc main() {}\n",
 		// H11: an inline role check outside the role owners
 		"internal/api/gate.go": "package api\nfunc ok(p struct{ Role string }) bool { return p.Role == \"admin\" }\n",
+		// H12: an HTTP client outside memory, identity and cmd
+		"internal/ledger/net.go": "package ledger\nimport \"net/http\"\nvar c = &http.Client{}\n",
 		// H5: web
 		"web/src/a.ts":     "import _ from 'lodash'\n",
 		"web/package.json": `{"dependencies":{"moment":"2"}}`,
@@ -318,6 +320,31 @@ func TestSeededBuildConstraintsGoRed(t *testing.T) {
 		"internal/savings/price_table.go": "package savings\n",
 	}
 	if got := scanBuildConstraints(good); len(got) != 0 {
+		t.Fatalf("legal files flagged: %v", got)
+	}
+}
+
+func TestSeededHTTPClientsGoRed(t *testing.T) {
+	bad := map[string]string{
+		"internal/ledger/a.go":  "package ledger\nimport \"net/http\"\nvar c = &http.Client{}\n",
+		"internal/savings/b.go": "package savings\nimport \"net/http\"\nfunc f() { _, _ = http.Get(\"x\") }\n",
+		"internal/api/c.go":     "package api\nimport h \"net/http\"\nvar c = h.DefaultClient\n",
+		"internal/store/d.go":   "package store\nimport \"net/http\"\ntype T struct{ c *http.Client }\n",
+	}
+	for name, body := range bad {
+		if got := scanHTTPClients(map[string]string{name: body}); len(got) != 1 || got[0].Rule != "H12" {
+			t.Errorf("%s not flagged: %v", name, got)
+		}
+	}
+	good := map[string]string{
+		"internal/memory/client.go":  "package memory\nimport \"net/http\"\nvar c = &http.Client{}\n",
+		"internal/identity/clerk.go": "package identity\nimport \"net/http\"\nvar c = &http.Client{}\n",
+		"cmd/clerk-replay/main.go":   "package main\nimport \"net/http\"\nvar c = &http.Client{}\n",
+		"internal/ledger/a_test.go":  "package ledger\nimport \"net/http\"\nvar c = &http.Client{}\n",
+		"internal/api/handler.go":    "package api\nimport \"net/http\"\nfunc h(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }\n",
+		"internal/savings/shadow.go": "package savings\nfunc f() { http := struct{ Get func() }{}; http.Get() }\n",
+	}
+	if got := scanHTTPClients(good); len(got) != 0 {
 		t.Fatalf("legal files flagged: %v", got)
 	}
 }

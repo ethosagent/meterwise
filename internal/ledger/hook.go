@@ -136,7 +136,7 @@ func (h *Hook) After(ctx context.Context, c *tollgate.Call, m tollgate.Metric) {
 	}
 	h.attachVerdicts(c, m, &rec)
 	h.attachSavers(c, m, &rec)
-	h.q.enqueue(item{call: &rec})
+	h.q.enqueue(item{call: &rec, hit: h.memoryHitOf(c, m, &rec)})
 }
 
 // OnSessionClosed finalises the session once it has gone quiet. The close travels the same queue as

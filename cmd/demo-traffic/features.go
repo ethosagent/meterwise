@@ -16,6 +16,7 @@ import (
 type features struct {
 	cfg   config
 	chain dataplane.ChainOptions
+	mem   *memoryDemo // nil unless -memory is on
 }
 
 // checkFeatureModes refuses an unknown -trim, -router or -memory value before any work starts. An empty value is off.

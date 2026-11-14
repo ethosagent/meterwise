@@ -102,7 +102,20 @@ func (s *server) getSession(c Call, _ none) (contract.SessionDetail, error) {
 		out.MonitorEvents[i] = e.View()
 	}
 	out.Insight = insightOf(events)
+	if hp, ok := s.Memory.(sessionHits); ok {
+		hits, err := hp.SessionHits(c.Ctx, c.Query("workspaceId"), c.Path("id"))
+		if err != nil {
+			return contract.SessionDetail{}, err
+		}
+		out.MemoryHits = hits
+	}
 	return out, nil
+}
+
+// sessionHits is the optional read the memory port adds to the session detail: the session's memory hits, hints
+// re-rendered from the traces. A nil or older port leaves the list empty.
+type sessionHits interface {
+	SessionHits(ctx context.Context, workspaceID, sessionID string) ([]contract.MemoryHitView, error)
 }
 
 func sessionView(r contract.SessionRecord) contract.SessionView {

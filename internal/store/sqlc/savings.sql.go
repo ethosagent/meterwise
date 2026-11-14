@@ -247,6 +247,13 @@ FROM (
     WHERE workspace_id = $1::text::uuid
       AND started_at >= $2::timestamptz AND started_at < $3::timestamptz
     GROUP BY 1
+    UNION ALL
+    SELECT COALESCE(c.client, ''), 0, COALESCE(SUM(h.est_saved_usd), 0) * 1000000
+    FROM memory_hits h
+    JOIN calls c ON c.id = h.call_id AND c.workspace_id = h.workspace_id
+    WHERE h.workspace_id = $1::text::uuid AND h.injected
+      AND h.ts >= $2::timestamptz AND h.ts < $3::timestamptz
+    GROUP BY 1
 ) u
 GROUP BY 1
 `
@@ -264,7 +271,8 @@ type SavingsClientSavedRow struct {
 }
 
 // Saved and likely money per client: the monitors' acted events through the call each belongs to (ruling S2
-// filters), plus the calls' own acted trim and routed money by started_at, so the clients add up to the hero.
+// filters), plus the calls' own acted trim and routed money by started_at and memory's likely credit by the hit's ts,
+// so the clients add up to the hero.
 func (q *Queries) SavingsClientSaved(ctx context.Context, arg SavingsClientSavedParams) ([]SavingsClientSavedRow, error) {
 	rows, err := q.db.Query(ctx, savingsClientSaved, arg.WorkspaceID, arg.FromTs, arg.ToTs)
 	if err != nil {
@@ -422,16 +430,70 @@ func (q *Queries) SavingsEventsByDay(ctx context.Context, arg SavingsEventsByDay
 const savingsHasActed = `-- name: SavingsHasActed :one
 SELECT (EXISTS (SELECT 1 FROM monitor_events WHERE workspace_id = $1::text::uuid AND action <> 'observe')
         OR EXISTS (SELECT 1 FROM calls WHERE workspace_id = $1::text::uuid
-                   AND (trim_action = 'acted' OR router_action = 'routed')))::bool AS acted
+                   AND (trim_action = 'acted' OR router_action = 'routed'))
+        OR EXISTS (SELECT 1 FROM memory_hits WHERE workspace_id = $1::text::uuid AND injected))::bool AS acted
 `
 
-// Whether any saver has ever acted in the workspace (a monitor note or block, an acted trim, a routed call):
+// Whether any saver has ever acted in the workspace (a monitor note or block, an acted trim, a routed call, an injected hint):
 // the collecting/active split.
 func (q *Queries) SavingsHasActed(ctx context.Context, workspaceID string) (bool, error) {
 	row := q.db.QueryRow(ctx, savingsHasActed, workspaceID)
 	var acted bool
 	err := row.Scan(&acted)
 	return acted, err
+}
+
+const savingsMemoryByDay = `-- name: SavingsMemoryByDay :many
+SELECT (ts AT TIME ZONE 'UTC')::date AS day,
+       (COALESCE(SUM(est_saved_usd) FILTER (WHERE injected), 0) * 1000000)::bigint AS likely_micro,
+       COALESCE(SUM(est_saved_tokens) FILTER (WHERE injected), 0)::bigint AS likely_tokens,
+       COUNT(*) FILTER (WHERE injected)::bigint AS fires
+FROM memory_hits
+WHERE workspace_id = $1::text::uuid
+  AND ts >= $2::timestamptz AND ts < $3::timestamptz
+GROUP BY GROUPING SETS (((ts AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST
+`
+
+type SavingsMemoryByDayParams struct {
+	WorkspaceID string
+	FromTs      pgtype.Timestamptz
+	ToTs        pgtype.Timestamptz
+}
+
+type SavingsMemoryByDayRow struct {
+	Day          pgtype.Date
+	LikelyMicro  int64
+	LikelyTokens int64
+	Fires        int64
+}
+
+// Per UTC day of [from_ts, to_ts) plus one totals row: what memory's injected hints are credited (likely only, by the
+// hit's ts: the credit is set at session close and joins no certain number) and how many hints were injected. Observe-only
+// hits carry no money. No column adds two classes.
+func (q *Queries) SavingsMemoryByDay(ctx context.Context, arg SavingsMemoryByDayParams) ([]SavingsMemoryByDayRow, error) {
+	rows, err := q.db.Query(ctx, savingsMemoryByDay, arg.WorkspaceID, arg.FromTs, arg.ToTs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SavingsMemoryByDayRow
+	for rows.Next() {
+		var i SavingsMemoryByDayRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.LikelyMicro,
+			&i.LikelyTokens,
+			&i.Fires,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const savingsRepeatTargets = `-- name: SavingsRepeatTargets :many

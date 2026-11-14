@@ -36,6 +36,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 		cur     []sqlc.SavingsClientsRow
 		saved   []sqlc.SavingsClientSavedRow
 		callSav []sqlc.SavingsCallSaversRow
+		memSav  []sqlc.SavingsMemoryByDayRow
 	)
 	err := s.readSnapshot(ctx, func(q *sqlc.Queries) (err error) {
 		if stats, err = s.monitorStatsWith(ctx, q, workspaceID, from, to); err != nil {
@@ -45,6 +46,9 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 			return err
 		}
 		if callSav, err = q.SavingsCallSavers(ctx, sqlc.SavingsCallSaversParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}); err != nil {
+			return err
+		}
+		if memSav, err = q.SavingsMemoryByDay(ctx, sqlc.SavingsMemoryByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}); err != nil {
 			return err
 		}
 		if repeats, err = q.SavingsRepeatTargets(ctx, sqlc.SavingsRepeatTargetsParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to), MaxRows: maxRepeatTargets}); err != nil {
@@ -59,7 +63,7 @@ func (s *Store) Causes(ctx context.Context, workspaceID string, r contract.Savin
 	if err != nil {
 		return contract.SavingsCauses{}, nil, err
 	}
-	out := contract.SavingsCauses{Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", Causes: causesOf(stats, tops, callSav), Clients: clientRows(cur, saved)}
+	out := contract.SavingsCauses{Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", Causes: causesOf(stats, tops, callSav, memSav), Clients: clientRows(cur, saved)}
 	targets := make([]contract.RepeatTarget, len(repeats))
 	for i, t := range repeats {
 		targets[i] = contract.RepeatTarget{Monitor: contract.MonitorName(t.Monitor), Tool: t.Tool, Path: t.Path, PathHash: t.PathHash, Count: t.N}

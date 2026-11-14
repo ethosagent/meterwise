@@ -73,6 +73,7 @@ type Config struct {
 	MaxWorkspaces             int
 	MaxConcurrentPerWorkspace int
 	HistoryMaxBytes           int64  // byte budget of the monitors' per-session history rings (LRU beyond it)
+	Memory                    Memory // the trace library's own model access (MEMORY_*)
 	WebDir                    string // built web app, served on ListenAPI
 	LogLevel                  string
 	Env                       string
@@ -135,6 +136,7 @@ func Load(get Lookup) (Config, error) {
 	c.MaxWorkspaces = positive(get, EnvMaxWorkspaces, DefaultMaxWorkspaces, &p)
 	c.MaxConcurrentPerWorkspace = positive(get, EnvMaxConcurrent, DefaultMaxConcurrentPerWorkspace, &p)
 	c.HistoryMaxBytes = positive64(get, EnvHistoryMaxBytes, DefaultHistoryMaxBytes, &p)
+	c.Memory = loadMemory(get, &p)
 
 	c.validateListeners(&p)
 	c.validateIdentity(&p)
@@ -279,7 +281,7 @@ func (c Config) CheckServe() error {
 // Redacted returns the config as display-safe key/values: the database URL has
 // its password replaced, so `config check` output can be pasted in a ticket.
 func (c Config) Redacted() map[string]string {
-	return map[string]string{
+	out := map[string]string{
 		EnvDatabaseURL:     redactURL(c.DatabaseURL),
 		EnvListenProxy:     c.ListenProxy,
 		EnvListenAPI:       c.ListenAPI,
@@ -303,6 +305,8 @@ func (c Config) Redacted() map[string]string {
 		EnvLogLevel:        c.LogLevel,
 		EnvAppEnv:          c.Env,
 	}
+	c.Memory.redacted(out)
+	return out
 }
 
 // secretState shows whether a secret is set, never its value.

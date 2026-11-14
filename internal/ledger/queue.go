@@ -44,8 +44,12 @@ type Options struct {
 	// Estimator prices what a verdict saves (savings.Estimate when the host wires it); nil finds nothing:
 	// zero tokens, confidence none, so verdicts are recorded without a saving.
 	Estimator Estimator
-	Log       *slog.Logger
-	Now       func() time.Time
+	// OnClosed is told of every session a close really closed, once, after the database change (the memory feature
+	// learns from it). It runs on the batcher's goroutine and must not block: enqueue and return. A Hook can also get
+	// it later through SetOnClosed. It needs a Writer that implements CloseSessionsReturning (*store.Store does).
+	OnClosed func(ClosedSession)
+	Log      *slog.Logger
+	Now      func() time.Time
 }
 
 // Defaults of the zero Options values.
@@ -90,6 +94,7 @@ func (o Options) withDefaults() (Options, error) {
 // item is one queue entry: a call to record, or a session to close.
 type item struct {
 	call    *contract.CallRecord
+	hit     *store.MemoryHit // the call's memory hit, written in the call's transaction
 	closeWS string
 	closeID string
 	closeAt time.Time
@@ -112,9 +117,13 @@ type queue struct {
 	// trimUnpriced and routerUnpriced count saver savings left at 0 because a model had no price; invalidSaverMeta
 	// counts trim or router results dropped for a value outside the fixed sets (they would break the table CHECKs).
 	trimUnpriced, routerUnpriced, invalidSaverMeta atomic.Int64
+	// closedPanics counts panics of the OnClosed callback (contained).
+	closedPanics atomic.Int64
 
 	// refused counts calls refused before the upstream, indexed by HTTP status (a status outside 0..599 is 0).
 	refused [maxStatus]atomic.Int64
+
+	onClosed atomic.Pointer[func(ClosedSession)]
 
 	errMu     sync.Mutex // guards lastErr and lastFlush
 	lastErr   string
@@ -124,7 +133,11 @@ type queue struct {
 const maxStatus = 600
 
 func newQueue(o Options) *queue {
-	return &queue{o: o, ch: make(chan item, o.QueueSize), stop: make(chan struct{}), done: make(chan struct{})}
+	q := &queue{o: o, ch: make(chan item, o.QueueSize), stop: make(chan struct{}), done: make(chan struct{})}
+	if o.OnClosed != nil {
+		q.onClosed.Store(&o.OnClosed)
+	}
+	return q
 }
 
 // start runs the batcher. ctx is detached from the caller's cancellation: a flush must outlive it until Close.
@@ -225,10 +238,14 @@ func (q *queue) flush(parent context.Context, buf []item, final bool) []item {
 		return buf
 	}
 	var calls []contract.CallRecord
+	var hits []store.MemoryHit
 	var closes []contract.SessionClose
 	for _, it := range buf {
 		if it.call != nil {
 			calls = append(calls, *it.call)
+			if it.hit != nil {
+				hits = append(hits, *it.hit)
+			}
 		} else {
 			closes = append(closes, contract.SessionClose{WorkspaceID: it.closeWS, SessionID: it.closeID, At: it.closeAt})
 		}
@@ -237,7 +254,7 @@ func (q *queue) flush(parent context.Context, buf []item, final bool) []item {
 	ctx, cancel := context.WithTimeout(parent, q.o.RetryWindow+30*time.Second)
 	defer cancel()
 	if len(calls) > 0 {
-		q.writeCalls(ctx, calls, plan)
+		q.writeCalls(ctx, calls, hits, plan)
 	}
 	if len(closes) > 0 {
 		q.closeSessions(ctx, closes, plan)
