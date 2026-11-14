@@ -1,9 +1,9 @@
-# Local Postgres 16 for tests and the migrate gate. One shared project name, so
+# Local Postgres 16 + pgvector (Plan 09) for tests and the migrate gate. One shared project name, so
 # every worktree reuses the same container; the gates create throwaway databases.
 name: meterwise
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: meterwise
       POSTGRES_PASSWORD: meterwise
@@ -22,7 +22,7 @@ services:
   # Own database with a persistent named volume; the tmpfs `postgres` above stays the test database.
   appdb:
     profiles: [app]
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: meterwise
       POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-meterwise}
