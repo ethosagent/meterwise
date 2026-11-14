@@ -7,6 +7,7 @@ describe("nav", () => {
     expect(SETTINGS_PAGES.map((p) => p.label)).toEqual([
       "Profile",
       "Workspace",
+      "Memory",
       "Organization",
       "Access management",
     ]);

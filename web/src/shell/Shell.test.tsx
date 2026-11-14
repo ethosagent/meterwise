@@ -20,6 +20,7 @@ const BUILT = new Set([
   "overview",
   "sessions",
   "monitors",
+  "memory",
 ]);
 const NAMES = TEST_WORKSPACES.map((w) => w.name);
 

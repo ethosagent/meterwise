@@ -11,12 +11,15 @@ import { MEMORY_SETTINGS } from "./fixtures/memory";
 import { ROUTER_SETTINGS, ROUTER_STATS } from "./fixtures/router";
 import { TRIM_CONFIG } from "./fixtures/trim";
 import { type AccessMock, forbidden, jsonResponse as json } from "./mockAccess";
+import { createMemoryMock, type MemoryInit, type MemoryMock } from "./mockMemory";
 
 export interface FeaturesInit {
   trim?: TrimConfig;
   router?: RouterSettings;
   routerStats?: RouterStats;
   memory?: MemorySettings;
+  /** Stats, traces and hit feedback of the memory feature. */
+  memoryData?: MemoryInit;
 }
 
 export interface FeaturesMock {
@@ -25,6 +28,8 @@ export interface FeaturesMock {
   /** The verdict set on a call through POST .../router-feedback (undefined: never set). */
   verdictOf: (callId: string) => string | null | undefined;
   memory: () => MemorySettings;
+  /** The memory read routes: stats, traces, hit feedback, forget. */
+  memoryData: MemoryMock;
   route: (method: string, path: string, body: Record<string, unknown>) => Response | undefined;
 }
 
@@ -37,10 +42,13 @@ export function createFeaturesMock(access: AccessMock, init: FeaturesInit = {}):
   let router = structuredClone(init.router ?? ROUTER_SETTINGS);
   const routerStats = structuredClone(init.routerStats ?? ROUTER_STATS);
   let memory = structuredClone(init.memory ?? MEMORY_SETTINGS);
+  const memoryData = createMemoryMock(access, init.memoryData);
 
   const verdicts = new Map<string, string | null>();
 
   const route = (method: string, rawPath: string, body: Record<string, unknown>) => {
+    const mem = memoryData.route(method, rawPath, body);
+    if (mem) return mem;
     const path = rawPath.split("?")[0] ?? "";
     const stats = /^\/api\/workspaces\/([^/]+)\/router\/stats$/.exec(path);
     if (stats && method === "GET") {
@@ -90,6 +98,7 @@ export function createFeaturesMock(access: AccessMock, init: FeaturesInit = {}):
     router: () => router,
     verdictOf: (id) => verdicts.get(id),
     memory: () => memory,
+    memoryData,
     route,
   };
 }

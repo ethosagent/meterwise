@@ -47,7 +47,11 @@ export function EventCard({
       return (
         <>
           <Divider size="small" />
-          <MemoryHintEvent hit={event.hit} />
+          <MemoryHintEvent
+            hit={event.hit}
+            workspaceId={workspaceId}
+            sessionId={detail.session.id}
+          />
         </>
       );
   }
