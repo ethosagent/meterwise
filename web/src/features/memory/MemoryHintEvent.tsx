@@ -2,6 +2,7 @@ import { DislikeFilled, DislikeOutlined, LikeFilled, LikeOutlined } from "@ant-d
 import { Button, Flex, Space, Tag, Typography, theme } from "antd";
 import { Link } from "react-router-dom";
 import { type HintFeedback, useMemoryHitFeedback } from "../../api/memory";
+import { sessionPath } from "../../api/sessions";
 import { useErrorToast } from "../../api/useErrorToast";
 import type { MemoryHitView } from "../../contract/generated";
 import { formatBp, formatUsd, isPositiveMicro } from "../../lib/money";
@@ -66,7 +67,7 @@ export function MemoryHintEvent({
       <Flex gap={token.marginXS} align="center" wrap>
         <Tag>{hit.injected ? "Remembered" : "Would have hinted"}</Tag>
         <Typography.Text type="secondary">{`${formatBp(hit.similarityBp)} similar`}</Typography.Text>
-        <Link to={`/sessions/${encodeURIComponent(hit.sourceSessionId)}`}>source session</Link>
+        <Link to={sessionPath(hit.sourceSessionId)}>source session</Link>
         {isPositiveMicro(hit.estSavedUsd) ? (
           <Typography.Text type="secondary">
             {`${hit.injected ? "likely saved" : "would likely save"} ${formatUsd(hit.estSavedUsd)} compared with similar sessions without a hint`}

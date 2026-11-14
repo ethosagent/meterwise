@@ -1,11 +1,12 @@
 import { Alert, Descriptions, Drawer, Flex, Skeleton, Tag, Typography, theme } from "antd";
 import { Link } from "react-router-dom";
 import { useTrace } from "../../api/memory";
+import { sessionPath } from "../../api/sessions";
 import { useToastOnError } from "../../api/useToastOnError";
 import type { TraceDetail } from "../../contract/generated";
 import { formatBp } from "../../lib/money";
 
-const sessionLink = (id: string) => <Link to={`/sessions/${encodeURIComponent(id)}`}>{id}</Link>;
+const sessionLink = (id: string) => <Link to={sessionPath(id)}>{id}</Link>;
 
 /** "Reused N times" and the sessions it helped: the customer sees one fix paying off repeatedly. */
 export function ReusedBadge({ trace }: { trace: TraceDetail }) {

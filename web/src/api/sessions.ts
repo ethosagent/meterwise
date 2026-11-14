@@ -5,6 +5,15 @@ import { workspaceScoped } from "./identity";
 import { enc, json, useInvalidatingMutation } from "./mutation";
 import { type RangeSel, rangeBounds, rangeKey } from "./range";
 
+/** The route of one session's detail page; `query` adds `?event=` or `?call=` to deep-link a step. */
+export const sessionPath = (sessionId: string, query?: { event?: string; call?: string }) => {
+  const q = new URLSearchParams();
+  if (query?.event) q.set("event", query.event);
+  if (query?.call) q.set("call", query.call);
+  const qs = q.toString();
+  return `/sessions/${enc(sessionId)}${qs ? `?${qs}` : ""}`;
+};
+
 export const SESSION_OUTCOMES = ["completed", "abandoned", "open"] as const;
 export type SessionOutcome = (typeof SESSION_OUTCOMES)[number];
 

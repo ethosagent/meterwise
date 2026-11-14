@@ -43,6 +43,11 @@ export const TRACES_PAGE = 25;
 export const memoryStatsKey = (workspaceId: string, sel: RangeSel) =>
   workspaceScoped("memory", workspaceId, "stats", rangeKey(sel));
 
+/** Every cached stats range, every open trace detail and the traces list: what a feedback or a forget makes stale, without the settings. */
+const memoryStatsPrefix = (workspaceId: string) => workspaceScoped("memory", workspaceId, "stats");
+const memoryTraceDetails = (workspaceId: string) => workspaceScoped("memory", workspaceId, "trace");
+const memoryTracesList = (workspaceId: string) => workspaceScoped("memory", workspaceId, "traces");
+
 /** What memory did over the range: traces, hinted sessions, feedback and the likely saving, never a certain one (savings:read). */
 export function useMemoryStats(workspaceId: string | null, sel: RangeSel, enabled: boolean) {
   return useQuery({
@@ -84,7 +89,7 @@ export function useTrace(workspaceId: string | null, traceId: string | null, ena
 
 export type HintFeedback = "helpful" | "irrelevant" | null;
 
-/** 👍/👎 on one hint; null clears it. Refreshes the session (the stored value is what shows) and memory's figures. */
+/** 👍/👎 on one hint; null clears it. Refreshes the session (the stored value is what shows), memory's stats and the loaded trace details (votes), not the traces pages. */
 export function useMemoryHitFeedback(workspaceId: string, sessionId: string) {
   return useInvalidatingMutation(
     (v: { hitId: string; feedback: HintFeedback }) =>
@@ -92,14 +97,24 @@ export function useMemoryHitFeedback(workspaceId: string, sessionId: string) {
         `/api/workspaces/${enc(workspaceId)}/memory-hits/${enc(v.hitId)}/feedback`,
         { method: "POST", body: json({ feedback: v.feedback }) },
       ),
-    [sessionDetailKey(workspaceId, sessionId), workspaceScoped("memory", workspaceId)],
+    [
+      sessionDetailKey(workspaceId, sessionId),
+      memoryStatsPrefix(workspaceId),
+      memoryTraceDetails(workspaceId),
+    ],
   );
 }
 
-/** "Forget memory": deletes every trace of the workspace (workspace:manage, audited). */
+/** "Forget memory": deletes every trace of the workspace (workspace:manage, audited). The settings are untouched. */
 export function useForgetMemory(workspaceId: string) {
   return useInvalidatingMutation(
     () => apiFetch<undefined>(`/api/workspaces/${enc(workspaceId)}/traces`, { method: "DELETE" }),
-    [workspaceScoped("memory", workspaceId), workspaceScoped("savings", workspaceId), auditLogKey],
+    [
+      memoryStatsPrefix(workspaceId),
+      memoryTracesList(workspaceId),
+      memoryTraceDetails(workspaceId),
+      workspaceScoped("savings", workspaceId),
+      auditLogKey,
+    ],
   );
 }

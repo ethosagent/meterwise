@@ -1,5 +1,6 @@
 import { Button, Empty, Table, Tag } from "antd";
 import { Link } from "react-router-dom";
+import { sessionPath } from "../../api/sessions";
 import type { Session } from "../../contract/generated";
 import { formatTokens, formatUsd } from "../../lib/money";
 import { LoadMore } from "../../shell/LoadMore";
@@ -44,7 +45,7 @@ export function SessionsTable({
           {
             title: "Started (UTC)",
             render: (_, r) => (
-              <Link to={`/sessions/${encodeURIComponent(r.id)}`}>
+              <Link to={sessionPath(r.id)}>
                 {r.startedAt.replace("T", " ").replace("Z", "")}
               </Link>
             ),

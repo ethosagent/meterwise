@@ -1,5 +1,6 @@
 import { Card, Empty, Table, Tag, Typography } from "antd";
 import { Link } from "react-router-dom";
+import { sessionPath } from "../../api/sessions";
 import type { SaveRow } from "../../contract/generated";
 import { formatTokens, formatUsd } from "../../lib/money";
 import { LoadMore } from "../../shell/LoadMore";
@@ -45,9 +46,7 @@ export function SavesTable({ rows, hasMore, loadingMore, onMore }: Props) {
           {
             title: "Step",
             render: (_, r) => (
-              <Link
-                to={`/sessions/${encodeURIComponent(r.sessionId)}?event=${encodeURIComponent(r.eventId)}`}
-              >
+              <Link to={sessionPath(r.sessionId, { event: r.eventId })}>
                 {r.callIndex > 0 ? `Open call #${r.callIndex}` : "Open step"}
               </Link>
             ),
