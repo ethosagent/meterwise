@@ -5,6 +5,7 @@ import type { MemorySettings } from "../../contract/generated";
 import { MEMORY_SETTINGS } from "../../test/fixtures/memory";
 import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { MEMBER_ME, mockApi } from "../../test/mockApi";
+import { failRoute } from "../../test/mockMemory";
 import { renderAt } from "../../test/render";
 import { MemoryRow } from "./MemoryRow";
 
@@ -48,6 +49,17 @@ describe("Memory settings row", () => {
     fireEvent.keyUp(slider, { key: "ArrowRight", code: "ArrowRight", keyCode: 39 });
     await waitFor(() => expect(patches(api)).toHaveLength(1));
     expect(patches(api)[0]?.body).toEqual({ thresholdBp: 8300 });
+  });
+
+  it("puts the slider back when the threshold could not be saved", async () => {
+    const api = show();
+    failRoute("PATCH", /\/memory$/);
+    const slider = await screen.findByRole("slider", { name: "Similarity threshold" });
+    fireEvent.keyDown(slider, { key: "ArrowRight", code: "ArrowRight", keyCode: 39 });
+    fireEvent.keyUp(slider, { key: "ArrowRight", code: "ArrowRight", keyCode: 39 });
+    expect(await screen.findByText("Could not update memory.")).toBeInTheDocument();
+    expect(api.features.memory().config.thresholdBp).toBe(8200);
+    await waitFor(() => expect(slider).toHaveAttribute("aria-valuenow", "8200"));
   });
 
   it("hint waits behind a confirm; cancel sends nothing", async () => {

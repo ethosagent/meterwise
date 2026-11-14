@@ -85,7 +85,7 @@ function Fine({
   settings: MemorySettings;
   readOnly: boolean;
   busy: boolean;
-  onPatch: (p: MemoryConfigPatch) => void;
+  onPatch: (p: MemoryConfigPatch, onFail?: () => void) => void;
 }) {
   const { token } = theme.useToken();
   const c = settings.config;
@@ -104,7 +104,9 @@ function Fine({
           disabled={readOnly || busy}
           tooltip={{ formatter: (v) => formatBp(v ?? 0) }}
           onChange={setBp}
-          onChangeComplete={(v) => v !== c.thresholdBp && onPatch({ thresholdBp: v })}
+          onChangeComplete={(v) =>
+            v !== c.thresholdBp && onPatch({ thresholdBp: v }, () => setBp(c.thresholdBp))
+          }
         />
         <Typography.Text type="secondary">{formatBp(bp)}</Typography.Text>
       </Flex>
@@ -173,8 +175,13 @@ export function MemoryRow({
   const settings = config.data;
   if (!settings) return null;
   const reason = settings.disabledReason;
-  const send = (p: MemoryConfigPatch) =>
-    patch.mutate(p, { onError: (e) => toast(e, "Could not update memory.") });
+  const send = (p: MemoryConfigPatch, onFail?: () => void) =>
+    patch.mutate(p, {
+      onError: (e) => {
+        onFail?.();
+        toast(e, "Could not update memory.");
+      },
+    });
   return (
     <>
       <SettingsRow

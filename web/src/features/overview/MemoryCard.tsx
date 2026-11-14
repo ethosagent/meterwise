@@ -49,6 +49,7 @@ export function MemoryCard({ workspaceId, sel }: { workspaceId: string; sel: Ran
   const config = useMemoryConfig(workspaceId, canConfig);
   const stats = useMemoryStats(workspaceId, sel, true);
   useToastOnError(stats.error, "Could not load the memory figures.");
+  useToastOnError(config.error, "Could not load the memory settings.");
   const s = stats.data;
   useFirstHintToast(workspaceId, s ? s.hits - s.observedHits : undefined);
   if (stats.isError) return null;

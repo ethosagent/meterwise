@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import type { MemoryStats, TraceDetail, TraceSummary } from "../contract/generated";
 import { MEMORY_STATS, TRACE_DETAIL, TRACES } from "./fixtures/memory";
 import { MEMORY_HIT } from "./fixtures/sessions";
@@ -7,7 +8,7 @@ export interface MemoryInit {
   stats?: MemoryStats;
   traces?: TraceSummary[];
   detail?: TraceDetail;
-  /** Page size of GET .../traces (the cursor is the offset); default 2, so three traces make two pages. */
+  /** Server-side cap of a page of GET .../traces (the cursor is the offset); default 2, so three traces make two pages. The client's `limit` also caps it. */
   pageSize?: number;
 }
 
@@ -26,7 +27,7 @@ export function createMemoryMock(access: AccessMock, init: MemoryInit = {}): Mem
   const stats = structuredClone(init.stats ?? MEMORY_STATS);
   let traces = structuredClone(init.traces ?? TRACES);
   const detail = structuredClone(init.detail ?? TRACE_DETAIL);
-  const size = init.pageSize ?? 2;
+  const cap = init.pageSize ?? 2;
   const feedback = new Map<string, string | null>();
 
   const route = (method: string, rawPath: string, body: Record<string, unknown>) => {
@@ -44,7 +45,9 @@ export function createMemoryMock(access: AccessMock, init: MemoryInit = {}): Mem
     }
     if (what === "traces" && !traceId && method === "GET") {
       if (!access.can("session", "read", ws)) return forbidden("no matching grant");
-      const from = Number(new URLSearchParams(query).get("cursor") ?? "0");
+      const q = new URLSearchParams(query);
+      const from = Number(q.get("cursor") ?? "0");
+      const size = Math.min(cap, Number(q.get("limit") ?? cap));
       const next = from + size;
       return json({
         items: traces.slice(from, next),
@@ -74,4 +77,14 @@ export function createMemoryMock(access: AccessMock, init: MemoryInit = {}): Mem
     return undefined;
   };
   return { feedbackOf: (id) => feedback.get(id), traces: () => traces, route };
+}
+
+/** From now on every request with this method and a path matching `pattern` answers 500; the rest go on as before. */
+export function failRoute(method: string, pattern: RegExp) {
+  const next = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    (init?.method ?? "GET") === method && pattern.test(String(input))
+      ? Promise.resolve(errorResponse(500, "internal", "down"))
+      : next(input, init),
+  );
 }

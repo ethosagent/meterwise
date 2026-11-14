@@ -5,6 +5,7 @@ import type { MemorySettings } from "../../contract/generated";
 import { MEMORY_SETTINGS } from "../../test/fixtures/memory";
 import { MEMBER_SNAPSHOT } from "../../test/mockAccess";
 import { MEMBER_ME, mockApi } from "../../test/mockApi";
+import { failRoute } from "../../test/mockMemory";
 import { renderAt } from "../../test/render";
 import { TracesPage } from "./TracesPage";
 
@@ -24,6 +25,7 @@ describe("Traces browser", () => {
     await user.click(screen.getByRole("button", { name: "Load more" }));
     expect(await screen.findByText("Fix build 3: missing go.sum entry")).toBeInTheDocument();
     expect(api.callsTo("GET", /traces\?.*cursor=2/)).toHaveLength(1);
+    expect(api.callsTo("GET", /traces\?.*limit=25/).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Fix build 1: missing go.sum entry" }));
     const drawer = within(await screen.findByRole("dialog"));
@@ -76,5 +78,16 @@ describe("Traces browser", () => {
       await screen.findByText("Memory starts learning after your first completed session"),
     ).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("button", { name: "Load more" })).toBeNull());
+  });
+
+  it("a failed settings fetch shows a toast and does not claim memory is learning", async () => {
+    mockApi({ features: { memory: enabled({ mode: "observe" }), memoryData: { traces: [] } } });
+    failRoute("GET", /\/memory$/);
+    renderAt(<TracesPage />, "/settings/memory");
+    expect(await screen.findByText("Could not load the memory settings.")).toBeInTheDocument();
+    expect(screen.getByText("No remembered solutions")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Memory starts learning after your first completed session"),
+    ).not.toBeInTheDocument();
   });
 });

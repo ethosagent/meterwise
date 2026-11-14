@@ -18,6 +18,7 @@ function Traces({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const rows = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
   useToastOnError(q.error, "Could not load the remembered solutions.");
+  useToastOnError(config.error, "Could not load the memory settings.");
   if (q.isError)
     return <Alert type="error" showIcon title="Could not load the remembered solutions." />;
   if (!q.data) return <Skeleton active />;
@@ -33,7 +34,7 @@ function Traces({ workspaceId }: { workspaceId: string }) {
       <TracesTable
         rows={rows}
         emptyText={
-          unavailable
+          unavailable || config.isError
             ? "No remembered solutions"
             : (state ?? "Memory starts learning after your first completed session")
         }
