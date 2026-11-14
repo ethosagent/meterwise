@@ -35,6 +35,9 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0028](0028-trimming-a-go-port-of-the-lossless-stages-sticky-per-region-decisions.md) | Trimming: a Go port of the lossless stages, sticky per-region decisions, byte-based estimate | Accepted |
 | [0029](0029-router-changes-one-field-the-customers-key-monitors-are-the-safety-net.md) | The router changes one field, on the customer's key; monitors are the safety net | Accepted |
 | [0030](0030-router-target-unavailable-and-deferred-model-masking.md) | Router: a refused target pauses the pair; model masking and the route header are deferred | Accepted |
+| [0031](0031-pgvector-for-trace-recall-text-literals-a-domain-and-a-cast-index.md) | pgvector for trace recall: text literals, a domain, and an index on a halfvec cast | Accepted |
+| [0032](0032-memory-recalls-off-the-request-path-and-credits-only-a-likely-number.md) | Memory recalls off the request path and credits only a likely number | Accepted |
+| [0033](0033-memory-has-its-own-model-key-client-and-budget.md) | Memory has its own model key, its own client and a daily budget | Accepted |
 
 Template: [`template.md`](template.md).
 

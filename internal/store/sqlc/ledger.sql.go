@@ -11,23 +11,97 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const closeSessions = `-- name: CloseSessions :execrows
+const addSessionLikelySaved = `-- name: AddSessionLikelySaved :exec
+UPDATE sessions
+SET likely_saved_usd = likely_saved_usd + $1::bigint / 1000000.0
+WHERE workspace_id = $2::text::uuid AND id = $3::text
+`
+
+type AddSessionLikelySavedParams struct {
+	UsdMicro    int64
+	WorkspaceID string
+	ID          string
+}
+
+// Memory's likely credit joins the session's likely number (never the certain one).
+func (q *Queries) AddSessionLikelySaved(ctx context.Context, arg AddSessionLikelySavedParams) error {
+	_, err := q.db.Exec(ctx, addSessionLikelySaved, arg.UsdMicro, arg.WorkspaceID, arg.ID)
+	return err
+}
+
+const closeSessions = `-- name: CloseSessions :many
 UPDATE sessions s
 SET closed_at = timestamptz 'epoch' + (t.j->>'atUs')::bigint * interval '1 microsecond',
     outcome = CASE WHEN s.last_finish = 'ok' AND s.last_had_text THEN 'completed' ELSE 'abandoned' END
 FROM jsonb_array_elements($1::jsonb) AS t(j)
 WHERE s.workspace_id = (t.j->>'workspaceId')::uuid AND s.id = t.j->>'id' AND s.closed_at IS NULL
+RETURNING s.workspace_id::text AS workspace_id, s.id, s.outcome, s.calls
 `
+
+type CloseSessionsRow struct {
+	WorkspaceID string
+	ID          string
+	Outcome     string
+	Calls       int32
+}
 
 // Finalise quiet sessions, one statement per flush (a JSON array of {workspaceId, id, atUs}): closed_at and the
 // outcome heuristic (last finish ok and non-empty assistant text is completed, anything else abandoned). An already
-// closed session is left alone.
-func (q *Queries) CloseSessions(ctx context.Context, closesJson []byte) (int64, error) {
-	result, err := q.db.Exec(ctx, closeSessions, closesJson)
+// closed session is left alone. RETURNING names the sessions this statement really closed, with their outcome and
+// call count: the memory feature learns from them (Options.OnClosed), once per close.
+func (q *Queries) CloseSessions(ctx context.Context, closesJson []byte) ([]CloseSessionsRow, error) {
+	rows, err := q.db.Query(ctx, closeSessions, closesJson)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	var items []CloseSessionsRow
+	for rows.Next() {
+		var i CloseSessionsRow
+		if err := rows.Scan(
+			&i.WorkspaceID,
+			&i.ID,
+			&i.Outcome,
+			&i.Calls,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const creditMemoryHit = `-- name: CreditMemoryHit :one
+UPDATE memory_hits
+SET est_saved_tokens = $1::bigint, est_saved_usd = $2::bigint / 1000000.0
+WHERE workspace_id = $3::text::uuid AND id = $4::bigint AND session_id = $5::text
+  AND injected AND est_saved_usd = 0 AND est_saved_tokens = 0
+RETURNING id
+`
+
+type CreditMemoryHitParams struct {
+	Tokens      int64
+	UsdMicro    int64
+	WorkspaceID string
+	ID          int64
+	SessionID   string
+}
+
+// The likely credit of one injected hit, set once at session close: it only applies while the hit has none.
+func (q *Queries) CreditMemoryHit(ctx context.Context, arg CreditMemoryHitParams) (int64, error) {
+	row := q.db.QueryRow(ctx, creditMemoryHit,
+		arg.Tokens,
+		arg.UsdMicro,
+		arg.WorkspaceID,
+		arg.ID,
+		arg.SessionID,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const insertCalls = `-- name: InsertCalls :many
@@ -65,6 +139,40 @@ func (q *Queries) InsertCalls(ctx context.Context, callsJson []byte) ([]string, 
 	var items []string
 	for rows.Next() {
 		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertMemoryHits = `-- name: InsertMemoryHits :many
+INSERT INTO memory_hits (org_id, workspace_id, session_id, call_id, trace_id, similarity_bp, mode, injected, ts)
+SELECT (r.j->>'orgId')::uuid, (r.j->>'workspaceId')::uuid, r.j->>'sessionId', r.j->>'callId', (r.j->>'traceId')::bigint,
+       (r.j->>'similarityBp')::int, r.j->>'mode', (r.j->>'injected')::bool,
+       timestamptz 'epoch' + (r.j->>'startedUs')::bigint * interval '1 microsecond'
+FROM jsonb_array_elements($1::jsonb) AS r(j)
+WHERE EXISTS (SELECT 1 FROM calls c WHERE c.workspace_id = (r.j->>'workspaceId')::uuid AND c.id = r.j->>'callId')
+ON CONFLICT (workspace_id, call_id) DO NOTHING
+RETURNING id
+`
+
+// The only INSERT into memory_hits (H4): one row per recall decision of the calls a batch really inserted (a JSON array
+// of hit objects), idempotent on (workspace_id, call_id). The WHERE EXISTS keeps a hit from outliving a call the batch
+// did not write. ts is the call's start; no hint text is stored (it is re-rendered from the trace).
+func (q *Queries) InsertMemoryHits(ctx context.Context, hitsJson []byte) ([]int64, error) {
+	rows, err := q.db.Query(ctx, insertMemoryHits, hitsJson)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
@@ -133,6 +241,33 @@ ON CONFLICT (workspace_id, call_id, stage) DO NOTHING
 func (q *Queries) InsertTrimEvents(ctx context.Context, eventsJson []byte) error {
 	_, err := q.db.Exec(ctx, insertTrimEvents, eventsJson)
 	return err
+}
+
+const setMemoryHitFeedback = `-- name: SetMemoryHitFeedback :one
+UPDATE memory_hits
+SET feedback = $1::text
+WHERE workspace_id = $2::text::uuid AND id = $3::bigint
+RETURNING id, trace_id
+`
+
+type SetMemoryHitFeedbackParams struct {
+	Feedback    pgtype.Text
+	WorkspaceID string
+	ID          int64
+}
+
+type SetMemoryHitFeedbackRow struct {
+	ID      int64
+	TraceID int64
+}
+
+// The only UPDATE of a hit's feedback (H4): one hit of one workspace; a foreign or unknown id matches no row (the
+// store reports not_found). A NULL feedback clears it.
+func (q *Queries) SetMemoryHitFeedback(ctx context.Context, arg SetMemoryHitFeedbackParams) (SetMemoryHitFeedbackRow, error) {
+	row := q.db.QueryRow(ctx, setMemoryHitFeedback, arg.Feedback, arg.WorkspaceID, arg.ID)
+	var i SetMemoryHitFeedbackRow
+	err := row.Scan(&i.ID, &i.TraceID)
+	return i, err
 }
 
 const setMonitorEventFeedback = `-- name: SetMonitorEventFeedback :one

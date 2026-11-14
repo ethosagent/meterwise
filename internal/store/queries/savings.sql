@@ -51,12 +51,27 @@ WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
 GROUP BY GROUPING SETS (((started_at AT TIME ZONE 'UTC')::date), ())
 ORDER BY 1 NULLS LAST;
 
+-- name: SavingsMemoryByDay :many
+-- Per UTC day of [from_ts, to_ts) plus one totals row: what memory's injected hints are credited (likely only, by the
+-- hit's ts: the credit is set at session close and joins no certain number) and how many hints were injected. Observe-only
+-- hits carry no money. No column adds two classes.
+SELECT (ts AT TIME ZONE 'UTC')::date AS day,
+       (COALESCE(SUM(est_saved_usd) FILTER (WHERE injected), 0) * 1000000)::bigint AS likely_micro,
+       COALESCE(SUM(est_saved_tokens) FILTER (WHERE injected), 0)::bigint AS likely_tokens,
+       COUNT(*) FILTER (WHERE injected)::bigint AS fires
+FROM memory_hits
+WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
+  AND ts >= sqlc.arg(from_ts)::timestamptz AND ts < sqlc.arg(to_ts)::timestamptz
+GROUP BY GROUPING SETS (((ts AT TIME ZONE 'UTC')::date), ())
+ORDER BY 1 NULLS LAST;
+
 -- name: SavingsHasActed :one
--- Whether any saver has ever acted in the workspace (a monitor note or block, an acted trim, a routed call):
+-- Whether any saver has ever acted in the workspace (a monitor note or block, an acted trim, a routed call, an injected hint):
 -- the collecting/active split.
 SELECT (EXISTS (SELECT 1 FROM monitor_events WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND action <> 'observe')
         OR EXISTS (SELECT 1 FROM calls WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
-                   AND (trim_action = 'acted' OR router_action = 'routed')))::bool AS acted;
+                   AND (trim_action = 'acted' OR router_action = 'routed'))
+        OR EXISTS (SELECT 1 FROM memory_hits WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid AND injected))::bool AS acted;
 
 -- name: SavingsCauseTops :many
 -- For each monitor, the most frequent client, tool and path (rank 1 of each dimension) over the window. A
@@ -114,7 +129,8 @@ LIMIT sqlc.arg(max_rows)::int;
 
 -- name: SavingsClientSaved :many
 -- Saved and likely money per client: the monitors' acted events through the call each belongs to (ruling S2
--- filters), plus the calls' own acted trim and routed money by started_at, so the clients add up to the hero.
+-- filters), plus the calls' own acted trim and routed money by started_at and memory's likely credit by the hit's ts,
+-- so the clients add up to the hero.
 SELECT client::text AS client, (SUM(saved_micro))::bigint AS saved_micro, (SUM(likely_micro))::bigint AS likely_micro
 FROM (
     SELECT COALESCE(c.client, '') AS client,
@@ -133,6 +149,13 @@ FROM (
     FROM calls
     WHERE workspace_id = sqlc.arg(workspace_id)::text::uuid
       AND started_at >= sqlc.arg(from_ts)::timestamptz AND started_at < sqlc.arg(to_ts)::timestamptz
+    GROUP BY 1
+    UNION ALL
+    SELECT COALESCE(c.client, ''), 0, COALESCE(SUM(h.est_saved_usd), 0) * 1000000
+    FROM memory_hits h
+    JOIN calls c ON c.id = h.call_id AND c.workspace_id = h.workspace_id
+    WHERE h.workspace_id = sqlc.arg(workspace_id)::text::uuid AND h.injected
+      AND h.ts >= sqlc.arg(from_ts)::timestamptz AND h.ts < sqlc.arg(to_ts)::timestamptz
     GROUP BY 1
 ) u
 GROUP BY 1;

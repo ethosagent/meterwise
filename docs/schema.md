@@ -341,3 +341,83 @@ Owner: `router` (created in `0021_router.sql`)
 | `provider` | `text NOT NULL CHECK (provider <> '')` | 0021_router.sql |
 | `from_model` | `text NOT NULL CHECK (from_model <> '')` | 0021_router.sql |
 | `to_model` | `text NOT NULL CHECK (to_model <> '')` | 0021_router.sql |
+
+## memory_traces
+
+Owner: `memory` (created in `0024_memory.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0024_memory.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0024_memory.sql |
+| `workspace_id` | `uuid NOT NULL` | 0024_memory.sql |
+| `session_id` | `text NOT NULL` | 0024_memory.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0024_memory.sql |
+| `task_summary` | `text NOT NULL` | 0024_memory.sql |
+| `observations` | `jsonb NOT NULL DEFAULT '[]'::jsonb` | 0024_memory.sql |
+| `approach` | `text NOT NULL` | 0024_memory.sql |
+| `fix` | `text NOT NULL` | 0024_memory.sql |
+| `signature` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0024_memory.sql |
+| `base_confidence` | `real NOT NULL CHECK (base_confidence >= 0 AND base_confidence <= 1)` | 0024_memory.sql |
+| `confidence` | `real GENERATED ALWAYS AS ( LEAST(1::real, GREATEST(0::real, base_confidence + CASE WHEN upvotes >= 3 THEN 0.2::real WHEN downvotes >= 3 AND upvotes = 0 THEN -0.2::real ELSE 0::real END)) ) STORED` | 0024_memory.sql |
+| `distil_prompt_v` | `integer NOT NULL` | 0024_memory.sql |
+| `embed_model` | `text NOT NULL` | 0024_memory.sql |
+| `embedding` | `memory_embedding NOT NULL` | 0024_memory.sql |
+| `uses` | `integer NOT NULL DEFAULT 0 CHECK (uses >= 0)` | 0024_memory.sql |
+| `upvotes` | `integer NOT NULL DEFAULT 0 CHECK (upvotes >= 0)` | 0024_memory.sql |
+| `downvotes` | `integer NOT NULL DEFAULT 0 CHECK (downvotes >= 0)` | 0024_memory.sql |
+| `last_used_at` | `timestamptz` | 0024_memory.sql |
+
+## memory_trace_failures
+
+Owner: `memory` (created in `0024_memory.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0024_memory.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0024_memory.sql |
+| `workspace_id` | `uuid NOT NULL` | 0024_memory.sql |
+| `session_id` | `text NOT NULL` | 0024_memory.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0024_memory.sql |
+| `signature` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0024_memory.sql |
+| `last_error` | `text NOT NULL DEFAULT ''` | 0024_memory.sql |
+| `monitor_summary` | `jsonb NOT NULL DEFAULT '{}'::jsonb` | 0024_memory.sql |
+| `calls` | `integer NOT NULL DEFAULT 0 CHECK (calls >= 0)` | 0024_memory.sql |
+| `cost_usd` | `numeric(14,6)` | 0024_memory.sql |
+
+## memory_hits
+
+Owner: `memory` (created in `0024_memory.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0024_memory.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0024_memory.sql |
+| `workspace_id` | `uuid NOT NULL` | 0024_memory.sql |
+| `session_id` | `text NOT NULL` | 0024_memory.sql |
+| `call_id` | `text NOT NULL` | 0024_memory.sql |
+| `trace_id` | `bigint NOT NULL` | 0024_memory.sql |
+| `similarity_bp` | `integer NOT NULL CHECK (similarity_bp >= 0 AND similarity_bp <= 10000)` | 0024_memory.sql |
+| `mode` | `text NOT NULL CHECK (mode IN ('observe', 'hint'))` | 0024_memory.sql |
+| `injected` | `boolean NOT NULL` | 0024_memory.sql |
+| `feedback` | `text CHECK (feedback IN ('helpful', 'irrelevant'))` | 0024_memory.sql |
+| `est_saved_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (est_saved_tokens >= 0)` | 0024_memory.sql |
+| `est_saved_usd` | `numeric(14,6) NOT NULL DEFAULT 0 CHECK (est_saved_usd >= 0)` | 0024_memory.sql |
+| `ts` | `timestamptz NOT NULL` | 0024_memory.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0024_memory.sql |
+
+## memory_self_usage
+
+Owner: `memory` (created in `0024_memory.sql`)
+
+| Column | Definition | Migration |
+|---|---|---|
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | 0024_memory.sql |
+| `org_id` | `uuid NOT NULL REFERENCES organizations (id)` | 0024_memory.sql |
+| `workspace_id` | `uuid NOT NULL` | 0024_memory.sql |
+| `kind` | `text NOT NULL CHECK (kind IN ('distil', 'embed'))` | 0024_memory.sql |
+| `model` | `text NOT NULL` | 0024_memory.sql |
+| `input_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0)` | 0024_memory.sql |
+| `output_tokens` | `bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0)` | 0024_memory.sql |
+| `cost_usd` | `numeric(14,6) NOT NULL DEFAULT 0 CHECK (cost_usd >= 0)` | 0024_memory.sql |
+| `created_at` | `timestamptz NOT NULL DEFAULT now()` | 0024_memory.sql |

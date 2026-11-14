@@ -31,6 +31,23 @@ ALTER DEFAULT PRIVILEGES FOR ROLE meterwise_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO meterwise_app;
 ```
 
+## pgvector (once per database, before the first `migrate`)
+
+Migration `0024_memory.sql` runs `CREATE EXTENSION IF NOT EXISTS vector` for the trace library (ADR 0031). pgvector is
+**not** a trusted extension: `SELECT trusted FROM pg_available_extension_versions WHERE name = 'vector'` is `f` for
+0.8.7, and pgvector's own control file ([`vector.control` on its GitHub master](https://github.com/pgvector/pgvector/blob/master/vector.control), `default_version = '0.8.7'`) has no `trusted = true` line (checked 2026-11-14; a trusted extension declares it there), so `meterwise_owner` (not a superuser) cannot create it. A
+superuser does it once, in the application database:
+
+```sql
+\c meterwise
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+With the extension in place the migration's statement is a no-op and needs no privilege, so `meterwise_owner` and
+`meterwise_app` stay non-superuser and the serve guard above is unchanged. Without it, `migrate` fails at 0024.
+The server image must ship pgvector (`pgvector/pgvector:pg16` locally and in CI; a managed Postgres lists it as a
+supported extension). Rolling 0024 back (`goose down`) drops the extension, which also needs a superuser.
+
 ## After the migrations create `audit_log`
 
 The default privileges above would give the app `UPDATE`/`DELETE` on `audit_log`; take them away

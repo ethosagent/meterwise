@@ -154,7 +154,7 @@ func (rt *instance) buildFeatures(ctx context.Context, pricer contract.Pricer, o
 		return fmt.Errorf("router: %w", err)
 	}
 	opts.Router, rt.router = tables, router
-	hook, memory, src, err := memoryFeature(ctx, rt)
+	hook, memory, src, err := memoryFeature(ctx, rt, pricer)
 	if err != nil {
 		return fmt.Errorf("memory: %w", err)
 	}

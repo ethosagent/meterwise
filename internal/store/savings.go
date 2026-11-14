@@ -38,11 +38,13 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		events   []sqlc.SavingsEventsByDayRow
 		stats    []contract.MonitorStatRow
 		callSav  []sqlc.SavingsCallSaversRow
+		memSav   []sqlc.SavingsMemoryByDayRow
 		first    sqlc.CallStatusRow
 		acted    bool
 		spendArg = sqlc.SavingsSpendByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
 		evArg    = sqlc.SavingsEventsByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
 		savArg   = sqlc.SavingsCallSaversParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
+		memArg   = sqlc.SavingsMemoryByDayParams{WorkspaceID: workspaceID, FromTs: pgts(from), ToTs: pgts(to)}
 	)
 	err := s.readSnapshot(ctx, func(q *sqlc.Queries) (err error) {
 		if spend, err = q.SavingsSpendByDay(ctx, spendArg); err != nil {
@@ -57,10 +59,13 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		if callSav, err = q.SavingsCallSavers(ctx, savArg); err != nil {
 			return err
 		}
+		if memSav, err = q.SavingsMemoryByDay(ctx, memArg); err != nil {
+			return err
+		}
 		if first, err = q.CallStatus(ctx, sqlc.CallStatusParams{WorkspaceID: workspaceID, SinceTs: pgts(to)}); err != nil {
 			return err
 		}
-		if acted = actedMoney(events, callSav); !acted { // acted money in the range already proves a monitor acted
+		if acted = actedMoney(events, callSav, memSav); !acted { // acted money in the range already proves a monitor acted
 			acted, err = q.SavingsHasActed(ctx, workspaceID)
 		}
 		return err
@@ -68,6 +73,12 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 	if err != nil {
 		return contract.SavingsOverview{}, err
 	}
+	return overviewOf(r, first, acted, spend, events, stats, callSav, memSav), nil
+}
+
+// overviewOf assembles the overview from the rows read in one snapshot.
+func overviewOf(r contract.SavingsRange, first sqlc.CallStatusRow, acted bool, spend []sqlc.SavingsSpendByDayRow, events []sqlc.SavingsEventsByDayRow,
+	stats []contract.MonitorStatRow, callSav []sqlc.SavingsCallSaversRow, memSav []sqlc.SavingsMemoryByDayRow) contract.SavingsOverview {
 	out := contract.SavingsOverview{
 		Range: r.Range, From: r.FromDay(), To: r.ToDay(), Timezone: "UTC", State: stateOf(first.FirstCallAt.Valid, acted),
 		Upsell: []contract.UpsellView{},
@@ -76,14 +87,20 @@ func (s *Store) Overview(ctx context.Context, workspaceID string, r contract.Sav
 		out.FirstCallAt = new(contract.RFC3339(*t))
 	}
 	out.Days, out.Hero = daysAndHero(r, spend, events, callSav)
-	for _, card := range causesOf(stats, nil, callSav) {
+	addMemory(out.Days, &out.Hero, memSav)
+	for _, card := range causesOf(stats, nil, callSav, memSav) {
 		out.ByCause = append(out.ByCause, card.CauseView)
 	}
-	return out, nil
+	return out
 }
 
 // actedMoney is true when the range's totals row holds saved or likely money, which only acted events produce.
-func actedMoney(events []sqlc.SavingsEventsByDayRow, callSav []sqlc.SavingsCallSaversRow) bool {
+func actedMoney(events []sqlc.SavingsEventsByDayRow, callSav []sqlc.SavingsCallSaversRow, memSav []sqlc.SavingsMemoryByDayRow) bool {
+	for _, m := range memSav {
+		if !m.Day.Valid && m.LikelyMicro != 0 {
+			return true
+		}
+	}
 	for _, e := range events {
 		if !e.Day.Valid && (e.SavedMicro != 0 || e.LikelyMicro != 0) {
 			return true
@@ -176,10 +193,10 @@ func basisPoints(part, whole contract.MicroUSD) *int {
 }
 
 // causesOf builds the nine cause rows in AllSavingsCauses order: the six monitors from their stats (with the
-// per-monitor tops when the caller read them), then trim and router from the calls branch, then memory. Memory's
-// money comes from memory_hits, which lands with the memory feature; until then its row is zero.
-func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow, callSav []sqlc.SavingsCallSaversRow) []contract.CauseCard {
-	return append(monitorCards(stats, tops), saverCards(callSav)...)
+// per-monitor tops when the caller read them), then trim and router from the calls branch, then memory from
+// memory_hits (likely money only, savings_memory.go).
+func causesOf(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsRow, callSav []sqlc.SavingsCallSaversRow, memSav []sqlc.SavingsMemoryByDayRow) []contract.CauseCard {
+	return append(append(monitorCards(stats, tops), saverCards(callSav)...), memoryCard(memSav))
 }
 
 // monitorCards is one card per monitor stats row, with the per-monitor tops when the caller read them.
@@ -223,7 +240,7 @@ func monitorCards(stats []contract.MonitorStatRow, tops []sqlc.SavingsCauseTopsR
 	return out
 }
 
-// saverCards is the trim, router and memory cards from the calls branch's totals row.
+// saverCards is the trim and router cards from the calls branch's totals row.
 func saverCards(callSav []sqlc.SavingsCallSaversRow) []contract.CauseCard {
 	var tot sqlc.SavingsCallSaversRow
 	for _, c := range callSav {
@@ -241,7 +258,6 @@ func saverCards(callSav []sqlc.SavingsCallSaversRow) []contract.CauseCard {
 			Cause: contract.CauseRouter, Kind: contract.KindRouter, Fires: tot.RouterFires, SavedUsd: contract.MicroUSD(tot.RouterSavedMicro),
 			WouldSaveUsd: contract.MicroUSD(tot.RouterWouldMicro),
 		}},
-		{CauseView: contract.CauseView{Cause: contract.CauseMemory, Kind: contract.KindMemory}},
 	}
 }
 

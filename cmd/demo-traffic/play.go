@@ -21,6 +21,7 @@ type result struct {
 	clientCalls  int      // requests the clients sent to the proxy
 	upstreamHits int      // requests that reached the fake upstream (a blocked call never does)
 	sessions     []string // every session id played
+	memoryBodies []string // what the upstream received for the memory scenario, in order (session A, then session B)
 }
 
 // play runs the demo for one tenant: a fake upstream, the proxy in front of it, rounds of sessions, then
@@ -33,7 +34,7 @@ func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds
 		return result{}, err
 	}
 	defer srv.Close()
-	c := &client{srv: srv, hook: hook, stamp: stamp}
+	c := &client{srv: srv, hook: hook, stamp: stamp, tenant: tenant.ID, mem: f.mem, closed: map[string]bool{}}
 	if err := c.replay(ctx, rounds); err != nil {
 		return result{}, err
 	}
@@ -45,7 +46,9 @@ func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds
 	srv.Close()
 	for _, id := range c.sessions {
 		// tollgate closes a session after its quiet TTL (minutes); the demo is finished, so close them now.
-		hook.OnSessionClosed(ctx, tollgate.Session{ID: id, TenantID: tenant.ID})
+		if !c.closed[id] {
+			hook.OnSessionClosed(ctx, tollgate.Session{ID: id, TenantID: tenant.ID})
+		}
 	}
 	if err := p.Close(ctx); err != nil {
 		return result{}, err
@@ -53,7 +56,8 @@ func play(ctx context.Context, tenant tollgate.Tenant, hook *ledger.Hook, rounds
 	if err := hook.Close(ctx); err != nil {
 		return result{}, err
 	}
-	return result{clientCalls: c.sent, upstreamHits: int(up.hits.Load()), sessions: c.sessions}, nil
+	f.mem.finish(ctx) // the sessions closed above queue their distillations or failure records
+	return result{clientCalls: c.sent, upstreamHits: int(up.hits.Load()), sessions: c.sessions, memoryBodies: up.memoryBodies()}, nil
 }
 
 // client sends the demo's requests and, after each, waits until the ledger has seen the call: an agent
@@ -62,7 +66,11 @@ type client struct {
 	srv      *httptest.Server
 	hook     *ledger.Hook
 	stamp    string
+	tenant   string          // the workspace id, for closing a session early
+	mem      *memoryDemo     // nil unless -memory is on
+	closed   map[string]bool // sessions already closed by the scenario that played them
 	sent     int
+	closes   int // session closes queued early: the ledger counts them in "enqueued" too
 	sessions []string
 }
 
@@ -155,7 +163,7 @@ func (c *client) post(ctx context.Context, path, body, session string, hdr map[s
 // response), or after ten seconds.
 func (c *client) waitLedger() {
 	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		if n, _ := c.hook.Status()["enqueued"].(int64); n >= int64(c.sent) {
+		if n, _ := c.hook.Status()["enqueued"].(int64); n >= int64(c.sent+c.closes) {
 			return
 		}
 	}

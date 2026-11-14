@@ -18,10 +18,12 @@ type retryPlan struct {
 // closeSessions applies the session closes of a flush in one statement. Closes that still fail are
 // counted in lost_closes: those sessions stay open until a later call or close touches them.
 func (q *queue) closeSessions(ctx context.Context, closes []contract.SessionClose, plan retryPlan) {
+	var closed []store.ClosedSession
 	err := q.retry(ctx, plan, func() error {
-		n, err := q.o.Writer.CloseSessions(ctx, closes)
+		n, rows, err := q.closeOnce(ctx, closes)
 		if err == nil {
 			q.sessionsClosed.Add(int64(n))
+			closed = rows
 		}
 		return err
 	})
@@ -30,6 +32,18 @@ func (q *queue) closeSessions(ctx context.Context, closes []contract.SessionClos
 		return
 	}
 	q.ok()
+	q.notifyClosed(ctx, closed)
+}
+
+// closeOnce applies the closes. With an OnClosed callback and a Writer that reports what it closed, it also returns
+// the sessions this statement really closed.
+func (q *queue) closeOnce(ctx context.Context, closes []contract.SessionClose) (int, []store.ClosedSession, error) {
+	if cr, ok := q.o.Writer.(closeReturner); ok && q.onClosed.Load() != nil {
+		rows, err := cr.CloseSessionsReturning(ctx, closes)
+		return len(rows), rows, err
+	}
+	n, err := q.o.Writer.CloseSessions(ctx, closes)
+	return n, nil, err
 }
 
 // retry runs op until it succeeds or again says to stop, counting and logging every failure; it
@@ -81,15 +95,15 @@ func (q *queue) again(ctx context.Context, attempt int, plan retryPlan, err erro
 	}
 }
 
-func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, plan retryPlan) {
-	err := q.tryWrite(ctx, calls, plan)
+func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, hits []store.MemoryHit, plan retryPlan) {
+	err := q.tryWrite(ctx, calls, hits, plan)
 	if err == nil {
 		q.ok()
 		return
 	}
 	if len(calls) > 1 && !store.IsTransient(err) && ctx.Err() == nil {
 		for _, c := range calls { // isolate the record the database refuses
-			if q.tryWrite(ctx, []contract.CallRecord{c}, plan) != nil {
+			if q.tryWrite(ctx, []contract.CallRecord{c}, hits, plan) != nil {
 				q.lost.Add(1)
 			}
 		}
@@ -99,9 +113,9 @@ func (q *queue) writeCalls(ctx context.Context, calls []contract.CallRecord, pla
 }
 
 // tryWrite writes recs, retrying as the plan allows; it returns the last error, or nil once written.
-func (q *queue) tryWrite(ctx context.Context, recs []contract.CallRecord, plan retryPlan) error {
+func (q *queue) tryWrite(ctx context.Context, recs []contract.CallRecord, hits []store.MemoryHit, plan retryPlan) error {
 	return q.retry(ctx, plan, func() error {
-		res, err := q.o.Writer.WriteCalls(ctx, recs)
+		res, err := q.writeOnce(ctx, recs, hits)
 		if err == nil {
 			q.flushed.Add(int64(res.Inserted))
 			q.duplicates.Add(int64(res.Duplicates))
