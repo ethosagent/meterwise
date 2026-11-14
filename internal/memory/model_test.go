@@ -150,3 +150,21 @@ func TestModelErrorsNeverCarryTheKeyOrTheBody(t *testing.T) {
 		t.Fatal("nothing to embed must fail before any request")
 	}
 }
+
+func TestEmbedderCutsLongTextOnACharacterBoundary(t *testing.T) {
+	for name, text := range map[string]string{"ascii": strings.Repeat("a", 5000), "cjk": strings.Repeat("修", 2000)} {
+		var seen atomic.Value
+		srv := model(t, 200, &seen)
+		if _, _, err := memory.NewEmbedder(srv.URL, "k").Embed(t.Context(), "m", text); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var req struct{ Input string }
+		body := strings.SplitN(seen.Load().(string), "|", 3)[2]
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(req.Input) > 2000 || len(req.Input) < 1998 || !utf8.ValidString(req.Input) {
+			t.Errorf("%s: input is %d bytes (valid utf-8 %v), want at most 2000 and whole characters", name, len(req.Input), utf8.ValidString(req.Input))
+		}
+	}
+}

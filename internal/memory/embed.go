@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ethosagent/meterwise/internal/contract"
 	"github.com/ethosagent/meterwise/internal/store"
 )
 
@@ -14,7 +15,7 @@ type Embedder interface {
 	Embed(ctx context.Context, model, text string) ([]float32, Usage, error)
 }
 
-// maxEmbedChars caps the text sent to the embedding model.
+// maxEmbedChars caps the text sent to the embedding model, in bytes (cut on a character boundary).
 const maxEmbedChars = 2000
 
 type httpEmbedder struct{ c *modelClient }
@@ -44,7 +45,7 @@ func (e httpEmbedder) Embed(ctx context.Context, model, text string) ([]float32,
 		return nil, Usage{}, fmt.Errorf("%w: nothing to embed", errModel)
 	}
 	var out embedResponse
-	err := e.c.post(ctx, "/embeddings", embedRequest{Model: model, Input: cut(text, maxEmbedChars), Dimensions: store.EmbedDim}, &out)
+	err := e.c.post(ctx, "/embeddings", embedRequest{Model: model, Input: contract.TruncateUTF8(text, maxEmbedChars), Dimensions: store.EmbedDim}, &out)
 	if err != nil {
 		return nil, Usage{}, err
 	}
@@ -53,16 +54,4 @@ func (e httpEmbedder) Embed(ctx context.Context, model, text string) ([]float32,
 		return nil, Usage{Input: in}, fmt.Errorf("%w: embedding has the wrong size", errModel)
 	}
 	return out.Data[0].Embedding, Usage{Input: in}, nil
-}
-
-// cut shortens s to at most n runes.
-func cut(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
 }
