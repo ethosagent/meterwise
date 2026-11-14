@@ -60,6 +60,7 @@ In the web app: Settings > Workspaces > create one, then open its Setup page and
 ```sh
 make demo-traffic           # native DB          make docker-demo-traffic   # the Docker stack's DB
 make demo-traffic MONITORS=block ROUNDS=8    # same, with every monitor in block mode (default note)
+make docker-demo-traffic TRIM=lossless ROUTER=conservative MEMORY=hint   # plans 09-11 on the mock twins (default off)
 export ANTHROPIC_BASE_URL="<proxy URL from Setup>"      # real agent, your own key; OpenAI: OPENAI_BASE_URL
 ```
 
