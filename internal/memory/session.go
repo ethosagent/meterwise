@@ -153,7 +153,7 @@ func (s *sessions) next(ws, id string, maxHints, calls int) *candidate {
 	}
 	c := st.cand
 	st.cand = nil
-	if calls > lastHintCall && !(c.errMove && calls <= c.at+1) {
+	if calls > lastHintCall && (!c.errMove || calls > c.at+1) {
 		return nil // a slow recall: the moment has passed (plan 09 3.2), the hint is dropped, never late
 	}
 	st.hints++
