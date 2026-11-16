@@ -82,6 +82,7 @@ services:
       CLERK_API_URL: https://clerkmock:9443/v1
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-sk_test_clerkmock}
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-whsec_ZGV2LW9ubHktd2ViaG9vay1zZWNyZXQ=}
+      AZURE_RESOURCE_NAME: ${AZURE_RESOURCE_NAME:-}   # from your shell or .env; unset = no /azure provider
     ports:
       - "127.0.0.1:${APP_API_PORT:-8081}:8081"
       - "127.0.0.1:${APP_PROXY_PORT:-8080}:8080"

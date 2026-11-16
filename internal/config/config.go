@@ -74,6 +74,7 @@ type Config struct {
 	MaxConcurrentPerWorkspace int
 	HistoryMaxBytes           int64  // byte budget of the monitors' per-session history rings (LRU beyond it)
 	Memory                    Memory // the trace library's own model access (MEMORY_*)
+	AzureResourceName         string // Azure OpenAI resource for the "azure" provider; empty = no such provider
 	WebDir                    string // built web app, served on ListenAPI
 	LogLevel                  string
 	Env                       string
@@ -125,11 +126,12 @@ func Load(get Lookup) (Config, error) {
 			WebhookSecret:  str(get, EnvClerkWebhookKey, ""),
 			APIURL:         strings.TrimRight(str(get, EnvClerkAPIURL, DefaultClerkAPIURL), "/"),
 		},
-		AppURL:       strings.TrimRight(str(get, EnvAppURL, ""), "/"),
-		OTLPEndpoint: str(get, EnvOTLPEndpoint, ""),
-		WebDir:       str(get, EnvWebDir, DefaultWebDir),
-		LogLevel:     strings.ToLower(str(get, EnvLogLevel, DefaultLogLevel)),
-		Env:          strings.ToLower(str(get, EnvAppEnv, DefaultEnv)),
+		AppURL:            strings.TrimRight(str(get, EnvAppURL, ""), "/"),
+		OTLPEndpoint:      str(get, EnvOTLPEndpoint, ""),
+		WebDir:            str(get, EnvWebDir, DefaultWebDir),
+		LogLevel:          strings.ToLower(str(get, EnvLogLevel, DefaultLogLevel)),
+		Env:               strings.ToLower(str(get, EnvAppEnv, DefaultEnv)),
+		AzureResourceName: loadAzure(get, &p),
 	}
 	c.Clerk.AuthorizedParties = list(str(get, EnvClerkParties, ""))
 	c.PrivacyMode = boolean(get, EnvPrivacyMode, true, &p)
@@ -140,12 +142,7 @@ func Load(get Lookup) (Config, error) {
 
 	c.validateListeners(&p)
 	c.validateIdentity(&p)
-	if !slices.Contains(logLevels, c.LogLevel) {
-		p.add(EnvLogLevel, c.LogLevel+" is not one of "+strings.Join(logLevels, "|"))
-	}
-	if !slices.Contains(envNames, c.Env) {
-		p.add(EnvAppEnv, c.Env+" is not one of "+strings.Join(envNames, "|"))
-	}
+	c.validateEnums(&p)
 	if c.DatabaseURL == "" {
 		p.add(EnvDatabaseURL, "required (postgres://user:pass@host:5432/db)")
 	} else if !hasScheme(c.DatabaseURL, "postgres", "postgresql") {
@@ -159,6 +156,16 @@ func Load(get Lookup) (Config, error) {
 		return Config{}, contract.NewError(contract.CodeConfigInvalid, "configuration is invalid", p...)
 	}
 	return c, nil
+}
+
+// validateEnums checks the settings that take one of a fixed set of values.
+func (c Config) validateEnums(p *problems) {
+	if !slices.Contains(logLevels, c.LogLevel) {
+		p.add(EnvLogLevel, c.LogLevel+" is not one of "+strings.Join(logLevels, "|"))
+	}
+	if !slices.Contains(envNames, c.Env) {
+		p.add(EnvAppEnv, c.Env+" is not one of "+strings.Join(envNames, "|"))
+	}
 }
 
 func (c Config) validateListeners(p *problems) {
@@ -306,6 +313,7 @@ func (c Config) Redacted() map[string]string {
 		EnvAppEnv:          c.Env,
 	}
 	c.Memory.redacted(out)
+	out[EnvAzureResourceName] = c.AzureResourceName
 	return out
 }
 

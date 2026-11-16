@@ -13,7 +13,7 @@ It is one Go binary with a React dashboard and Postgres as the only store. It em
 
 | Feature | What happens | Modes |
 |---|---|---|
-| **Proxy** | Forwards OpenAI, Anthropic and OpenRouter calls, streamed or not, from `/w/{workspace}/{provider}/...`. Your `Authorization`/`x-api-key` header passes through and is never stored or logged. | always on |
+| **Proxy** | Forwards OpenAI, Anthropic, OpenRouter and Azure OpenAI calls, streamed or not, from `/w/{workspace}/{provider}/...`. Your `Authorization`/`x-api-key` header passes through and is never stored or logged. | always on |
 | **Ledger** | Records every call: model, tokens, cost, latency, session. One writer per table, idempotent on `call_id`. | always on |
 | **Monitors** | Six waste checks per session: `duplicate_tool_call`, `repeated_read`, `no_progress`, `step_budget`, `reasoning_loop`, `second_guessing`. | `observe`, `note` (adds a hint for the agent), `block` (the proxy answers in place of the provider) |
 | **Trim** | Shrinks tool results before they reach the model: repeated lines, long logs, duplicate lines, JSON tables, and (aggressive only) schemas. The result is deterministic, so provider prompt caches stay warm. | `off`, `observe`, `lossless`, `aggressive` |
@@ -53,6 +53,7 @@ Use the workspace URL plus the provider name as the base URL. Keep your own API 
 | Claude Code | `export ANTHROPIC_BASE_URL=http://127.0.0.1:8080/w/<publicId>/anthropic` |
 | OpenAI SDKs, Codex-style tools | `export OPENAI_BASE_URL=http://127.0.0.1:8080/w/<publicId>/openai/v1` |
 | opencode | `provider.<name>.options.baseURL` in `opencode.json`, as below |
+| Azure OpenAI | set `AZURE_RESOURCE_NAME` on the server, then base URL `http://127.0.0.1:8080/w/<publicId>/azure/v1`, key in the `api-key` header, deployment name as the model |
 
 opencode (`~/.config/opencode/opencode.json` or `opencode.json` in your project):
 
@@ -114,6 +115,7 @@ All settings come from the environment. `go run ./cmd/meterwised config check -j
 | `CLERK_*` | unset | real sign-in (issuer, JWKS, keys, authorized parties) |
 | `MAX_WORKSPACES` / `MAX_CONCURRENT_PER_WORKSPACE` | `20` / `8` | limits |
 | `HISTORY_MAX_BYTES` | 256 MiB | memory budget for per-session history |
+| `AZURE_RESOURCE_NAME` | unset | Azure OpenAI resource (name only); enables the `azure` provider |
 | `MEMORY_*` | unset | embedding/distil model key for the memory feature; memory is off without it |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/HTTP collector; unset turns tracing off |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
