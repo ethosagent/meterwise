@@ -38,6 +38,7 @@ Never edit an accepted ADR's decision; supersede it with a new one.
 | [0031](0031-pgvector-for-trace-recall-text-literals-a-domain-and-a-cast-index.md) | pgvector for trace recall: text literals, a domain, and an index on a halfvec cast | Accepted |
 | [0032](0032-memory-recalls-off-the-request-path-and-credits-only-a-likely-number.md) | Memory recalls off the request path and credits only a likely number | Accepted |
 | [0033](0033-memory-has-its-own-model-key-client-and-budget.md) | Memory has its own model key, its own client and a daily budget | Accepted |
+| [0034](0034-azure-openai-provider-from-one-resource-name.md) | Azure OpenAI provider from one resource name | Accepted |
 
 Template: [`template.md`](template.md).
 

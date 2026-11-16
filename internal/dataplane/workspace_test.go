@@ -97,6 +97,7 @@ func newRig(t *testing.T, o rigOpts) *rig {
 	provs := map[string]tollgate.Provider{
 		"openai":    {Name: "openai", Wire: tollgate.WireOpenAIChat, BaseURL: base},
 		"anthropic": {Name: "anthropic", Wire: tollgate.WireAnthropicMessages, BaseURL: base},
+		"azure":     azureAt(base),
 	}
 	if o.max == 0 {
 		o.max = 8

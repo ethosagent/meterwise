@@ -90,7 +90,7 @@ func (rt *instance) completeDeps(ctx context.Context, d dataplane.Deps) (datapla
 		d.Auth = auth
 	}
 	if d.Resolver == nil {
-		d.Resolver = dataplane.NewWorkspaceResolver(nil, dev)
+		d.Resolver = dataplane.NewWorkspaceResolver(dataplane.Providers(rt.cfg.AzureResourceName), dev)
 	}
 	if d.Admission == nil {
 		limit := rt.cfg.MaxConcurrentPerWorkspace

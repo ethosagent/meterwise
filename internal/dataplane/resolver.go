@@ -41,6 +41,18 @@ func DefaultProviders() map[string]tollgate.Provider {
 	}
 }
 
+// Providers is DefaultProviders plus "azure" when azureResource (AZURE_RESOURCE_NAME, already
+// validated by config) is set: /w/{id}/azure/v1/... goes to https://<resource>.openai.azure.com/openai/v1/...,
+// Azure's OpenAI-compatible v1 API. The client's api-key header passes through like any key (ADR 0034).
+func Providers(azureResource string) map[string]tollgate.Provider {
+	ps := DefaultProviders()
+	if azureResource != "" {
+		ps["azure"] = tollgate.Provider{Name: "azure", Wire: tollgate.WireOpenAIChat,
+			BaseURL: &url.URL{Scheme: "https", Host: azureResource + ".openai.azure.com", Path: "/openai"}}
+	}
+	return ps
+}
+
 // WorkspaceResolver implements tollgate.ProviderResolver for /w/{id}/{provider}/{rest}: it drops
 // the workspace prefix (wsauth.Front already did when the request came through it) and picks the
 // provider by the first path segment, like tollgate's default prefix resolver. A provider outside
