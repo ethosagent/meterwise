@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/clerk/clerk-sdk-go/v2 v2.8.0
-	github.com/ethosagent/tollgate v0.1.0
+	github.com/ethosagent/tollgate v0.2.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/svix/svix-webhooks v1.99.1
