@@ -2,8 +2,8 @@ github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1x
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/clerk/clerk-sdk-go/v2 v2.8.0 h1:6l0qToSukZORT0HjiysO3ea+S2JyItei522TegLJVyw=
-github.com/clerk/clerk-sdk-go/v2 v2.8.0/go.mod h1:MlQL/EllYKmTmwweGBfEtK3aOVTeKi3KelsBDCpMPbI=
+github.com/clerk/clerk-sdk-go/v2 v2.9.0 h1:19lvzMqN94fd/AbY0jUr/DGtL7yRy7J8NXYKqC+iaPs=
+github.com/clerk/clerk-sdk-go/v2 v2.9.0/go.mod h1:MlQL/EllYKmTmwweGBfEtK3aOVTeKi3KelsBDCpMPbI=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dustin/go-humanize v1.1.0 h1:dbKTrvD0klcbBV/h4AWJdMuZogJACoMlvWIWZ5b2xWg=
 github.com/dustin/go-humanize v1.1.0/go.mod h1:hc1CvRkJMsgxqjmjMQF3QNRAZBwY8AXBAzKYoSX9sFI=
